@@ -1,0 +1,420 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { CampoVoz, SelecaoVoz } from "@/components/CampoVoz";
+import { useVoz } from "@/lib/useVoz";
+import { capitalizar, opcaoFalada } from "@/lib/voz";
+
+type Empresa = {
+  id: number;
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  cidade: string | null;
+  situacao: "pendente" | "aprovada" | "reprovada";
+  motivo: string | null;
+  criada_em: string;
+  total_usuarios: string;
+};
+
+type NovoUsuario = {
+  nome: string;
+  email: string;
+  senha: string;
+  papel: "admin" | "operador";
+};
+
+type NovaEmpresa = {
+  nome: string;
+  documento: string;
+  telefone: string;
+  cidade: string;
+};
+
+const FILTROS = [
+  { valor: "pendente", rotulo: "Aguardando" },
+  { valor: "aprovada", rotulo: "Aprovadas" },
+  { valor: "reprovada", rotulo: "Reprovadas" },
+  { valor: "todas", rotulo: "Todas" },
+];
+
+const PAPEIS = [
+  { valor: "admin", rotulo: "Administrador" },
+  { valor: "operador", rotulo: "Operador" },
+] as const;
+
+const EMPRESA_VAZIA: NovaEmpresa = { nome: "", documento: "", telefone: "", cidade: "" };
+const USUARIO_VAZIO: NovoUsuario = { nome: "", email: "", senha: "", papel: "admin" };
+
+const data = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" });
+
+export default function Empresas() {
+  const [itens, setItens] = useState<Empresa[]>([]);
+  const [filtro, setFiltro] = useState("pendente");
+  const [carregando, setCarregando] = useState(true);
+  const [aviso, setAviso] = useState("");
+  const [erro, setErro] = useState(false);
+  const [reprovando, setReprovando] = useState<number | null>(null);
+  const [motivo, setMotivo] = useState("");
+
+  // ---------- nova empresa ----------
+  const [criando, setCriando] = useState(false);
+  const [novaEmpresa, setNovaEmpresa] = useState<NovaEmpresa>(EMPRESA_VAZIA);
+  const [usuarios, setUsuarios] = useState<NovoUsuario[]>([{ ...USUARIO_VAZIO }]);
+  const [salvandoEmpresa, setSalvandoEmpresa] = useState(false);
+
+  const aplicarFala = useCallback((campo: string, texto: string) => {
+    setErro(false);
+
+    if (campo.startsWith("usuario:")) {
+      const [, idxTexto, sub] = campo.split(":");
+      const idx = Number(idxTexto);
+
+      if (sub === "papel") {
+        const escolha = opcaoFalada(texto, PAPEIS);
+        if (!escolha) {
+          setErro(true);
+          setAviso(`Não achei "${texto}" nas opções.`);
+          return;
+        }
+        setUsuarios((us) =>
+          us.map((u, i) => (i === idx ? { ...u, papel: escolha as "admin" | "operador" } : u))
+        );
+        setAviso("");
+        return;
+      }
+
+      setUsuarios((us) =>
+        us.map((u, i) =>
+          i === idx ? { ...u, [sub]: sub === "nome" ? capitalizar(texto) : texto } : u
+        )
+      );
+      setAviso("");
+      return;
+    }
+
+    setNovaEmpresa((f) => ({
+      ...f,
+      [campo]: campo === "nome" || campo === "cidade" ? capitalizar(texto) : texto,
+    }));
+    setAviso("");
+  }, []);
+
+  const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
+    aoFinalizar: (texto) => {
+      const campo = campoAtual.current;
+      if (campo) aplicarFala(campo, texto);
+    },
+    aoErrar: (m) => {
+      setErro(true);
+      setAviso(m);
+    },
+  });
+
+  const comumEmpresa = (k: keyof NovaEmpresa) => ({
+    campo: k as string,
+    valor: novaEmpresa[k],
+    aoMudar: (v: string) => setNovaEmpresa((f) => ({ ...f, [k]: v })),
+    ouvindo: ouvindoCampo === k,
+    temVoz: disponivel,
+    aoOuvir: ouvir,
+    aoParar: parar,
+  });
+
+  const comumUsuario = (idx: number, k: "nome" | "email" | "senha") => {
+    const campo = `usuario:${idx}:${k}`;
+    return {
+      campo,
+      valor: usuarios[idx][k],
+      aoMudar: (v: string) =>
+        setUsuarios((us) => us.map((u, i) => (i === idx ? { ...u, [k]: v } : u))),
+      ouvindo: ouvindoCampo === campo,
+      temVoz: disponivel,
+      aoOuvir: ouvir,
+      aoParar: parar,
+    };
+  };
+
+  function abrirNovaEmpresa() {
+    setCriando(true);
+    setNovaEmpresa(EMPRESA_VAZIA);
+    setUsuarios([{ ...USUARIO_VAZIO }]);
+    setAviso("");
+    setErro(false);
+  }
+
+  function cancelarNovaEmpresa() {
+    setCriando(false);
+    setAviso("");
+    setErro(false);
+  }
+
+  function adicionarUsuario() {
+    setUsuarios((us) => [...us, { ...USUARIO_VAZIO }]);
+  }
+
+  function removerUsuario(idx: number) {
+    setUsuarios((us) => us.filter((_, i) => i !== idx));
+  }
+
+  const formularioValido =
+    novaEmpresa.nome.trim().length >= 2 &&
+    novaEmpresa.documento.replace(/\D/g, "").length >= 11 &&
+    usuarios.every((u) => u.nome.trim() && u.email.trim() && u.senha.trim().length >= 8);
+
+  async function salvarEmpresa() {
+    setSalvandoEmpresa(true);
+    setErro(false);
+    try {
+      const r = await fetch("/api/empresas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...novaEmpresa, usuarios }),
+      });
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível cadastrar.");
+
+      setErro(false);
+      setAviso(dados.aviso ?? "Empresa cadastrada.");
+      setCriando(false);
+      setFiltro("aprovada");
+      await carregar("aprovada");
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível cadastrar.");
+    } finally {
+      setSalvandoEmpresa(false);
+    }
+  }
+
+  // ---------- lista ----------
+  const carregar = useCallback(async (situacao: string) => {
+    setCarregando(true);
+    try {
+      const r = await fetch(`/api/empresas?situacao=${situacao}`);
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro);
+      setItens(dados.itens);
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível carregar as empresas.");
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    carregar(filtro);
+  }, [filtro, carregar]);
+
+  async function decidir(
+    id: number,
+    situacao: "aprovada" | "reprovada",
+    texto?: string
+  ) {
+    try {
+      const r = await fetch(`/api/empresas/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ situacao, motivo: texto }),
+      });
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro);
+
+      setErro(false);
+      setAviso(situacao === "aprovada" ? "Empresa aprovada." : "Empresa reprovada.");
+      setReprovando(null);
+      setMotivo("");
+      await carregar(filtro);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
+    }
+  }
+
+  return (
+    <main className="tela">
+      <div className="cabecalho-tela">
+        <header className="marca">
+          Empresas <span>•</span> {itens.length} na lista
+        </header>
+        {!criando && (
+          <button className="botao mini" onClick={abrirNovaEmpresa}>
+            + Nova empresa
+          </button>
+        )}
+      </div>
+
+      {criando && (
+        <section className="cartao">
+          <h2 className="titulo-cartao">Nova empresa</h2>
+
+          <p className="ajuda-voz" data-erro={!disponivel}>
+            {disponivel
+              ? "Toque no microfone do campo e fale."
+              : "Este navegador não reconhece fala. Abra no Chrome ou no Edge para usar os microfones."}
+          </p>
+
+          <div className="grade-form">
+            <CampoVoz rotulo="Nome da empresa" placeholder="Mercadinho do Bairro" largo {...comumEmpresa("nome")} />
+            <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comumEmpresa("documento")} />
+            <CampoVoz rotulo="Telefone" placeholder="11989902144" numerico {...comumEmpresa("telefone")} />
+            <CampoVoz rotulo="Cidade" placeholder="São Paulo" {...comumEmpresa("cidade")} />
+          </div>
+
+          {usuarios.map((u, idx) => (
+            <div className="usuario-bloco" key={idx}>
+              <div className="cabecalho-usuario">
+                <strong>Usuário {idx + 1}</strong>
+                {usuarios.length > 1 && (
+                  <button
+                    type="button"
+                    className="botao mini perigo"
+                    onClick={() => removerUsuario(idx)}
+                  >
+                    Remover
+                  </button>
+                )}
+              </div>
+              <div className="grade-form">
+                <CampoVoz rotulo="Nome" placeholder="Nome do usuário" largo {...comumUsuario(idx, "nome")} />
+                <CampoVoz rotulo="E-mail" placeholder="voce@empresa.com" {...comumUsuario(idx, "email")} />
+                <CampoVoz rotulo="Senha" placeholder="mínimo 8 caracteres" {...comumUsuario(idx, "senha")} />
+                <SelecaoVoz
+                  rotulo="Papel"
+                  opcoes={PAPEIS}
+                  campo={`usuario:${idx}:papel`}
+                  valor={u.papel}
+                  aoMudar={(v) =>
+                    setUsuarios((us) =>
+                      us.map((x, i) => (i === idx ? { ...x, papel: v as "admin" | "operador" } : x))
+                    )
+                  }
+                  ouvindo={ouvindoCampo === `usuario:${idx}:papel`}
+                  temVoz={disponivel}
+                  aoOuvir={ouvir}
+                  aoParar={parar}
+                />
+              </div>
+            </div>
+          ))}
+
+          <div className="acoes">
+            <button type="button" className="botao neutro" onClick={adicionarUsuario}>
+              + Adicionar usuário
+            </button>
+          </div>
+
+          <div className="acoes">
+            <button
+              className="botao primario"
+              onClick={salvarEmpresa}
+              disabled={salvandoEmpresa || !formularioValido}
+            >
+              {salvandoEmpresa ? "Salvando…" : "Cadastrar empresa"}
+            </button>
+            <button className="botao neutro" onClick={cancelarNovaEmpresa} disabled={salvandoEmpresa}>
+              Cancelar
+            </button>
+          </div>
+        </section>
+      )}
+
+      <div className="abas">
+        {FILTROS.map((f) => (
+          <button
+            key={f.valor}
+            className="botao aba"
+            data-ativo={filtro === f.valor}
+            onClick={() => setFiltro(f.valor)}
+          >
+            {f.rotulo}
+          </button>
+        ))}
+      </div>
+
+      {aviso && (
+        <p className="dica" data-erro={erro} role="status" aria-live="polite">
+          {aviso}
+        </p>
+      )}
+
+      {carregando ? (
+        <p className="vazio">Carregando…</p>
+      ) : itens.length === 0 ? (
+        <p className="vazio">Nenhuma empresa nesta situação.</p>
+      ) : (
+        <ul className="lista">
+          {itens.map((e) => (
+            <li key={e.id} className="empresa">
+              <span className="rotulo-item">
+                {e.nome}
+                <span className="sub">
+                  {[
+                    e.documento,
+                    e.cidade,
+                    e.telefone,
+                    `${e.total_usuarios} usuário(s)`,
+                    `desde ${data.format(new Date(e.criada_em))}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </span>
+                {e.situacao === "reprovada" && e.motivo && (
+                  <span className="sub motivo">Motivo: {e.motivo}</span>
+                )}
+              </span>
+
+              <span className="selo" data-situacao={e.situacao}>
+                {e.situacao}
+              </span>
+
+              {reprovando === e.id ? (
+                <span className="reprovacao">
+                  <input
+                    value={motivo}
+                    onChange={(ev) => setMotivo(ev.target.value)}
+                    placeholder="Motivo da reprovação"
+                    autoFocus
+                  />
+                  <button
+                    className="botao mini perigo"
+                    onClick={() => decidir(e.id, "reprovada", motivo)}
+                    disabled={!motivo.trim()}
+                  >
+                    Confirmar
+                  </button>
+                  <button
+                    className="botao mini"
+                    onClick={() => {
+                      setReprovando(null);
+                      setMotivo("");
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                </span>
+              ) : (
+                <span className="botoes-linha">
+                  {e.situacao !== "aprovada" && (
+                    <button className="botao mini" onClick={() => decidir(e.id, "aprovada")}>
+                      Aprovar
+                    </button>
+                  )}
+                  {e.situacao !== "reprovada" && (
+                    <button
+                      className="botao mini perigo"
+                      onClick={() => setReprovando(e.id)}
+                    >
+                      Reprovar
+                    </button>
+                  )}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}

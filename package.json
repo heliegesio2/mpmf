@@ -1,0 +1,26 @@
+{
+  "name": "consulta-preco",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "dev:https": "next dev --experimental-https --hostname 0.0.0.0",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "start:https": "node server.mjs"
+  },
+  "dependencies": {
+    "next": "15.1.0",
+    "pg": "^8.13.1",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "@types/react": "^19.0.0",
+    "typescript": "^5.7.2",
+    "@types/qrcode": "^1.5.5"
+  }
+}
