@@ -11,6 +11,10 @@ export const pool =
     connectionString: process.env.DATABASE_URL,
     max: 10,
     idleTimeoutMillis: 30_000,
+    // Neon (e a maioria dos Postgres gerenciados) exige TLS; o Postgres local
+    // do balcao nao usa. rejectUnauthorized:false porque esses provedores
+    // costumam usar CA que o Node nao reconhece por padrao.
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
   });
 
 if (process.env.NODE_ENV !== "production") global._pgPool = pool;
@@ -320,6 +324,44 @@ export async function marcarCascoDevolvido(empresaId: number, id: number): Promi
 export async function excluirCasco(empresaId: number, id: number): Promise<boolean> {
   const r = await pool.query(
     "DELETE FROM casco WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+// ---------- caixa (fechamento diario) ----------
+
+export type Caixa = {
+  id: number;
+  data: string;
+  valor: string;
+  criado_em: string;
+};
+
+export async function listarCaixa(empresaId: number, limite = 60): Promise<Caixa[]> {
+  const { rows } = await pool.query<Caixa>(
+    `SELECT id, data::text, valor, criado_em FROM caixa
+      WHERE empresa_id = $1
+      ORDER BY data DESC
+      LIMIT $2`,
+    [empresaId, limite]
+  );
+  return rows;
+}
+
+export async function criarCaixa(empresaId: number, valor: number): Promise<Caixa> {
+  const { rows } = await pool.query<Caixa>(
+    `INSERT INTO caixa (empresa_id, valor)
+     VALUES ($1, $2)
+     RETURNING id, data::text, valor, criado_em`,
+    [empresaId, valor]
+  );
+  return rows[0];
+}
+
+export async function excluirCaixa(empresaId: number, id: number): Promise<boolean> {
+  const r = await pool.query(
+    "DELETE FROM caixa WHERE id = $1 AND empresa_id = $2",
     [id, empresaId]
   );
   return (r.rowCount ?? 0) > 0;
