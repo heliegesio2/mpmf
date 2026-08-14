@@ -82,6 +82,12 @@ export default function Empresas() {
   const [carregandoUsuarios, setCarregandoUsuarios] = useState<number | null>(null);
   const [copiadoId, setCopiadoId] = useState<number | null>(null);
 
+  // ---------- trocar senha do usuario ----------
+  const [alterandoSenhaId, setAlterandoSenhaId] = useState<number | null>(null);
+  const [novaSenha, setNovaSenha] = useState("");
+  const [senhaVisivel, setSenhaVisivel] = useState(false);
+  const [salvandoSenha, setSalvandoSenha] = useState(false);
+
   const aplicarFala = useCallback((campo: string, texto: string) => {
     setErro(false);
 
@@ -249,14 +255,51 @@ export default function Empresas() {
     }
   }
 
-  async function copiarNome(usuarioId: number, nome: string) {
+  async function copiarLogin(usuarioId: number, email: string) {
     try {
-      await navigator.clipboard.writeText(nome);
+      await navigator.clipboard.writeText(email);
       setCopiadoId(usuarioId);
       setTimeout(() => setCopiadoId((atual) => (atual === usuarioId ? null : atual)), 1500);
     } catch {
       setErro(true);
-      setAviso("Não foi possível copiar. Selecione o nome na mão.");
+      setAviso("Não foi possível copiar. Selecione o login na mão.");
+    }
+  }
+
+  function abrirAlterarSenha(usuarioId: number) {
+    setAlterandoSenhaId(usuarioId);
+    setNovaSenha("");
+    setSenhaVisivel(false);
+    setAviso("");
+    setErro(false);
+  }
+
+  function cancelarAlterarSenha() {
+    setAlterandoSenhaId(null);
+    setNovaSenha("");
+  }
+
+  async function salvarSenha(usuarioId: number) {
+    setSalvandoSenha(true);
+    setErro(false);
+    try {
+      const r = await fetch(`/api/usuarios/${usuarioId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ senha: novaSenha }),
+      });
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
+
+      setAviso("Senha alterada.");
+      setErro(false);
+      setAlterandoSenhaId(null);
+      setNovaSenha("");
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSalvandoSenha(false);
     }
   }
 
@@ -577,9 +620,80 @@ export default function Empresas() {
                               {[u.email, u.papel, !u.ativo && "inativo"].filter(Boolean).join(" · ")}
                             </span>
                           </span>
-                          <button className="botao mini" onClick={() => copiarNome(u.id, u.nome)}>
-                            {copiadoId === u.id ? "Copiado!" : "Copiar nome"}
-                          </button>
+
+                          {alterandoSenhaId === u.id ? (
+                            <span className="reprovacao">
+                              <span className="campo-senha">
+                                <input
+                                  type={senhaVisivel ? "text" : "password"}
+                                  value={novaSenha}
+                                  onChange={(ev) => setNovaSenha(ev.target.value)}
+                                  placeholder="Nova senha (mín. 8 caracteres)"
+                                  autoFocus
+                                />
+                                <button
+                                  type="button"
+                                  className="olho-senha"
+                                  onClick={() => setSenhaVisivel((v) => !v)}
+                                  aria-label={senhaVisivel ? "Esconder senha" : "Mostrar senha"}
+                                >
+                                  {senhaVisivel ? (
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                      <path
+                                        d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinejoin="round"
+                                      />
+                                      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+                                    </svg>
+                                  ) : (
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                      <path
+                                        d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinejoin="round"
+                                      />
+                                      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.8" />
+                                      <line
+                                        x1="3"
+                                        y1="3"
+                                        x2="21"
+                                        y2="21"
+                                        stroke="currentColor"
+                                        strokeWidth="1.8"
+                                        strokeLinecap="round"
+                                      />
+                                    </svg>
+                                  )}
+                                </button>
+                              </span>
+                              <button
+                                className="botao mini"
+                                onClick={() => salvarSenha(u.id)}
+                                disabled={salvandoSenha || novaSenha.length < 8}
+                              >
+                                {salvandoSenha ? "Salvando…" : "Confirmar"}
+                              </button>
+                              <button
+                                className="botao mini"
+                                onClick={cancelarAlterarSenha}
+                                disabled={salvandoSenha}
+                              >
+                                Cancelar
+                              </button>
+                            </span>
+                          ) : (
+                            <span className="botoes-linha">
+                              <button className="botao mini" onClick={() => copiarLogin(u.id, u.email)}>
+                                {copiadoId === u.id ? "Copiado!" : "Copiar login"}
+                              </button>
+                              <button className="botao mini" onClick={() => abrirAlterarSenha(u.id)}>
+                                Alterar senha
+                              </button>
+                            </span>
+                          )}
                         </li>
                       ))}
                     </ul>

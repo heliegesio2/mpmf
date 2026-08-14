@@ -193,6 +193,11 @@ export async function listarUsuariosDaEmpresa(empresaId: number): Promise<Usuari
   return rows;
 }
 
+export async function alterarSenhaUsuario(id: number, senhaHash: string): Promise<boolean> {
+  const r = await pool.query("UPDATE usuario SET senha_hash = $2 WHERE id = $1", [id, senhaHash]);
+  return (r.rowCount ?? 0) > 0;
+}
+
 export type UsuarioLogin = {
   id: number;
   nome: string;

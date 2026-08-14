@@ -928,6 +928,33 @@ a.botao { display: block; text-align: center; text-decoration: none; }
 }
 .reprovacao input:focus { outline: none; border-color: var(--ambar); }
 
+.campo-senha {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.campo-senha input { width: 100%; padding-right: 36px; }
+.olho-senha {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--creme-fraco);
+  cursor: pointer;
+}
+.olho-senha:hover { color: var(--creme); }
+.olho-senha:focus-visible { outline: 2px solid var(--creme); outline-offset: 1px; }
+
 /* ============ campos de dinheiro ============ */
 .entrada[data-moeda="true"] { padding-left: 12px; }
 .entrada[data-moeda="true"] input {
