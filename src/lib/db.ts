@@ -265,3 +265,62 @@ export async function excluirCusto(empresaId: number, id: number): Promise<boole
   );
   return (r.rowCount ?? 0) > 0;
 }
+
+// ---------- cascos (emprestimo de engradados/garrafas) ----------
+
+export type Casco = {
+  id: number;
+  responsavel: string;
+  telefone: string;
+  endereco: string;
+  quantidade: number;
+  devolvido: boolean;
+  devolvido_em: string | null;
+  criado_em: string;
+};
+
+export async function listarCascos(empresaId: number, situacao?: string): Promise<Casco[]> {
+  const filtro =
+    situacao === "emprestados" ? "AND devolvido = false"
+    : situacao === "devolvidos" ? "AND devolvido = true"
+    : "";
+  const { rows } = await pool.query<Casco>(
+    `SELECT id, responsavel, telefone, endereco, quantidade, devolvido, devolvido_em, criado_em
+       FROM casco
+      WHERE empresa_id = $1 ${filtro}
+      ORDER BY devolvido, criado_em DESC`,
+    [empresaId]
+  );
+  return rows;
+}
+
+export async function criarCasco(
+  empresaId: number,
+  dados: { responsavel: string; telefone: string; endereco: string; quantidade: number }
+): Promise<Casco> {
+  const { rows } = await pool.query<Casco>(
+    `INSERT INTO casco (empresa_id, responsavel, telefone, endereco, quantidade)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING id, responsavel, telefone, endereco, quantidade, devolvido, devolvido_em, criado_em`,
+    [empresaId, dados.responsavel, dados.telefone, dados.endereco, dados.quantidade]
+  );
+  return rows[0];
+}
+
+export async function marcarCascoDevolvido(empresaId: number, id: number): Promise<Casco | null> {
+  const { rows } = await pool.query<Casco>(
+    `UPDATE casco SET devolvido = true, devolvido_em = now()
+      WHERE id = $1 AND empresa_id = $2
+      RETURNING id, responsavel, telefone, endereco, quantidade, devolvido, devolvido_em, criado_em`,
+    [id, empresaId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function excluirCasco(empresaId: number, id: number): Promise<boolean> {
+  const r = await pool.query(
+    "DELETE FROM casco WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
