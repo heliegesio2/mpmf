@@ -186,3 +186,47 @@ export async function usuarioPorEmail(email: string): Promise<UsuarioLogin | nul
   );
   return rows[0] ?? null;
 }
+
+// ---------- custos (gastos) ----------
+
+export type Custo = {
+  id: number;
+  descricao: string;
+  beneficiario: string;
+  valor: string;
+  criado_em: string;
+};
+
+export async function listarCustos(empresaId: number, limite = 100): Promise<Custo[]> {
+  const { rows } = await pool.query<Custo>(
+    `SELECT id, descricao, beneficiario, valor, criado_em FROM custo
+      WHERE empresa_id = $1
+      ORDER BY criado_em DESC
+      LIMIT $2`,
+    [empresaId, limite]
+  );
+  return rows;
+}
+
+export async function criarCusto(
+  empresaId: number,
+  descricao: string,
+  beneficiario: string,
+  valor: number
+): Promise<Custo> {
+  const { rows } = await pool.query<Custo>(
+    `INSERT INTO custo (empresa_id, descricao, beneficiario, valor)
+     VALUES ($1, $2, $3, $4)
+     RETURNING id, descricao, beneficiario, valor, criado_em`,
+    [empresaId, descricao, beneficiario, valor]
+  );
+  return rows[0];
+}
+
+export async function excluirCusto(empresaId: number, id: number): Promise<boolean> {
+  const r = await pool.query(
+    "DELETE FROM custo WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}

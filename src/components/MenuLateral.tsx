@@ -14,6 +14,7 @@ const LOJA = [
   { href: "/", rotulo: "Consultar preço", descricao: "Fale ou digite" },
   { href: "/venda", rotulo: "Venda", descricao: "Ditar itens e fechar" },
   { href: "/produtos", rotulo: "Produtos", descricao: "Incluir, alterar, excluir" },
+  { href: "/custos", rotulo: "Gastos", descricao: "Fale descrição, quem recebeu e o valor" },
 ];
 
 const ADMIN = [

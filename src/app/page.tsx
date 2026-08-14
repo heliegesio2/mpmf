@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { sufixo } from "@/lib/tipos";
 
 type Item = {
@@ -17,6 +18,21 @@ const moeda = new Intl.NumberFormat("pt-BR", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+
+function BotaoEditar({ id }: { id: number }) {
+  return (
+    <Link href={`/produtos?editar=${id}`} className="editar-item" aria-label="Editar este produto">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path
+          d="M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3Z"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </Link>
+  );
+}
 
 export default function Consulta() {
   const [termo, setTermo] = useState("");
@@ -170,6 +186,7 @@ export default function Consulta() {
 
       {itens.length === 1 && (
         <section className="etiqueta">
+          <BotaoEditar id={itens[0].id} />
           <h1 className="nome">{itens[0].nome}</h1>
           <p className="meta">
             {[itens[0].categoria, itens[0].local].filter(Boolean).join(" · ")}
@@ -190,6 +207,7 @@ export default function Consulta() {
           <div className="grade-precos">
             {itens.map((p) => (
               <article className="etiqueta menor" key={p.id}>
+                <BotaoEditar id={p.id} />
                 <h2 className="nome">{p.nome}</h2>
                 <p className="meta">
                   {[p.categoria, p.local].filter(Boolean).join(" · ")}

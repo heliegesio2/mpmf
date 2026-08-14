@@ -124,3 +124,46 @@ export function capitalizar(t: string): string {
   const s = t.trim();
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
+
+const MARCADORES_VALOR = new Set([
+  "reais", "real", "centavos", "centavo", "virgula", "ponto", "conto", "contos",
+]);
+
+/** A palavra faz parte de um valor falado (numero, conector ou marcador tipo "reais")? */
+function ehTokenDeValor(palavraCrua: string): boolean {
+  const p = semAcento(palavraCrua).replace(/[,.;:]+$/, "");
+  if (!p) return false;
+  if (/^\d+([.,]\d{1,2})?$/.test(p)) return true;
+  if (p === "e" || p === "mil") return true;
+  if (p in UNIDADES || p in DEZENAS || p in CENTENAS) return true;
+  return MARCADORES_VALOR.has(p);
+}
+
+/**
+ * Separa uma fala tipo "gelo, quarenta reais" em servico + valor, pegando
+ * o valor sempre do final da frase (onde a pessoa costuma falar o preco).
+ * Devolve null quando nao acha nenhum valor falado no fim da frase.
+ */
+export function separarServicoValor(
+  fala: string
+): { servico: string; valor: string } | null {
+  const palavras = fala.trim().split(/\s+/).filter(Boolean);
+  if (palavras.length === 0) return null;
+
+  let corte = palavras.length;
+  while (corte > 0 && ehTokenDeValor(palavras[corte - 1])) corte--;
+
+  if (corte === palavras.length || corte === 0) return null;
+
+  const valor = numeroFalado(palavras.slice(corte).join(" "));
+  if (valor === null) return null;
+
+  const servico = palavras
+    .slice(0, corte)
+    .join(" ")
+    .replace(/[,;]+$/, "")
+    .trim();
+  if (!servico) return null;
+
+  return { servico: capitalizar(servico), valor };
+}

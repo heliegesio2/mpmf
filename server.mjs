@@ -6,8 +6,9 @@
  */
 import { createServer } from "node:https";
 import { readFileSync, existsSync } from "node:fs";
-import { parse } from "node:url";
 import next from "next";
+
+process.env.NODE_ENV = "production";
 
 const PORTA = Number(process.env.PORT ?? 3000);
 const CERT = "./certificados/cert.pem";
@@ -26,9 +27,12 @@ const handle = app.getRequestHandler();
 
 await app.prepare();
 
+// Sem parse manual da URL: o App Router do Next cuida disso internamente.
+// Fazer o parse aqui (como nos exemplos antigos do Pages Router) confundia
+// o dispatcher interno do Next depois de algumas requisicoes.
 createServer(
   { key: readFileSync(CHAVE), cert: readFileSync(CERT) },
-  (req, res) => handle(req, res, parse(req.url ?? "/", true))
+  (req, res) => handle(req, res)
 ).listen(PORTA, "0.0.0.0", () => {
   console.log(`\n  Pronto em https://localhost:${PORTA}`);
   console.log(`  Na rede:  https://SEU-IP:${PORTA}\n`);

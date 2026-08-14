@@ -42,6 +42,38 @@ html, body {
 }
 .marca span { color: var(--ambar); }
 
+/* ============ tamanho da letra (acessibilidade) ============ */
+html[data-fonte="grande"] { zoom: 1.5; }
+
+.ajuste-fonte {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 30;
+  display: flex;
+  gap: 2px;
+  background: var(--verde-superficie);
+  border: 1px solid var(--verde-linha);
+  border-radius: 10px;
+  padding: 3px;
+}
+.botao-fonte {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--creme-fraco);
+  font-family: inherit;
+  font-weight: 900;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+.botao-fonte.grande { font-size: 20px; }
+.botao-fonte[data-ativo="true"] { background: var(--ambar); color: #14261c; }
+.botao-fonte:focus-visible { outline: 2px solid var(--creme); outline-offset: 2px; }
+
 .cabecalho-tela {
   display: flex;
   justify-content: space-between;
@@ -114,6 +146,7 @@ html, body {
 
 /* ---- etiqueta do resultado principal ---- */
 .etiqueta {
+  position: relative;
   background: var(--ambar);
   color: #14261c;
   border-radius: var(--raio);
@@ -121,6 +154,25 @@ html, body {
   transform: rotate(-0.7deg);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
 }
+
+.editar-item {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(20, 38, 28, 0.12);
+  color: #14261c;
+  transition: background 0.15s ease;
+}
+.editar-item:hover { background: rgba(20, 38, 28, 0.22); }
+.editar-item:focus-visible { outline: 2px solid #14261c; outline-offset: 2px; }
+.etiqueta.menor .editar-item { width: 27px; height: 27px; top: 10px; right: 10px; }
+.etiqueta.menor .editar-item svg { width: 13px; height: 13px; }
 .etiqueta .nome {
   margin: 0 0 4px;
   font-size: 27px;
@@ -258,6 +310,10 @@ html, body {
 }
 
 .grade-form { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.rotulo input[data-ouvindo="true"] {
+  border-color: var(--ambar);
+  box-shadow: 0 0 0 3px rgba(255, 197, 61, 0.22);
+}
 .rotulo {
   display: flex;
   flex-direction: column;

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import MenuLateral from "@/components/MenuLateral";
+import AjusteFonte from "@/components/AjusteFonte";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,8 +18,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;900&family=IBM+Plex+Mono:wght@500;700&display=swap"
           rel="stylesheet"
         />
+        {/* aplica a letra grande antes da pagina pintar, pra nao "piscar" no tamanho normal primeiro */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(localStorage.getItem('fonteGrande')==='1')document.documentElement.setAttribute('data-fonte','grande')}catch(e){}",
+          }}
+        />
       </head>
       <body>
+        <AjusteFonte />
         <MenuLateral />
         <div className="conteudo">{children}</div>
       </body>

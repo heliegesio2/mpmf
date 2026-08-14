@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { CampoVoz, SelecaoVoz } from "@/components/CampoVoz";
 import { useVoz } from "@/lib/useVoz";
 import { EMBALAGENS, TIPOS_VENDA, rotuloEmbalagem, sufixo } from "@/lib/tipos";
@@ -48,7 +49,9 @@ const moeda = new Intl.NumberFormat("pt-BR", {
 
 const num = (v: string) => moedaParaNumero(v);
 
-export default function Produtos() {
+function ProdutosConteudo() {
+  const editarId = useSearchParams().get("editar");
+  const aplicouEditarUrl = useRef(false);
   const [itens, setItens] = useState<Produto[]>([]);
   const [filtro, setFiltro] = useState("");
   const [form, setForm] = useState<Formulario>(VAZIO);
@@ -127,6 +130,16 @@ export default function Produtos() {
     const t = setTimeout(() => carregar(filtro), 250);
     return () => clearTimeout(t);
   }, [filtro, carregar]);
+
+  // veio da consulta de preço com "editar o item x": abre direto no formulário
+  useEffect(() => {
+    if (!editarId || aplicouEditarUrl.current) return;
+    const alvo = itens.find((p) => String(p.id) === editarId);
+    if (alvo) {
+      aplicouEditarUrl.current = true;
+      editar(alvo);
+    }
+  }, [editarId, itens]);
 
   function editar(p: Produto) {
     setEditandoId(p.id);
@@ -371,5 +384,13 @@ export default function Produtos() {
         </ul>
       )}
     </main>
+  );
+}
+
+export default function Produtos() {
+  return (
+    <Suspense fallback={<main className="tela"><p className="vazio">Carregando…</p></main>}>
+      <ProdutosConteudo />
+    </Suspense>
   );
 }
