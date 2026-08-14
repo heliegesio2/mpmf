@@ -17,6 +17,13 @@ export const pool =
     ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
   });
 
+// O pooler da Neon (PgBouncer) pode reaproveitar uma conexao de servidor com
+// search_path desatualizado/vazio; forcar em toda nova conexao fisica evita
+// "relation does not exist" mesmo quando o ALTER DATABASE nao chega a valer.
+pool.on("connect", (client) => {
+  client.query("SET search_path TO public");
+});
+
 if (process.env.NODE_ENV !== "production") global._pgPool = pool;
 
 export type Produto = {

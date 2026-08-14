@@ -30,24 +30,15 @@ typecheck script.
 
 ### Database
 
-There is no migration tool — SQL files under `db/` are applied by hand, in numeric order, against the
-database named in `DATABASE_URL`:
-
-```bash
-psql -d mercadinho -f db/01_schema.sql
-psql -d mercadinho -f db/02_seed.sql
-psql -d mercadinho -f db/03_super_admin_dono_loja.sql
-psql -d mercadinho -f db/04_custos.sql
-psql -d mercadinho -f db/05_custos_beneficiario.sql
-psql -d mercadinho -f db/06_cascos.sql
-psql -d mercadinho -f db/07_caixa.sql
-```
-
-When adding a schema change, add the next `NN_descricao.sql` file rather than editing an existing one —
-files 03+ are written to be idempotent (safe to re-run) since they've already been run against the
-production database. `00_completo.sql` at the repo root is a **stale**, single-tenant bootstrap script
-(no `empresa_id`, no `usuario`/`custo`/`casco`/`caixa` tables) — do not use it as a reference for the
-current schema; `db/01_schema.sql` onward is authoritative.
+There is no migration tool — SQL files under `db/` are applied by hand against the database named in
+`DATABASE_URL`. **`db/01_schema.sql` through `db/07_caixa.sql` do NOT reflect the real schema** — the
+`empresa`/`usuario` tables and several `produto` columns (`empresa_id`, `tipo_venda`, `preco_compra`) were
+added by hand at some point (e.g. via DBeaver) and never captured in a numbered migration file. The
+authoritative current schema is `db/referencia_schema_completo.sql`, a `pg_dump --schema-only` snapshot —
+use it (not 01-07) to stand up a new database from scratch, or as the reference when writing new migrations.
+It's a one-shot snapshot, not part of the sequential chain — don't run it after 01-07 (the tables would
+already exist) and don't edit it; schema changes from here on go in a new `db/08_..._.sql`+ file. `00_completo.sql`
+at the repo root is separately stale (older, single-tenant, pre-dates `empresa`/`usuario` entirely) — ignore it too.
 
 ### HTTPS for LAN testing (balcão / checkout counter)
 
@@ -91,6 +82,13 @@ query functions, grouped by domain with `// ---------- section ----------` comme
 custos, cascos (crate/bottle loans to customers), caixa (daily till closing). There's no query builder or
 ORM — raw parameterized SQL throughout. Follow the existing per-domain grouping when adding new queries
 rather than introducing a new data-access pattern.
+
+In production the pool connects through Neon's pooled (PgBouncer) endpoint — needed because serverless
+functions open connections far more often than a long-lived server would, and Neon's *direct* endpoint has
+a low connection cap that doesn't survive that pattern. The pooler can hand out a cached server-side
+connection whose `search_path` doesn't match the database's configured default (observed empty even after
+`ALTER DATABASE ... SET search_path`), which breaks every unqualified table reference. `pool.on("connect", ...)`
+forces `SET search_path TO public` on every new physical connection to route around that — don't remove it.
 
 Fuzzy product search (`buscar_produto` SQL function, defined in `db/01_schema.sql`) ranks by: exact
 barcode match (1.0) > name prefix/substring match (0.85–0.95) > all-words-present > trigram similarity.
