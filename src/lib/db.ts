@@ -163,6 +163,36 @@ export async function decidirEmpresa(
   return rows[0] ?? null;
 }
 
+export async function editarEmpresa(
+  id: number,
+  dados: { nome: string; documento: string; telefone: string | null; cidade: string | null }
+): Promise<Empresa | null> {
+  const { rows } = await pool.query<Empresa>(
+    `UPDATE empresa
+        SET nome = $2, documento = $3, telefone = $4, cidade = $5
+      WHERE id = $1
+      RETURNING *`,
+    [id, dados.nome, dados.documento, dados.telefone, dados.cidade]
+  );
+  return rows[0] ?? null;
+}
+
+export type UsuarioResumo = {
+  id: number;
+  nome: string;
+  email: string;
+  papel: "super_admin" | "admin" | "operador";
+  ativo: boolean;
+};
+
+export async function listarUsuariosDaEmpresa(empresaId: number): Promise<UsuarioResumo[]> {
+  const { rows } = await pool.query<UsuarioResumo>(
+    `SELECT id, nome, email, papel, ativo FROM usuario WHERE empresa_id = $1 ORDER BY nome`,
+    [empresaId]
+  );
+  return rows;
+}
+
 export type UsuarioLogin = {
   id: number;
   nome: string;

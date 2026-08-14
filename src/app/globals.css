@@ -906,6 +906,15 @@ a.botao { display: block; text-align: center; text-decoration: none; }
 }
 
 .reprovacao { display: flex; gap: 8px; flex: 1 1 100%; }
+
+.usuarios-empresa {
+  flex: 1 1 100%;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--verde-linha);
+}
+.usuarios-empresa .lista { gap: 6px; }
+.usuarios-empresa .lista li { padding: 10px 12px; background: var(--verde-fundo); }
 .reprovacao input {
   flex: 1;
   min-width: 0;

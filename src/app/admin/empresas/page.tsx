@@ -31,6 +31,14 @@ type NovaEmpresa = {
   cidade: string;
 };
 
+type UsuarioResumo = {
+  id: number;
+  nome: string;
+  email: string;
+  papel: "super_admin" | "admin" | "operador";
+  ativo: boolean;
+};
+
 const FILTROS = [
   { valor: "pendente", rotulo: "Aguardando" },
   { valor: "aprovada", rotulo: "Aprovadas" },
@@ -63,6 +71,17 @@ export default function Empresas() {
   const [usuarios, setUsuarios] = useState<NovoUsuario[]>([{ ...USUARIO_VAZIO }]);
   const [salvandoEmpresa, setSalvandoEmpresa] = useState(false);
 
+  // ---------- editar empresa ----------
+  const [editandoEmpresaId, setEditandoEmpresaId] = useState<number | null>(null);
+  const [dadosEdicao, setDadosEdicao] = useState<NovaEmpresa>(EMPRESA_VAZIA);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+
+  // ---------- usuarios da empresa ----------
+  const [usuariosAbertos, setUsuariosAbertos] = useState<number | null>(null);
+  const [usuariosPorEmpresa, setUsuariosPorEmpresa] = useState<Record<number, UsuarioResumo[]>>({});
+  const [carregandoUsuarios, setCarregandoUsuarios] = useState<number | null>(null);
+  const [copiadoId, setCopiadoId] = useState<number | null>(null);
+
   const aplicarFala = useCallback((campo: string, texto: string) => {
     setErro(false);
 
@@ -93,12 +112,14 @@ export default function Empresas() {
       return;
     }
 
-    setNovaEmpresa((f) => ({
-      ...f,
-      [campo]: campo === "nome" || campo === "cidade" ? capitalizar(texto) : texto,
-    }));
+    const valor = campo === "nome" || campo === "cidade" ? capitalizar(texto) : texto;
+    if (editandoEmpresaId !== null) {
+      setDadosEdicao((f) => ({ ...f, [campo]: valor }));
+    } else {
+      setNovaEmpresa((f) => ({ ...f, [campo]: valor }));
+    }
     setAviso("");
-  }, []);
+  }, [editandoEmpresaId]);
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -121,6 +142,16 @@ export default function Empresas() {
     aoParar: parar,
   });
 
+  const comumEdicao = (k: keyof NovaEmpresa) => ({
+    campo: k as string,
+    valor: dadosEdicao[k],
+    aoMudar: (v: string) => setDadosEdicao((f) => ({ ...f, [k]: v })),
+    ouvindo: ouvindoCampo === k,
+    temVoz: disponivel,
+    aoOuvir: ouvir,
+    aoParar: parar,
+  });
+
   const comumUsuario = (idx: number, k: "nome" | "email" | "senha") => {
     const campo = `usuario:${idx}:${k}`;
     return {
@@ -137,6 +168,7 @@ export default function Empresas() {
 
   function abrirNovaEmpresa() {
     setCriando(true);
+    setEditandoEmpresaId(null);
     setNovaEmpresa(EMPRESA_VAZIA);
     setUsuarios([{ ...USUARIO_VAZIO }]);
     setAviso("");
@@ -147,6 +179,85 @@ export default function Empresas() {
     setCriando(false);
     setAviso("");
     setErro(false);
+  }
+
+  function abrirEdicao(e: Empresa) {
+    setEditandoEmpresaId(e.id);
+    setCriando(false);
+    setDadosEdicao({
+      nome: e.nome,
+      documento: e.documento ?? "",
+      telefone: e.telefone ?? "",
+      cidade: e.cidade ?? "",
+    });
+    setAviso("");
+    setErro(false);
+  }
+
+  function cancelarEdicao() {
+    setEditandoEmpresaId(null);
+    setAviso("");
+    setErro(false);
+  }
+
+  const edicaoValida =
+    dadosEdicao.nome.trim().length >= 2 && dadosEdicao.documento.replace(/\D/g, "").length >= 11;
+
+  async function salvarEdicao() {
+    if (editandoEmpresaId === null) return;
+    setSalvandoEdicao(true);
+    setErro(false);
+    try {
+      const r = await fetch(`/api/empresas/${editandoEmpresaId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(dadosEdicao),
+      });
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
+
+      setAviso("Empresa atualizada.");
+      setEditandoEmpresaId(null);
+      await carregar(filtro);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  }
+
+  async function alternarUsuarios(id: number) {
+    if (usuariosAbertos === id) {
+      setUsuariosAbertos(null);
+      return;
+    }
+    setUsuariosAbertos(id);
+    if (usuariosPorEmpresa[id]) return;
+
+    setCarregandoUsuarios(id);
+    try {
+      const r = await fetch(`/api/empresas/${id}/usuarios`);
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro);
+      setUsuariosPorEmpresa((atual) => ({ ...atual, [id]: dados.itens }));
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível carregar os usuários.");
+    } finally {
+      setCarregandoUsuarios(null);
+    }
+  }
+
+  async function copiarNome(usuarioId: number, nome: string) {
+    try {
+      await navigator.clipboard.writeText(nome);
+      setCopiadoId(usuarioId);
+      setTimeout(() => setCopiadoId((atual) => (atual === usuarioId ? null : atual)), 1500);
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível copiar. Selecione o nome na mão.");
+    }
   }
 
   function adicionarUsuario() {
@@ -320,6 +431,38 @@ export default function Empresas() {
         </section>
       )}
 
+      {editandoEmpresaId !== null && (
+        <section className="cartao">
+          <h2 className="titulo-cartao">Editar empresa</h2>
+
+          <p className="ajuda-voz" data-erro={!disponivel}>
+            {disponivel
+              ? "Toque no microfone do campo e fale."
+              : "Este navegador não reconhece fala. Abra no Chrome ou no Edge para usar os microfones."}
+          </p>
+
+          <div className="grade-form">
+            <CampoVoz rotulo="Nome da empresa" placeholder="Mercadinho do Bairro" largo {...comumEdicao("nome")} />
+            <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comumEdicao("documento")} />
+            <CampoVoz rotulo="Telefone" placeholder="11989902144" numerico {...comumEdicao("telefone")} />
+            <CampoVoz rotulo="Cidade" placeholder="São Paulo" {...comumEdicao("cidade")} />
+          </div>
+
+          <div className="acoes">
+            <button
+              className="botao primario"
+              onClick={salvarEdicao}
+              disabled={salvandoEdicao || !edicaoValida}
+            >
+              {salvandoEdicao ? "Salvando…" : "Salvar alterações"}
+            </button>
+            <button className="botao neutro" onClick={cancelarEdicao} disabled={salvandoEdicao}>
+              Cancelar
+            </button>
+          </div>
+        </section>
+      )}
+
       <div className="abas">
         {FILTROS.map((f) => (
           <button
@@ -396,6 +539,12 @@ export default function Empresas() {
                 </span>
               ) : (
                 <span className="botoes-linha">
+                  <button className="botao mini" onClick={() => abrirEdicao(e)}>
+                    Editar
+                  </button>
+                  <button className="botao mini" onClick={() => alternarUsuarios(e.id)}>
+                    {usuariosAbertos === e.id ? "Ocultar usuários" : `Usuários (${e.total_usuarios})`}
+                  </button>
                   {e.situacao !== "aprovada" && (
                     <button className="botao mini" onClick={() => decidir(e.id, "aprovada")}>
                       Aprovar
@@ -408,6 +557,32 @@ export default function Empresas() {
                     >
                       Reprovar
                     </button>
+                  )}
+                </span>
+              )}
+
+              {usuariosAbertos === e.id && (
+                <span className="usuarios-empresa">
+                  {carregandoUsuarios === e.id ? (
+                    <span className="vazio">Carregando usuários…</span>
+                  ) : (usuariosPorEmpresa[e.id] ?? []).length === 0 ? (
+                    <span className="vazio">Nenhum usuário nessa empresa.</span>
+                  ) : (
+                    <ul className="lista">
+                      {usuariosPorEmpresa[e.id].map((u) => (
+                        <li key={u.id}>
+                          <span className="rotulo-item">
+                            {u.nome}
+                            <span className="sub">
+                              {[u.email, u.papel, !u.ativo && "inativo"].filter(Boolean).join(" · ")}
+                            </span>
+                          </span>
+                          <button className="botao mini" onClick={() => copiarNome(u.id, u.nome)}>
+                            {copiadoId === u.id ? "Copiado!" : "Copiar nome"}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
                   )}
                 </span>
               )}
