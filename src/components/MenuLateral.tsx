@@ -16,6 +16,7 @@ const LOJA = [
   { href: "/produtos", rotulo: "Produtos", descricao: "Incluir, alterar, excluir" },
   { href: "/custos", rotulo: "Gastos", descricao: "Fale descrição, quem recebeu e o valor" },
   { href: "/cascos", rotulo: "Cascos", descricao: "Registrar empréstimo de cascos" },
+  { href: "/caixa", rotulo: "Caixa", descricao: "Informar o valor final do dia" },
 ];
 
 const ADMIN = [
