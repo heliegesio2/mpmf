@@ -65,6 +65,14 @@ export async function buscarProduto(
   return rows;
 }
 
+export async function produtoPorId(empresaId: number, id: number): Promise<Produto | null> {
+  const { rows } = await pool.query<Produto>(
+    `SELECT ${CAMPOS} FROM produto WHERE id = $1 AND empresa_id = $2`,
+    [id, empresaId]
+  );
+  return rows[0] ?? null;
+}
+
 /** Lista para a tela de edicao. Sem termo, devolve tudo em ordem alfabetica. */
 export async function listarProdutos(
   empresaId: number,

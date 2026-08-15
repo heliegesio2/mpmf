@@ -95,6 +95,23 @@ barcode match (1.0) > name prefix/substring match (0.85–0.95) > all-words-pres
 `pg_trgm.similarity_threshold` is lowered to `0.22` (Postgres default is `0.3`) because voice transcription
 needs more tolerance than typo-correction does.
 
+### Purchase-receipt import (`/compras/importar`)
+
+`src/lib/importarCompra.ts` sends a photo of a supplier's purchase receipt (NFC-e) to Claude
+(`@anthropic-ai/sdk`, model `ANTHROPIC_MODEL` env var or `claude-opus-5` default) as a vision request
+constrained with `output_config.format` (structured outputs) so the response is guaranteed-parseable JSON
+line items — no free-text parsing. The prompt explicitly tells the model to cross-check smudged/creased
+digits against `quantidade × valorUnitario ≈ valorTotal`, which in practice resolves illegible printed
+numbers correctly. `POST /api/importar-compra` (multipart) runs the extraction and, per item, calls the
+existing `buscarProduto` (the same fuzzy-match SQL function the voice search uses) to suggest a matching
+catalog product above a similarity threshold — nothing is written to the database at this step. The client
+reviews/edits every line (matched-product toggle, editable prices) before `POST /api/importar-compra/confirmar`
+applies it: matched items go through `atualizarProduto` (preserving all fields except price), unmatched ones
+create a new product via `criarProduto`. Sale price is always purchase price × 1.38, rounded to cents; stock
+(`estoque`) is deliberately left untouched by this flow. The upload photo is downscaled/re-encoded to JPEG
+client-side (`compras/importar/page.tsx`, canvas, max 1800px long edge) before it's sent — both to stay under
+serverless request-body limits and to control vision token cost.
+
 ### Voice input
 
 `src/lib/voz.ts` is pure text-processing (no DOM/browser APIs): Portuguese number-words → digits

@@ -14,6 +14,7 @@ const LOJA = [
   { href: "/", rotulo: "Consultar preço", descricao: "Fale ou digite" },
   { href: "/venda", rotulo: "Venda", descricao: "Ditar itens e fechar" },
   { href: "/produtos", rotulo: "Produtos", descricao: "Incluir, alterar, excluir" },
+  { href: "/compras/importar", rotulo: "Importar compra", descricao: "Foto do cupom vira preço" },
   { href: "/custos", rotulo: "Gastos", descricao: "Fale descrição, quem recebeu e o valor" },
   { href: "/cascos", rotulo: "Cascos", descricao: "Registrar empréstimo de cascos" },
   { href: "/caixa", rotulo: "Caixa", descricao: "Informar o valor final do dia" },
