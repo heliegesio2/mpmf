@@ -16,12 +16,16 @@ export async function POST(request: Request) {
     const usuario = await usuarioPorEmail(String(email));
 
     // mesma mensagem para e-mail inexistente e senha errada:
-    // dizer qual dos dois falhou entrega quais e-mails existem
-    const negar = () =>
-      NextResponse.json({ erro: "E-mail ou senha incorretos." }, { status: 401 });
+    // dizer qual dos dois falhou entrega quais e-mails existem.
+    // O motivo real vai só pro log do servidor (nunca na resposta).
+    const negar = (motivo: string) => {
+      console.warn(`Login negado (${motivo}):`, email);
+      return NextResponse.json({ erro: "E-mail ou senha incorretos." }, { status: 401 });
+    };
 
-    if (!usuario || !usuario.ativo) return negar();
-    if (!(await conferirSenha(String(senha), usuario.senha_hash))) return negar();
+    if (!usuario) return negar("e-mail nao cadastrado");
+    if (!usuario.ativo) return negar("usuario inativo");
+    if (!(await conferirSenha(String(senha), usuario.senha_hash))) return negar("senha incorreta");
 
     if (usuario.papel !== "super_admin") {
       if (usuario.empresa_situacao === "pendente") {
