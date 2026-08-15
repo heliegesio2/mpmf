@@ -134,6 +134,21 @@ export async function atualizarProduto(
   return rows[0] ?? null;
 }
 
+/** So mexe no estoque — usado pela atualizacao por foto de prateleira. */
+export async function atualizarEstoqueProduto(
+  empresaId: number,
+  id: number,
+  novoEstoque: number
+): Promise<Produto | null> {
+  const { rows } = await pool.query<Produto>(
+    `UPDATE produto SET estoque = $3, alterado_em = now()
+      WHERE id = $1 AND empresa_id = $2
+      RETURNING ${CAMPOS}`,
+    [id, empresaId, novoEstoque]
+  );
+  return rows[0] ?? null;
+}
+
 export async function excluirProduto(empresaId: number, id: number): Promise<boolean> {
   const r = await pool.query(
     "DELETE FROM produto WHERE id = $1 AND empresa_id = $2",

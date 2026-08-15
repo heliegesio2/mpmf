@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CampoVoz, SelecaoVoz } from "@/components/CampoVoz";
 import { useVoz } from "@/lib/useVoz";
@@ -241,6 +242,12 @@ function ProdutosConteudo() {
       <header className="marca">
         Produtos <span>•</span> {itens.length} cadastrados
       </header>
+
+      <div className="acoes">
+        <Link href="/produtos/estoque-foto" className="botao neutro">
+          📷 Atualizar estoque por foto
+        </Link>
+      </div>
 
       <section className="cartao" data-editando={editandoId !== null}>
         <h2 className="titulo-cartao">

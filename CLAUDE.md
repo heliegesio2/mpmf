@@ -112,6 +112,23 @@ create a new product via `criarProduto`. Sale price is always purchase price × 
 client-side (`compras/importar/page.tsx`, canvas, max 1800px long edge) before it's sent — both to stay under
 serverless request-body limits and to control vision token cost.
 
+The client-side JPEG compression (`src/lib/imagemCliente.ts`, `comprimirImagem`) is shared with the shelf-photo
+stock update below — don't duplicate it per screen.
+
+### Shelf-photo stock update (`/produtos/estoque-foto`)
+
+Same vision-extraction shape as the receipt importer (`src/lib/lerEstoqueFoto.ts`), but for counting visible
+stock rather than reading a receipt, and it accepts **multiple photos in one request** (`fotos` form field,
+repeated) — all images ride in a single Claude call as multiple `image` content blocks, with the prompt told
+to treat each photo as a different shelf/area and sum counts for a product that reappears across photos, so
+this stays one API call regardless of photo count rather than one per photo. `POST /api/produtos/estoque-foto`
+matches each detected product against the catalog via `buscarProduto`, same threshold as the purchase importer.
+Unlike that flow, this one **never creates a product** — items with no catalog match are shown for visibility
+only and can't be selected to save; the intent (per explicit product decision) is "verify it exists, then
+update its stock," not populate the catalog from shelf photos. `atualizarEstoqueProduto` in `db.ts` is a
+narrow single-column `UPDATE ... SET estoque` (unlike `atualizarProduto`, which replaces the whole row) — this
+flow must never touch price, name, or category.
+
 ### Voice input
 
 `src/lib/voz.ts` is pure text-processing (no DOM/browser APIs): Portuguese number-words → digits

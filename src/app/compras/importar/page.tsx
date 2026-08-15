@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { EMBALAGENS, TIPOS_VENDA } from "@/lib/tipos";
 import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
+import { comprimirImagem } from "@/lib/imagemCliente";
 
 type ItemProposto = {
   descricaoExtraida: string;
@@ -23,31 +24,6 @@ type LinhaEdicao = {
   precoVenda: string;
   incluir: boolean;
 };
-
-const MAX_LADO = 1800;
-const QUALIDADE_JPEG = 0.85;
-
-/** Reduz a foto no navegador antes de subir — cupom fotografado no celular
- * costuma vir grande demais pro limite de corpo de requisicao da hospedagem. */
-async function comprimirImagem(arquivo: File): Promise<File> {
-  const bitmap = await createImageBitmap(arquivo);
-  const escala = Math.min(1, MAX_LADO / Math.max(bitmap.width, bitmap.height));
-  const largura = Math.round(bitmap.width * escala);
-  const altura = Math.round(bitmap.height * escala);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = largura;
-  canvas.height = altura;
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return arquivo;
-  ctx.drawImage(bitmap, 0, 0, largura, altura);
-
-  const blob: Blob | null = await new Promise((resolve) =>
-    canvas.toBlob(resolve, "image/jpeg", QUALIDADE_JPEG)
-  );
-  if (!blob) return arquivo;
-  return new File([blob], "cupom.jpg", { type: "image/jpeg" });
-}
 
 function linhaInicial(item: ItemProposto): LinhaEdicao {
   return {
