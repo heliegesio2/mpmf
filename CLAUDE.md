@@ -123,11 +123,14 @@ repeated) — all images ride in a single Claude call as multiple `image` conten
 to treat each photo as a different shelf/area and sum counts for a product that reappears across photos, so
 this stays one API call regardless of photo count rather than one per photo. `POST /api/produtos/estoque-foto`
 matches each detected product against the catalog via `buscarProduto`, same threshold as the purchase importer.
-Unlike that flow, this one **never creates a product** — items with no catalog match are shown for visibility
-only and can't be selected to save; the intent (per explicit product decision) is "verify it exists, then
-update its stock," not populate the catalog from shelf photos. `atualizarEstoqueProduto` in `db.ts` is a
-narrow single-column `UPDATE ... SET estoque` (unlike `atualizarProduto`, which replaces the whole row) — this
-flow must never touch price, name, or category.
+For a match, the review screen only lets you edit the estoque number — `atualizarEstoqueProduto` in `db.ts` is
+a narrow single-column `UPDATE ... SET estoque` (unlike `atualizarProduto`, which replaces the whole row), so
+this path never touches price, name, or category. For no match, the item is included by default as a **new**
+product (name/embalagem/tipo-venda editable, stock prefilled from the photo count) — sale price has no source
+in a shelf photo, so that field starts empty and must be filled before saving, by typing or via the same
+voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen; the confirm route rejects a new-product
+line with no price rather than defaulting it. Created products get `preco_compra = 0` (unknown from a shelf
+photo) — expect the margin display on Produtos to show 100% until someone corrects it from a real invoice.
 
 ### Voice input
 

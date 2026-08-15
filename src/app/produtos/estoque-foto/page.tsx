@@ -2,6 +2,11 @@
 
 import { useRef, useState } from "react";
 import { comprimirImagem } from "@/lib/imagemCliente";
+import { CampoVoz } from "@/components/CampoVoz";
+import { useVoz } from "@/lib/useVoz";
+import { EMBALAGENS, TIPOS_VENDA } from "@/lib/tipos";
+import { numeroFalado, semAcento } from "@/lib/voz";
+import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
 
 type ItemProposto = {
   descricaoDetectada: string;
@@ -12,13 +17,32 @@ type ItemProposto = {
 
 type LinhaEdicao = {
   incluir: boolean;
-  novoEstoque: string;
+  novoEstoque: string; // produto ja cadastrado
+  nome: string; // produto novo
+  preco: string; // produto novo
+  estoque: string; // produto novo
+  tipoVenda: string;
+  unidade: string;
 };
+
+/** Casa a unidade que a IA leu ("garrafa", "kg"...) com uma embalagem conhecida. */
+function mapearEmbalagem(unidadeDetectada: string): string {
+  const alvo = semAcento(unidadeDetectada);
+  const achada = EMBALAGENS.find(
+    (e) => semAcento(e.valor) === alvo || semAcento(e.rotulo) === alvo
+  );
+  return achada?.valor ?? "unidade";
+}
 
 function linhaInicial(item: ItemProposto): LinhaEdicao {
   return {
-    incluir: item.produto !== null,
+    incluir: true,
     novoEstoque: String(item.quantidadeEstimada),
+    nome: item.produto?.nome ?? item.descricaoDetectada,
+    preco: "",
+    estoque: String(item.quantidadeEstimada),
+    tipoVenda: "unidade",
+    unidade: mapearEmbalagem(item.unidade),
   };
 }
 
@@ -30,6 +54,31 @@ export default function EstoquePorFoto() {
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
+
+  function mudarLinha(i: number, campo: keyof LinhaEdicao, valor: LinhaEdicao[keyof LinhaEdicao]) {
+    setLinhas((ls) => ls.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)));
+  }
+
+  const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
+    aoFinalizar: (texto) => {
+      const campo = campoAtual.current;
+      if (!campo || !campo.startsWith("preco-")) return;
+      const i = Number(campo.slice("preco-".length));
+      const n = numeroFalado(texto);
+      if (n === null) {
+        setErro(true);
+        setAviso(`Não entendi "${texto}" como valor. Tente "quatro e cinquenta".`);
+        return;
+      }
+      mudarLinha(i, "preco", paraMoeda(n));
+      setErro(false);
+      setAviso("");
+    },
+    aoErrar: (m) => {
+      setErro(true);
+      setAviso(m);
+    },
+  });
 
   async function analisar(arquivos: FileList) {
     setAnalisando(true);
@@ -55,10 +104,10 @@ export default function EstoquePorFoto() {
       }
       setPropostos(itens);
       setLinhas(itens.map(linhaInicial));
-      const semCatalogo = itens.filter((i) => i.produto === null).length;
+      const novos = itens.filter((i) => i.produto === null).length;
       setAviso(
         `${itens.length} produtos detectados` +
-          (semCatalogo > 0 ? ` — ${semCatalogo} não estão no catálogo e ficam de fora.` : ".")
+          (novos > 0 ? ` — ${novos} não estavam no catálogo; informe o preço deles antes de salvar.` : ".")
       );
     } catch (e) {
       setErro(true);
@@ -68,21 +117,33 @@ export default function EstoquePorFoto() {
     }
   }
 
-  function mudarLinha(i: number, campo: keyof LinhaEdicao, valor: LinhaEdicao[keyof LinhaEdicao]) {
-    setLinhas((ls) => ls.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)));
-  }
-
   async function salvar() {
     setSalvando(true);
     setErro(false);
     try {
-      const itens = linhas
+      const selecionados = linhas
         .map((l, i) => ({ l, item: propostos[i] }))
-        .filter(({ l, item }) => l.incluir && item.produto)
-        .map(({ l, item }) => ({
-          produtoId: item.produto!.id,
-          novoEstoque: Number(l.novoEstoque.replace(",", ".")),
-        }));
+        .filter(({ l }) => l.incluir);
+
+      for (const { l, item } of selecionados) {
+        if (!item.produto && moedaParaNumero(l.preco) <= 0) {
+          setErro(true);
+          setAviso(`Informe o preço de venda de "${l.nome}" antes de salvar.`);
+          return;
+        }
+      }
+
+      const itens = selecionados.map(({ l, item }) =>
+        item.produto
+          ? { produtoId: item.produto.id, novoEstoque: Number(l.novoEstoque.replace(",", ".")) }
+          : {
+              nome: l.nome,
+              unidade: l.unidade,
+              tipoVenda: l.tipoVenda,
+              preco: moedaParaNumero(l.preco),
+              estoque: Number(l.estoque.replace(",", ".")),
+            }
+      );
 
       if (itens.length === 0) {
         setErro(true);
@@ -98,7 +159,7 @@ export default function EstoquePorFoto() {
       const dados = await r.json();
       if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
 
-      setAviso(`Estoque atualizado em ${itens.length} produtos.`);
+      setAviso(`${itens.length} produtos atualizados/incluídos com sucesso.`);
       setPropostos([]);
       setLinhas([]);
       if (inputArquivo.current) inputArquivo.current.value = "";
@@ -116,10 +177,10 @@ export default function EstoquePorFoto() {
 
       <section className="cartao">
         <h2 className="titulo-cartao">Fotos da prateleira</h2>
-        <p className="ajuda-voz">
-          Tire uma ou mais fotos das prateleiras (pode selecionar várias de uma vez). O sistema
-          estima quantas embalagens de cada produto estão visíveis e sugere o novo estoque — só
-          pra produtos que já estão cadastrados. Confira antes de salvar.
+        <p className="ajuda-voz" data-erro={!disponivel}>
+          {disponivel
+            ? 'Tire uma ou mais fotos das prateleiras. Produtos já cadastrados têm o estoque sugerido; produtos novos vêm marcados pra incluir — toque no microfone do preço e fale, tipo "sete e noventa".'
+            : "Tire uma ou mais fotos das prateleiras (pode selecionar várias de uma vez)."}
         </p>
 
         <div className="acoes">
@@ -143,24 +204,15 @@ export default function EstoquePorFoto() {
 
       {linhas.map((linha, i) => {
         const item = propostos[i];
-        if (!item.produto) {
-          return (
-            <section className="cartao" key={i}>
-              <h2 className="titulo-cartao">
-                {item.descricaoDetectada}
-                <span className="sub"> · não está no catálogo, ignorado</span>
-              </h2>
-            </section>
-          );
-        }
         return (
           <section className="cartao" key={i}>
             <h2 className="titulo-cartao">
-              {item.produto.nome}
+              {item.produto ? item.produto.nome : item.descricaoDetectada}
               <span className="sub">
                 {" "}
-                · vistos na foto: ~{item.quantidadeEstimada} {item.unidade} · estoque atual:{" "}
-                {item.produto.estoqueAtual}
+                · vistos na foto: ~{item.quantidadeEstimada} {item.unidade}
+                {item.produto && ` · estoque atual: ${item.produto.estoqueAtual}`}
+                {!item.produto && " · não cadastrado ainda"}
               </span>
             </h2>
 
@@ -171,17 +223,79 @@ export default function EstoquePorFoto() {
                   checked={linha.incluir}
                   onChange={(e) => mudarLinha(i, "incluir", e.target.checked)}
                 />{" "}
-                Atualizar estoque deste produto
+                {item.produto ? "Atualizar estoque deste produto" : "Incluir este produto novo"}
               </label>
 
-              <label className="rotulo">
-                Novo estoque
-                <input
-                  value={linha.novoEstoque}
-                  onChange={(e) => mudarLinha(i, "novoEstoque", e.target.value)}
-                  inputMode="decimal"
-                />
-              </label>
+              {item.produto ? (
+                <label className="rotulo">
+                  Novo estoque
+                  <input
+                    value={linha.novoEstoque}
+                    onChange={(e) => mudarLinha(i, "novoEstoque", e.target.value)}
+                    inputMode="decimal"
+                  />
+                </label>
+              ) : (
+                <>
+                  <label className="rotulo largo">
+                    Nome do produto
+                    <input
+                      value={linha.nome}
+                      onChange={(e) => mudarLinha(i, "nome", e.target.value)}
+                    />
+                  </label>
+
+                  <CampoVoz
+                    rotulo="Preço de venda"
+                    campo={`preco-${i}`}
+                    valor={linha.preco}
+                    aoMudar={(v) => mudarLinha(i, "preco", mascararMoeda(v))}
+                    placeholder="0,00"
+                    moeda
+                    ouvindo={ouvindoCampo === `preco-${i}`}
+                    temVoz={disponivel}
+                    aoOuvir={ouvir}
+                    aoParar={parar}
+                  />
+
+                  <label className="rotulo">
+                    Estoque inicial
+                    <input
+                      value={linha.estoque}
+                      onChange={(e) => mudarLinha(i, "estoque", e.target.value)}
+                      inputMode="decimal"
+                    />
+                  </label>
+
+                  <label className="rotulo">
+                    Vendido por
+                    <select
+                      value={linha.tipoVenda}
+                      onChange={(e) => mudarLinha(i, "tipoVenda", e.target.value)}
+                    >
+                      {TIPOS_VENDA.map((t) => (
+                        <option key={t.valor} value={t.valor}>
+                          {t.rotulo}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="rotulo">
+                    Embalagem
+                    <select
+                      value={linha.unidade}
+                      onChange={(e) => mudarLinha(i, "unidade", e.target.value)}
+                    >
+                      {EMBALAGENS.map((e) => (
+                        <option key={e.valor} value={e.valor}>
+                          {e.rotulo}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
             </div>
           </section>
         );
@@ -190,7 +304,7 @@ export default function EstoquePorFoto() {
       {linhas.length > 0 && (
         <div className="acoes">
           <button className="botao primario" onClick={salvar} disabled={salvando}>
-            {salvando ? "Salvando…" : "Confirmar e salvar estoque"}
+            {salvando ? "Salvando…" : "Confirmar e salvar"}
           </button>
         </div>
       )}
