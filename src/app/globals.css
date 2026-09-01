@@ -260,6 +260,68 @@ html[data-fonte="grande"] { zoom: 1.5; }
   white-space: nowrap;
 }
 
+/* ---- grid de produtos (tela de Produtos) ---- */
+.grade-produtos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.card-produto {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  grid-template-areas: "foto corpo" "acoes acoes";
+  gap: 12px;
+  background: var(--verde-superficie);
+  border: 1px solid var(--verde-linha);
+  border-radius: 12px;
+  padding: 14px;
+}
+.card-produto-foto {
+  grid-area: foto;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  border: 1px solid var(--verde-linha);
+  background: var(--verde-fundo);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.card-produto-foto img { width: 100%; height: 100%; object-fit: cover; }
+.card-produto-foto .sem-foto { font-size: 22px; opacity: 0.4; }
+.card-produto-corpo { grid-area: corpo; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.card-produto-nome { font-size: 15px; font-weight: 700; }
+.card-produto-corpo .sub { font-size: 12px; color: var(--creme-fraco); }
+.card-produto-valores { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 2px; }
+.card-produto-valores .preco {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--ambar);
+}
+.card-produto-valores .custo {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  color: var(--creme-fraco);
+}
+.estoque-cel {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--verde-linha);
+  color: var(--creme);
+}
+.estoque-cel[data-critico="true"] {
+  background: rgba(226, 73, 47, 0.18);
+  border: 1px solid var(--tomate);
+  color: var(--tomate);
+}
+.card-produto-acoes { grid-area: acoes; display: flex; gap: 8px; }
+.card-produto-acoes .botao.mini { flex: 1; text-align: center; }
+
 .vazio {
   border: 1px dashed var(--verde-linha);
   border-radius: var(--raio);

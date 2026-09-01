@@ -9,6 +9,16 @@ import { useVoz } from "@/lib/useVoz";
 import { EMBALAGENS, TIPOS_VENDA, rotuloEmbalagem, sufixo } from "@/lib/tipos";
 import { capitalizar, numeroFalado, opcaoFalada } from "@/lib/voz";
 import { moedaParaNumero, paraMoeda } from "@/lib/moeda";
+import { comprimirParaDataURL } from "@/lib/imagemCliente";
+
+/** Limite geral usado quando o produto não tem aviso próprio configurado. */
+const LIMIAR_PADRAO = 3;
+
+function estoqueCritico(p: Produto): boolean {
+  const est = Number(p.estoque);
+  const limite = p.estoque_minimo != null ? Number(p.estoque_minimo) : LIMIAR_PADRAO;
+  return Number.isFinite(est) && est <= limite;
+}
 
 type Produto = {
   id: number;
@@ -65,6 +75,9 @@ function ProdutosConteudo() {
   const [filtro, setFiltro] = useState("");
   const [form, setForm] = useState<Formulario>(VAZIO);
   const [editandoId, setEditandoId] = useState<number | null>(null);
+  const [incluindo, setIncluindo] = useState(false);
+  const [lendoFoto, setLendoFoto] = useState(false);
+  const fotoNovoInput = useRef<HTMLInputElement>(null);
   // foto: preview é o que aparece na tela; fotoNova só é enviada quando muda
   // (null = mantém a atual, "" = remove, "data:..." = grava a nova)
   const [fotoPreview, setFotoPreview] = useState("");
@@ -177,6 +190,7 @@ function ProdutosConteudo() {
 
   function limpar() {
     setEditandoId(null);
+    setIncluindo(false);
     setForm(VAZIO);
     setFotoPreview("");
     setFotoNova(null);
@@ -186,6 +200,64 @@ function ProdutosConteudo() {
     limpar();
     setAviso("");
     setErro(false);
+  }
+
+  /** Abre o formulário em branco pra um produto novo. */
+  function novoProduto() {
+    setEditandoId(null);
+    setForm(VAZIO);
+    setFotoPreview("");
+    setFotoNova(null);
+    setAviso("");
+    setErro(false);
+    setIncluindo(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /** "Novo produto por foto": tira a foto, tenta o nome pela IA e abre o
+   *  formulário já preenchido pro lojista completar preço e o resto. */
+  async function novoPorFoto(arquivo: File | undefined) {
+    if (!arquivo) return;
+    setLendoFoto(true);
+    setErro(false);
+    setAviso("");
+    let dataUrl = "";
+    try {
+      dataUrl = await comprimirParaDataURL(arquivo);
+    } catch {
+      setErro(true);
+      setAviso("Não consegui usar essa foto. Tente outra.");
+      setLendoFoto(false);
+      if (fotoNovoInput.current) fotoNovoInput.current.value = "";
+      return;
+    }
+
+    setEditandoId(null);
+    setForm(VAZIO);
+    setFotoNova(dataUrl);
+    setFotoPreview(dataUrl);
+    setIncluindo(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    try {
+      const r = await fetch("/api/produtos/identificar-foto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ foto: dataUrl }),
+      });
+      const d = await r.json();
+      if (r.ok && typeof d.nome === "string" && d.nome.trim()) {
+        setForm((f) => ({ ...f, nome: d.nome.trim() }));
+        setAviso("Nome sugerido pela foto — confira e informe o preço.");
+      } else {
+        setAviso("Não consegui ler o nome pela foto; digite e complete os dados.");
+      }
+    } catch {
+      setAviso("Foto anexada. Digite o nome e complete os dados.");
+    } finally {
+      setLendoFoto(false);
+      if (fotoNovoInput.current) fotoNovoInput.current.value = "";
+    }
   }
 
   async function salvar() {
@@ -257,18 +329,42 @@ function ProdutosConteudo() {
   const lucro = venda - compra;
   const margem = temMargem ? (lucro / compra) * 100 : 0;
 
+  const formAberto = incluindo || editandoId !== null;
+
   return (
     <main className="tela">
       <header className="marca">
         Produtos <span>•</span> {itens.length} cadastrados
       </header>
 
-      <div className="acoes">
-        <Link href="/produtos/estoque-foto" className="botao neutro">
-          📷 Atualizar estoque por foto
-        </Link>
-      </div>
+      {!formAberto && (
+        <div className="acoes acoes-produtos">
+          <button type="button" className="botao primario" onClick={novoProduto}>
+            + Novo produto
+          </button>
+          <button
+            type="button"
+            className="botao neutro"
+            onClick={() => fotoNovoInput.current?.click()}
+            disabled={lendoFoto}
+          >
+            {lendoFoto ? "Lendo a foto…" : "📷 Novo produto por foto"}
+          </button>
+          <Link href="/produtos/estoque-foto" className="botao neutro">
+            📦 Atualizar estoque por foto
+          </Link>
+          <input
+            ref={fotoNovoInput}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            hidden
+            onChange={(e) => novoPorFoto(e.target.files?.[0])}
+          />
+        </div>
+      )}
 
+      {formAberto && (
       <section className="cartao" data-editando={editandoId !== null}>
         <h2 className="titulo-cartao">
           {editandoId ? "Alterar produto" : "Incluir produto"}
@@ -374,86 +470,109 @@ function ProdutosConteudo() {
           <button className="botao primario" onClick={salvar} disabled={salvando}>
             {salvando ? "Salvando…" : editandoId ? "Salvar alteração" : "Incluir produto"}
           </button>
-          {editandoId && (
-            <button className="botao neutro" onClick={cancelar} disabled={salvando}>
-              Cancelar
-            </button>
-          )}
+          <button className="botao neutro" onClick={cancelar} disabled={salvando}>
+            Cancelar
+          </button>
         </div>
 
         <p className="dica" data-erro={erro} role="status" aria-live="polite">
           {aviso}
         </p>
       </section>
+      )}
 
-      <div className="campo simples">
-        <input
-          value={filtro}
-          onChange={(e) => setFiltro(e.target.value)}
-          placeholder="Filtrar a lista"
-          aria-label="Filtrar produtos"
-          autoComplete="off"
-        />
-        <button
-          type="button"
-          className="mic-campo"
-          data-ouvindo={ouvindoCampo === "filtro"}
-          disabled={!disponivel}
-          onClick={() => ouvir("filtro")}
-          aria-label="Falar o filtro"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
-            <path d="M5 11a7 7 0 0 0 14 0M12 18v4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
+      {!formAberto && (
+        <>
+          <div className="campo simples">
+            <input
+              value={filtro}
+              onChange={(e) => setFiltro(e.target.value)}
+              placeholder="Filtrar por nome do produto"
+              aria-label="Filtrar produtos"
+              autoComplete="off"
+            />
+            <button
+              type="button"
+              className="mic-campo"
+              data-ouvindo={ouvindoCampo === "filtro"}
+              disabled={!disponivel}
+              onClick={() => ouvir("filtro")}
+              aria-label="Falar o filtro"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
+                <path d="M5 11a7 7 0 0 0 14 0M12 18v4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
 
-      {carregando ? (
-        <p className="vazio">Carregando produtos…</p>
-      ) : itens.length === 0 ? (
-        <p className="vazio">Nenhum produto com esse filtro.</p>
-      ) : (
-        <ul className="lista">
-          {itens.map((p) => {
-            const c = Number(p.preco_compra);
-            const v = Number(p.preco);
-            const m = c > 0 ? ((v - c) / c) * 100 : null;
-            return (
-              <li key={p.id}>
-                {p.tem_foto && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img className="miniatura-produto" src={`/api/produtos/${p.id}/foto`} alt="" />
-                )}
-                <span className="rotulo-item">
-                  {p.nome}
-                  <span className="sub">
-                    {[p.categoria, rotuloEmbalagem(p.unidade), `${p.estoque} em estoque`]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                </span>
-                <span className="valores">
-                  <span className="preco">
-                    R$ {moeda.format(v)}/{sufixo(p.tipo_venda)}
-                  </span>
-                  <span className="custo">
-                    custo R$ {moeda.format(c)}
-                    {m !== null && ` · ${m.toFixed(0)}%`}
-                  </span>
-                </span>
-                <span className="botoes-linha">
-                  <button className="botao mini" onClick={() => editar(p)}>
-                    Alterar
-                  </button>
-                  <button className="botao mini perigo" onClick={() => excluir(p)}>
-                    Excluir
-                  </button>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+          {aviso && (
+            <p className="dica" data-erro={erro} role="status" aria-live="polite">
+              {aviso}
+            </p>
+          )}
+
+          {carregando ? (
+            <p className="vazio">Carregando produtos…</p>
+          ) : itens.length === 0 ? (
+            <p className="vazio">
+              {filtro ? "Nenhum produto com esse filtro." : "Nenhum produto cadastrado ainda."}
+            </p>
+          ) : (
+            <div className="grade-produtos">
+              {itens.map((p) => {
+                const c = Number(p.preco_compra);
+                const v = Number(p.preco);
+                const m = c > 0 ? ((v - c) / c) * 100 : null;
+                const critico = estoqueCritico(p);
+                return (
+                  <article className="card-produto" key={p.id}>
+                    <div className="card-produto-foto">
+                      {p.tem_foto ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={`/api/produtos/${p.id}/foto`} alt={p.nome} />
+                      ) : (
+                        <span className="sem-foto" aria-hidden="true">
+                          📷
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="card-produto-corpo">
+                      <strong className="card-produto-nome">{p.nome}</strong>
+                      <span className="sub">
+                        {[p.categoria, rotuloEmbalagem(p.unidade)].filter(Boolean).join(" · ")}
+                      </span>
+
+                      <div className="card-produto-valores">
+                        <span className="preco">
+                          R$ {moeda.format(v)}/{sufixo(p.tipo_venda)}
+                        </span>
+                        <span className="custo">
+                          custo R$ {moeda.format(c)}
+                          {m !== null && ` · ${m.toFixed(0)}%`}
+                        </span>
+                      </div>
+
+                      <span className="estoque-cel" data-critico={critico}>
+                        {p.estoque} em estoque{critico ? " · repor" : ""}
+                      </span>
+                    </div>
+
+                    <div className="card-produto-acoes">
+                      <button className="botao mini" onClick={() => editar(p)}>
+                        Editar
+                      </button>
+                      <button className="botao mini perigo" onClick={() => excluir(p)}>
+                        Excluir
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
     </main>
   );

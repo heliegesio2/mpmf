@@ -149,6 +149,17 @@ voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen; the con
 line with no price rather than defaulting it. Created products get `preco_compra = 0` (unknown from a shelf
 photo) — expect the margin display on Produtos to show 100% until someone corrects it from a real invoice.
 
+### Produtos screen (`/produtos`)
+
+Lands on the **grid** (`.grade-produtos` / `.card-produto` cards: photo, price, cost/margin, and an
+`.estoque-cel` badge that turns red via `data-critico` when `estoque <= estoque_minimo ?? 3`), a name
+filter, and three actions: **+ Novo produto** (opens the blank form), **📷 Novo produto por foto** (hidden
+file input → `comprimirParaDataURL` → `/api/produtos/identificar-foto` for the name → opens the form
+pre-filled with photo + suggested name), and **📦 Atualizar estoque por foto** (the separate
+`/produtos/estoque-foto` flow above — different thing: that one only bumps `estoque` on existing products).
+The Incluir/Alterar form (all fields incl. the low-stock alert and `<CampoFoto>`) replaces the grid while
+`incluindo || editandoId` is set; `?editar=<id>` from the price-lookup screen opens it straight into edit.
+
 ### Reports dashboard (`/relatorios`)
 
 There is **no sales ledger / stock-movement table** — the app records the current product row
