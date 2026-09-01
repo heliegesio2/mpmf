@@ -79,7 +79,8 @@ own session — see below) and `_next`/static assets. `/admin/*` additionally re
 
 `src/lib/db.ts` holds a single shared `pg.Pool` (cached on `global` in dev to survive HMR reloads) plus all
 query functions, grouped by domain with `// ---------- section ----------` comments: produtos, empresas/usuarios,
-custos, cascos (crate/bottle loans to customers), caixa (daily till closing). There's no query builder or
+custos, cascos (crate/bottle loans to customers), caixa (daily till closing), relatorios (read-only
+aggregations for the `/relatorios` dashboard — see below). There's no query builder or
 ORM — raw parameterized SQL throughout. Follow the existing per-domain grouping when adding new queries
 rather than introducing a new data-access pattern.
 
@@ -131,6 +132,24 @@ in a shelf photo, so that field starts empty and must be filled before saving, b
 voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen; the confirm route rejects a new-product
 line with no price rather than defaulting it. Created products get `preco_compra = 0` (unknown from a shelf
 photo) — expect the margin display on Produtos to show 100% until someone corrects it from a real invoice.
+
+### Reports dashboard (`/relatorios`)
+
+There is **no sales ledger / stock-movement table** — the app records the current product row
+(`estoque`, `preco`, `preco_compra`), manual expense entries (`custo`), daily till closings (`caixa`),
+and crate loans (`casco`), but never an individual sale. Everything on `/relatorios` is therefore a
+read-only derivation over those four tables: KPIs and inventory value from `produto`, spend charts from
+`custo`, and the "revenue" trend line is **approximated by the daily `caixa` closing** because nothing
+finer exists. Keep this in mind before adding any report that needs per-sale data — it would need a new
+table and a write path first.
+
+`GET /api/relatorios` (`export const dynamic = "force-dynamic"`) runs every indicator in one
+`Promise.all` and returns a single JSON blob; the page does one fetch on mount. All query functions live
+in the `// ---------- relatorios ----------` group in `db.ts`, all `SELECT`-only, all cast money/counts to
+`::float8`/`::int` so the client gets plain numbers. Charts (`src/components/Graficos.tsx`) are
+hand-rolled — `Estatistica` (KPI card), `GraficoColunas`, `GraficoBarrasHorizontais`, and an inline-SVG
+`GraficoLinha` with a touch/mouse cursor — no charting library; styling is CSS variables from `globals.css`.
+`GraficoColunas` hides per-bar value labels past 6 categories (falls back to hover `title`).
 
 ### Voice input
 

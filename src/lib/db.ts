@@ -396,3 +396,178 @@ export async function excluirCaixa(empresaId: number, id: number): Promise<boole
   );
   return (r.rowCount ?? 0) > 0;
 }
+
+// ---------- relatorios ----------
+// Tudo aqui e so leitura, calculado em cima de produto/custo/caixa/casco —
+// nao existe tabela de venda/movimento de estoque ainda (ver CLAUDE.md).
+
+export type ResumoEstoque = {
+  produtosAtivos: number;
+  valorVenda: number;
+  valorCompra: number;
+  lucroPotencial: number;
+};
+
+export async function resumoEstoque(empresaId: number): Promise<ResumoEstoque> {
+  const { rows } = await pool.query(
+    `SELECT
+       count(*)::int AS produtos_ativos,
+       coalesce(sum(estoque * preco), 0)::float8 AS valor_venda,
+       coalesce(sum(estoque * preco_compra), 0)::float8 AS valor_compra
+     FROM produto
+     WHERE ativo AND empresa_id = $1`,
+    [empresaId]
+  );
+  const r = rows[0];
+  return {
+    produtosAtivos: r.produtos_ativos,
+    valorVenda: r.valor_venda,
+    valorCompra: r.valor_compra,
+    lucroPotencial: r.valor_venda - r.valor_compra,
+  };
+}
+
+export type CategoriaValor = { categoria: string; quantidade: number; valor: number };
+
+export async function estoquePorCategoria(empresaId: number): Promise<CategoriaValor[]> {
+  const { rows } = await pool.query<CategoriaValor>(
+    `SELECT coalesce(categoria, 'Sem categoria') AS categoria,
+            count(*)::int AS quantidade,
+            coalesce(sum(estoque * preco), 0)::float8 AS valor
+       FROM produto
+      WHERE ativo AND empresa_id = $1
+      GROUP BY categoria
+      ORDER BY valor DESC
+      LIMIT 10`,
+    [empresaId]
+  );
+  return rows;
+}
+
+export type ProdutoAlerta = {
+  id: number;
+  nome: string;
+  preco: number;
+  preco_compra: number;
+  estoque: number;
+};
+
+/** Produtos vendendo abaixo do preco de compra — prejuizo por unidade vendida. */
+export async function produtosNoPrejuizo(empresaId: number, limite = 10): Promise<ProdutoAlerta[]> {
+  const { rows } = await pool.query<ProdutoAlerta>(
+    `SELECT id, nome, preco::float8, preco_compra::float8, estoque::float8 AS estoque
+       FROM produto
+      WHERE ativo AND empresa_id = $1 AND preco_compra > 0 AND preco < preco_compra
+      ORDER BY (preco_compra - preco) DESC
+      LIMIT $2`,
+    [empresaId, limite]
+  );
+  return rows;
+}
+
+export async function produtosEstoqueBaixo(
+  empresaId: number,
+  limiar = 3,
+  limite = 15
+): Promise<ProdutoAlerta[]> {
+  const { rows } = await pool.query<ProdutoAlerta>(
+    `SELECT id, nome, preco::float8, preco_compra::float8, estoque::float8 AS estoque
+       FROM produto
+      WHERE ativo AND empresa_id = $1 AND estoque <= $2
+      ORDER BY estoque ASC, nome
+      LIMIT $3`,
+    [empresaId, limiar, limite]
+  );
+  return rows;
+}
+
+export type BeneficiarioValor = { beneficiario: string; valor: number };
+
+export async function gastosPorBeneficiario(
+  empresaId: number,
+  dias = 90,
+  limite = 8
+): Promise<BeneficiarioValor[]> {
+  const { rows } = await pool.query<BeneficiarioValor>(
+    `SELECT beneficiario, coalesce(sum(valor), 0)::float8 AS valor
+       FROM custo
+      WHERE empresa_id = $1 AND criado_em >= now() - ($2 || ' days')::interval
+      GROUP BY beneficiario
+      ORDER BY valor DESC
+      LIMIT $3`,
+    [empresaId, dias, limite]
+  );
+  return rows;
+}
+
+export type MesValor = { mes: string; valor: number };
+
+export async function gastosPorMes(empresaId: number, meses = 6): Promise<MesValor[]> {
+  const { rows } = await pool.query<MesValor>(
+    `SELECT to_char(date_trunc('month', m), 'YYYY-MM') AS mes,
+            coalesce(sum(c.valor), 0)::float8 AS valor
+       FROM generate_series(
+              date_trunc('month', now()) - ((($2::int) - 1) || ' months')::interval,
+              date_trunc('month', now()),
+              interval '1 month'
+            ) AS m
+       LEFT JOIN custo c
+              ON c.empresa_id = $1
+             AND date_trunc('month', c.criado_em) = date_trunc('month', m)
+      GROUP BY m
+      ORDER BY m`,
+    [empresaId, meses]
+  );
+  return rows;
+}
+
+export async function gastoTotalMesAtual(empresaId: number): Promise<number> {
+  const { rows } = await pool.query(
+    `SELECT coalesce(sum(valor), 0)::float8 AS total
+       FROM custo
+      WHERE empresa_id = $1 AND criado_em >= date_trunc('month', now())`,
+    [empresaId]
+  );
+  return rows[0].total;
+}
+
+export type DiaValor = { data: string; valor: number };
+
+/** Serie diaria do fechamento de caixa — proxy de receita, ja que nao existe log de venda. */
+export async function caixaSerie(empresaId: number, dias = 30): Promise<DiaValor[]> {
+  const { rows } = await pool.query<DiaValor>(
+    `SELECT data::text, valor::float8 AS valor
+       FROM caixa
+      WHERE empresa_id = $1 AND data >= (current_date - ($2 || ' days')::interval)
+      ORDER BY data`,
+    [empresaId, dias]
+  );
+  return rows;
+}
+
+export type ResumoCascos = {
+  emprestados: number;
+  quantidadeTotal: number;
+  maisAntigos: { id: number; responsavel: string; quantidade: number; criado_em: string }[];
+};
+
+export async function resumoCascos(empresaId: number): Promise<ResumoCascos> {
+  const total = await pool.query(
+    `SELECT count(*)::int AS emprestados, coalesce(sum(quantidade), 0)::int AS quantidade_total
+       FROM casco WHERE empresa_id = $1 AND devolvido = false`,
+    [empresaId]
+  );
+  const antigos = await pool.query(
+    `SELECT id, responsavel, quantidade, criado_em::text
+       FROM casco
+      WHERE empresa_id = $1 AND devolvido = false
+      ORDER BY criado_em ASC
+      LIMIT 5`,
+    [empresaId]
+  );
+  return {
+    emprestados: total.rows[0].emprestados,
+    quantidadeTotal: total.rows[0].quantidade_total,
+    maisAntigos: antigos.rows,
+  };
+}
