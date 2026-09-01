@@ -752,6 +752,27 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 
 .botao.grande { width: 100%; padding: 17px 20px; font-size: 17px; }
 
+/* partes do pagamento dividido */
+.parte-pagto {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--verde-linha);
+  border-radius: 10px;
+  background: var(--verde-fundo);
+}
+.parte-linha { display: flex; align-items: center; gap: 10px; }
+.parte-linha .entrada { flex: 1; }
+.parte-forma {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--creme);
+  min-width: 68px;
+}
+.fiado-cliente { display: flex; flex-direction: column; gap: 8px; }
+.fiado-cliente .escolha-lista li button { padding: 12px 14px; }
+
 @media (max-width: 560px) {
   .lista li { flex-wrap: wrap; row-gap: 10px; }
   .contador { order: 3; }

@@ -33,14 +33,29 @@ type ProdutoNovo = {
 
 type Item = ItemCarrinho;
 
-type Pagamento = "dinheiro" | "pix" | "debito" | "credito";
+type Forma = "dinheiro" | "debito" | "credito" | "pix" | "fiado";
 
-const PAGAMENTOS: { valor: Pagamento; rotulo: string }[] = [
+const FORMAS: { valor: Forma; rotulo: string }[] = [
   { valor: "dinheiro", rotulo: "Dinheiro" },
-  { valor: "pix", rotulo: "Pix" },
   { valor: "debito", rotulo: "Débito" },
   { valor: "credito", rotulo: "Crédito" },
+  { valor: "pix", rotulo: "Pix" },
+  { valor: "fiado", rotulo: "Fiado" },
 ];
+
+const rotuloForma = (f: Forma) => FORMAS.find((x) => x.valor === f)?.rotulo ?? f;
+
+/** Uma parte do pagamento — a venda pode ter várias (dividido). */
+type PartePagamento = {
+  id: string;
+  forma: Forma;
+  valor: number;
+  pixOk?: boolean;
+  clienteId?: number;
+  clienteNome?: string;
+};
+
+const arredondar = (n: number) => Math.round(n * 100) / 100;
 
 const num = (v: string) => moedaParaNumero(v);
 
@@ -66,16 +81,20 @@ function FotoProduto({ id }: { id: number }) {
 
 export default function Venda() {
   const { itens, setItens, limpar: limparCarrinho } = useCarrinho();
-  const [pagamento, setPagamento] = useState<Pagamento | null>(null);
+  const [partes, setPartes] = useState<PartePagamento[]>([]);
   const [fechada, setFechada] = useState(false);
+  const [finalizando, setFinalizando] = useState(false);
   const [ouvindo, setOuvindo] = useState(false);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
   const [disponivel, setDisponivel] = useState(false);
   const [digitado, setDigitado] = useState("");
   const [recebido, setRecebido] = useState("");
-  const [pixAprovado, setPixAprovado] = useState(false);
   const [procurando, setProcurando] = useState(false);
+  /** Busca de cliente aberta pra qual parte de fiado (id da parte), ou null. */
+  const [buscaCliente, setBuscaCliente] = useState<string | null>(null);
+  const [termoCliente, setTermoCliente] = useState("");
+  const [clientes, setClientes] = useState<{ id: number; nome: string }[]>([]);
   const [escolha, setEscolha] = useState<Escolha | null>(null);
   const escolhaAberta = useRef(false);
   const [novo, setNovo] = useState<ProdutoNovo | null>(null);
@@ -89,21 +108,36 @@ export default function Venda() {
   const reconhecimento = useRef<any>(null);
   /** Para onde vai o que for falado. */
   const destino = useRef<"itens" | "recebido" | "novoPreco">("itens");
-  // cópia dos itens no momento de fechar, pro comprovante — o carrinho em si
+  // cópia da venda no momento de fechar, pro comprovante — o carrinho em si
   // é esvaziado assim que a venda fecha (comportamento de carrinho de verdade).
-  const [finalizada, setFinalizada] = useState<Item[] | null>(null);
-
-  const itensVenda = fechada && finalizada ? finalizada : itens;
-  const total = itensVenda.reduce(
-    (s, i) => s + Number(i.produto.preco) * i.quantidade,
-    0
+  const [finalizada, setFinalizada] = useState<{ itens: Item[]; partes: PartePagamento[] } | null>(
+    null
   );
 
-  const emDinheiro = pagamento === "dinheiro";
-  const emPix = pagamento === "pix";
+  const itensVenda = fechada && finalizada ? finalizada.itens : itens;
+  const partesVenda = fechada && finalizada ? finalizada.partes : partes;
+  const total = arredondar(
+    itensVenda.reduce((s, i) => s + Number(i.produto.preco) * i.quantidade, 0)
+  );
+
+  const somaPartes = arredondar(partes.reduce((s, p) => s + p.valor, 0));
+  const falta = arredondar(Math.max(0, total - somaPartes));
+  const parteDinheiro = partes.find((p) => p.forma === "dinheiro");
   const valorRecebido = num(recebido || "0");
-  const troco = valorRecebido - total;
-  const faltaDinheiro = emDinheiro && valorRecebido < total;
+  // troco é sobre a parte em dinheiro; sem valor entregue, assume troco exato
+  const trocoBase = parteDinheiro ? (recebido ? valorRecebido : parteDinheiro.valor) : 0;
+  const troco = arredondar(trocoBase - (parteDinheiro?.valor ?? 0));
+  const faltaDinheiro = Boolean(parteDinheiro && recebido && valorRecebido < parteDinheiro.valor);
+
+  const pixPendente = partes.some((p) => p.forma === "pix" && !p.pixOk);
+  const fiadoSemCliente = partes.some((p) => p.forma === "fiado" && !p.clienteId);
+  const podeFinalizar =
+    itens.length > 0 &&
+    partes.length > 0 &&
+    falta <= 0.009 &&
+    !faltaDinheiro &&
+    !pixPendente &&
+    !fiadoSemCliente;
 
   /** Interpreta a frase, procura o produto e joga no carrinho. */
   /** Coloca o produto no carrinho, somando se ele já estiver lá. */
@@ -436,41 +470,108 @@ export default function Venda() {
     setItens((atuais) => atuais.filter((i) => i.chave !== chave));
   }
 
+  // ---------- pagamento dividido ----------
+  useEffect(() => {
+    if (buscaCliente === null) return;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/clientes?q=${encodeURIComponent(termoCliente)}`);
+        const d = await r.json();
+        if (r.ok) setClientes((d.itens ?? []).slice(0, 8).map((c: any) => ({ id: c.id, nome: c.nome })));
+      } catch {
+        /* ignora — o caixa tenta de novo */
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [termoCliente, buscaCliente]);
+
+  function adicionarParte(forma: Forma) {
+    const restante = arredondar(Math.max(0, total - somaPartes));
+    const id = `${forma}-${Date.now().toString(36)}`;
+    setPartes((ps) => [...ps, { id, forma, valor: restante || 0 }]);
+    if (forma === "fiado") setBuscaCliente(id);
+    if (forma === "dinheiro") destino.current = "recebido";
+    setErro(false);
+    setAviso("");
+  }
+
+  function mudarValorParte(id: string, texto: string) {
+    setPartes((ps) => ps.map((p) => (p.id === id ? { ...p, valor: num(texto), pixOk: false } : p)));
+  }
+
+  function removerParte(id: string) {
+    setPartes((ps) => ps.filter((p) => p.id !== id));
+    if (buscaCliente === id) setBuscaCliente(null);
+  }
+
+  function escolherCliente(parteId: string, id: number, nome: string) {
+    setPartes((ps) => ps.map((p) => (p.id === parteId ? { ...p, clienteId: id, clienteNome: nome } : p)));
+    setBuscaCliente(null);
+    setClientes([]);
+    setTermoCliente("");
+  }
+
   function novaVenda() {
     reconhecimento.current?.abort();
     setOuvindo(false);
     limparCarrinho();
     setFinalizada(null);
-    setPagamento(null);
+    setPartes([]);
+    setBuscaCliente(null);
     setFechada(false);
+    setFinalizando(false);
     setAviso("");
     setErro(false);
     setDigitado("");
     setRecebido("");
-    setPixAprovado(false);
     escolhaAberta.current = false;
     setEscolha(null);
     fecharNovo();
   }
 
-  function fechar() {
-    if (!pagamento || itens.length === 0 || faltaDinheiro) return;
-    reconhecimento.current?.abort();
-    setOuvindo(false);
-    setFinalizada(itens);
-    limparCarrinho();
-    setFechada(true);
+  async function fechar() {
+    if (!podeFinalizar || finalizando) return;
+    setFinalizando(true);
+    setErro(false);
+    try {
+      // lança os fiados antes de concluir; se algum falhar, não fecha a venda
+      for (const p of partes.filter((x) => x.forma === "fiado")) {
+        const r = await fetch("/api/fiado", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clienteId: p.clienteId,
+            valor: p.valor,
+            descricao: `Venda — ${itens.length} ${itens.length === 1 ? "item" : "itens"}`,
+          }),
+        });
+        const d = await r.json();
+        if (!r.ok) {
+          throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — ") || "Falha ao lançar o fiado.");
+        }
+      }
+      reconhecimento.current?.abort();
+      setOuvindo(false);
+      setFinalizada({ itens: [...itens], partes: [...partes] });
+      limparCarrinho();
+      setFechada(true);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível finalizar.");
+    } finally {
+      setFinalizando(false);
+    }
   }
 
   // ---------- venda finalizada ----------
   if (fechada) {
-    const rotulo = PAGAMENTOS.find((p) => p.valor === pagamento)?.rotulo;
+    const formas = partesVenda.map((p) => rotuloForma(p.forma)).join(" + ");
     return (
       <main className="tela">
         <section className="etiqueta">
           <h1 className="nome">Venda concluída</h1>
           <p className="meta">
-            {itensVenda.length} {itensVenda.length === 1 ? "item" : "itens"} · {rotulo}
+            {itensVenda.length} {itensVenda.length === 1 ? "item" : "itens"} · {formas}
           </p>
           <div className="valor">
             <span className="cifrao">R$</span>
@@ -496,16 +597,23 @@ export default function Venda() {
           ))}
         </ul>
 
-        {emDinheiro && (
+        {partesVenda.length > 0 && (
           <section className="fechamento">
-            <div className="linha-troco">
-              <span>Recebido</span>
-              <strong>R$ {moeda.format(valorRecebido)}</strong>
-            </div>
-            <div className="linha-troco destaque">
-              <span>Troco</span>
-              <strong>R$ {moeda.format(Math.max(0, troco))}</strong>
-            </div>
+            {partesVenda.map((p) => (
+              <div className="linha-troco" key={p.id}>
+                <span>
+                  {rotuloForma(p.forma)}
+                  {p.forma === "fiado" && p.clienteNome ? ` — ${p.clienteNome}` : ""}
+                </span>
+                <strong>R$ {moeda.format(p.valor)}</strong>
+              </div>
+            ))}
+            {troco > 0 && (
+              <div className="linha-troco destaque">
+                <span>Troco</span>
+                <strong>R$ {moeda.format(troco)}</strong>
+              </div>
+            )}
           </section>
         )}
 
@@ -828,84 +936,162 @@ export default function Venda() {
             <strong>R$ {moeda.format(total)}</strong>
           </div>
 
-          <p className="rotulo-pagamento">Forma de pagamento</p>
+          <p className="rotulo-pagamento">
+            {partes.length === 0 ? "Forma de pagamento" : "Adicionar outra forma (dividir)"}
+          </p>
           <div className="pagamentos">
-            {PAGAMENTOS.map((p) => (
+            {FORMAS.map((f) => (
               <button
-                key={p.valor}
+                key={f.valor}
                 className="botao pagamento"
-                data-escolhido={pagamento === p.valor}
-                onClick={() => {
-                  setPagamento(p.valor);
-                  setPixAprovado(false);
-                }}
+                onClick={() => adicionarParte(f.valor)}
               >
-                {p.rotulo}
+                {f.rotulo}
               </button>
             ))}
           </div>
 
-          {emPix && (
-            <PainelPix
-              valor={total}
-              txid={txid}
-              confirmado={pixAprovado}
-              aoConfirmar={() => setPixAprovado(true)}
-            />
-          )}
-
-          {emDinheiro && (
-            <div className="troco">
-              <label className="rotulo">
-                Valor entregue
-                <span
-                  className="entrada"
-                  data-ouvindo={ouvindo && destino.current === "recebido"}
-                  data-moeda="true"
-                >
+          {partes.map((p) => (
+            <div className="parte-pagto" key={p.id}>
+              <div className="parte-linha">
+                <span className="parte-forma">{rotuloForma(p.forma)}</span>
+                <span className="entrada" data-moeda="true">
                   <span className="prefixo">R$</span>
                   <input
-                    value={recebido}
+                    value={p.valor ? p.valor.toFixed(2).replace(".", ",") : ""}
                     inputMode="decimal"
                     placeholder="0,00"
-                    onChange={(e) => {
-                      if (ouvindo) desligarMicrofone();
-                      setRecebido(mascararMoeda(e.target.value));
-                    }}
+                    onChange={(e) => mudarValorParte(p.id, mascararMoeda(e.target.value))}
                   />
-                  <button
-                    type="button"
-                    className="mic-campo"
-                    data-ouvindo={ouvindo && destino.current === "recebido"}
-                    disabled={!disponivel}
-                    onClick={() =>
-                      ouvindo && destino.current === "recebido"
-                        ? desligarMicrofone()
-                        : ligarMicrofone("recebido")
-                    }
-                    aria-label="Falar o valor entregue"
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                      <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
-                      <path d="M5 11a7 7 0 0 0 14 0M12 18v4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-                    </svg>
-                  </button>
                 </span>
-              </label>
-
-              <div className="resultado-troco" data-falta={faltaDinheiro}>
-                {faltaDinheiro ? (
-                  <>
-                    <span>Falta</span>
-                    <strong>R$ {moeda.format(total - valorRecebido)}</strong>
-                  </>
-                ) : (
-                  <>
-                    <span>Troco</span>
-                    <strong>R$ {moeda.format(Math.max(0, troco))}</strong>
-                  </>
-                )}
+                <button
+                  type="button"
+                  className="botao mini perigo"
+                  onClick={() => removerParte(p.id)}
+                  aria-label={`Tirar ${rotuloForma(p.forma)}`}
+                >
+                  Tirar
+                </button>
               </div>
+
+              {p.forma === "pix" && p.valor > 0 && (
+                <PainelPix
+                  valor={p.valor}
+                  txid={`${txid}-${p.id}`}
+                  confirmado={Boolean(p.pixOk)}
+                  aoConfirmar={() =>
+                    setPartes((ps) => ps.map((x) => (x.id === p.id ? { ...x, pixOk: true } : x)))
+                  }
+                />
+              )}
+
+              {p.forma === "dinheiro" && (
+                <label className="rotulo">
+                  Valor entregue
+                  <span
+                    className="entrada"
+                    data-ouvindo={ouvindo && destino.current === "recebido"}
+                    data-moeda="true"
+                  >
+                    <span className="prefixo">R$</span>
+                    <input
+                      value={recebido}
+                      inputMode="decimal"
+                      placeholder={p.valor.toFixed(2).replace(".", ",")}
+                      onChange={(e) => {
+                        if (ouvindo) desligarMicrofone();
+                        setRecebido(mascararMoeda(e.target.value));
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="mic-campo"
+                      data-ouvindo={ouvindo && destino.current === "recebido"}
+                      disabled={!disponivel}
+                      onClick={() =>
+                        ouvindo && destino.current === "recebido"
+                          ? desligarMicrofone()
+                          : ligarMicrofone("recebido")
+                      }
+                      aria-label="Falar o valor entregue"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
+                        <path d="M5 11a7 7 0 0 0 14 0M12 18v4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                      </svg>
+                    </button>
+                  </span>
+                </label>
+              )}
+
+              {p.forma === "fiado" && (
+                <div className="fiado-cliente">
+                  {p.clienteNome && buscaCliente !== p.id ? (
+                    <p className="parte-forma">
+                      Cliente: <strong>{p.clienteNome}</strong>{" "}
+                      <button
+                        type="button"
+                        className="botao mini"
+                        onClick={() => setBuscaCliente(p.id)}
+                      >
+                        Trocar
+                      </button>
+                    </p>
+                  ) : (
+                    <>
+                      <div className="campo simples">
+                        <input
+                          value={termoCliente}
+                          onChange={(e) => setTermoCliente(e.target.value)}
+                          placeholder="Buscar cliente por nome"
+                          autoComplete="off"
+                          autoFocus
+                        />
+                      </div>
+                      <ul className="escolha-lista">
+                        {clientes.map((c) => (
+                          <li key={c.id}>
+                            <button type="button" onClick={() => escolherCliente(p.id, c.id, c.nome)}>
+                              <span className="rotulo-item">{c.nome}</span>
+                            </button>
+                          </li>
+                        ))}
+                        {clientes.length === 0 && (
+                          <li className="vazio" style={{ padding: 12 }}>
+                            Nenhum cliente. Cadastre em “Clientes”.
+                          </li>
+                        )}
+                      </ul>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {partes.length > 0 && (
+            <div className="resultado-troco" data-falta={falta > 0.009 || faltaDinheiro}>
+              {faltaDinheiro ? (
+                <>
+                  <span>Falta em dinheiro</span>
+                  <strong>R$ {moeda.format((parteDinheiro?.valor ?? 0) - valorRecebido)}</strong>
+                </>
+              ) : falta > 0.009 ? (
+                <>
+                  <span>Falta</span>
+                  <strong>R$ {moeda.format(falta)}</strong>
+                </>
+              ) : troco > 0 ? (
+                <>
+                  <span>Troco</span>
+                  <strong>R$ {moeda.format(troco)}</strong>
+                </>
+              ) : (
+                <>
+                  <span>Pago</span>
+                  <strong>R$ {moeda.format(somaPartes)}</strong>
+                </>
+              )}
             </div>
           )}
 
@@ -913,15 +1099,21 @@ export default function Venda() {
             <button
               className="botao primario grande"
               onClick={fechar}
-              disabled={!pagamento || faltaDinheiro}
+              disabled={!podeFinalizar || finalizando}
             >
-              {!pagamento
-                ? "Escolha o pagamento"
-                : faltaDinheiro
-                  ? "Valor entregue é menor que o total"
-                  : emPix && !pixAprovado
-                    ? `Confirmar recebimento — R$ ${moeda.format(total)}`
-                    : `Finalizar — R$ ${moeda.format(total)}`}
+              {finalizando
+                ? "Finalizando…"
+                : partes.length === 0
+                  ? "Escolha o pagamento"
+                  : falta > 0.009
+                    ? `Falta R$ ${moeda.format(falta)}`
+                    : fiadoSemCliente
+                      ? "Escolha o cliente do fiado"
+                      : pixPendente
+                        ? "Confirme o Pix"
+                        : faltaDinheiro
+                          ? "Valor entregue menor que a parte em dinheiro"
+                          : `Finalizar — R$ ${moeda.format(total)}`}
             </button>
             <button className="botao neutro" onClick={novaVenda}>
               Cancelar venda
