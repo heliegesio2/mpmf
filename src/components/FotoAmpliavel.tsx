@@ -46,7 +46,7 @@ export default function FotoAmpliavel({ src, alt, className }: Props) {
           onClick={() => setAberta(false)}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={src} alt={alt} />
+          <img className="foto-overlay-img" src={src} alt={alt} />
         </div>
       )}
     </>

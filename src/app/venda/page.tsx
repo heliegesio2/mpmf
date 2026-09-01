@@ -7,6 +7,7 @@ import { capitalizar, numeroFalado } from "@/lib/voz";
 import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
 import PainelPix from "@/components/PainelPix";
 import CampoFoto from "@/components/CampoFoto";
+import FotoAmpliavel from "@/components/FotoAmpliavel";
 import { useCarrinho, type ItemCarrinho, type ProdutoCarrinho } from "@/lib/carrinho";
 
 type Produto = ProdutoCarrinho;
@@ -64,19 +65,9 @@ const moeda = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 2,
 });
 
-/** Miniatura do produto; some sozinha se ele não tiver foto (404). */
+/** Miniatura do produto; some sozinha se ele não tiver foto (404), amplia ao clicar. */
 function FotoProduto({ id }: { id: number }) {
-  const [falhou, setFalhou] = useState(false);
-  if (falhou) return null;
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      className="miniatura-produto"
-      src={`/api/produtos/${id}/foto`}
-      alt=""
-      onError={() => setFalhou(true)}
-    />
-  );
+  return <FotoAmpliavel className="miniatura-produto" src={`/api/produtos/${id}/foto`} alt="" />;
 }
 
 export default function Venda() {

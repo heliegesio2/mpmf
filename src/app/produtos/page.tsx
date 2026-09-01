@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useVoz } from "@/lib/useVoz";
 import { rotuloEmbalagem, sufixo } from "@/lib/tipos";
 import { comprimirParaDataURL } from "@/lib/imagemCliente";
+import FotoAmpliavel from "@/components/FotoAmpliavel";
 
 type Produto = {
   id: number;
@@ -211,8 +212,7 @@ export default function Produtos() {
               <article className="card-produto" key={p.id}>
                 <div className="card-produto-foto">
                   {p.tem_foto ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={`/api/produtos/${p.id}/foto`} alt={p.nome} />
+                    <FotoAmpliavel src={`/api/produtos/${p.id}/foto`} alt={p.nome} />
                   ) : (
                     <span className="sem-foto" aria-hidden="true">
                       📷
