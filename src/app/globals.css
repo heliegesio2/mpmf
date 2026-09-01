@@ -345,14 +345,19 @@ html[data-fonte="grande"] { zoom: 1.5; }
   position: fixed;
   inset: 0 auto 0 0;
   width: 232px;
-  padding: 26px 18px;
+  padding: 22px 16px;
   background: #0a1712;
   border-right: 1px solid var(--verde-linha);
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 16px;
   z-index: 20;
 }
+.menu-marca,
+.menu-rodape,
+.fechar-menu { flex: none; }
+/* a lista rola quando tem itens demais pra caber; o rodapé fica fixo embaixo */
+.menu ul { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
 
 .menu-marca {
   font-size: 17px;
@@ -370,17 +375,17 @@ html[data-fonte="grande"] { zoom: 1.5; }
   margin-top: 4px;
 }
 
-.menu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.menu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; align-content: start; }
 .menu a {
   display: block;
-  padding: 12px 14px;
-  border-radius: 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
   text-decoration: none;
   color: var(--creme);
   border: 1px solid transparent;
 }
-.menu a strong { display: block; font-size: 15px; font-weight: 700; }
-.menu a span { display: block; font-size: 12px; color: var(--creme-fraco); margin-top: 2px; }
+.menu a strong { display: block; font-size: 14px; font-weight: 700; }
+.menu a span { display: block; font-size: 11px; color: var(--creme-fraco); margin-top: 1px; }
 .menu a:hover { background: var(--verde-superficie); }
 .menu a[data-ativo="true"] {
   background: var(--verde-superficie);

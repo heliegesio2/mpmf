@@ -45,6 +45,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ erro: "A foto ficou grande demais. Tente de novo." }, { status: 400 });
     }
 
+    const notaBruta = c.nota == null || c.nota === "" ? null : Number(c.nota);
+    if (notaBruta !== null && (!Number.isInteger(notaBruta) || notaBruta < 1 || notaBruta > 10)) {
+      return NextResponse.json({ erro: "A nota deve ser de 1 a 10." }, { status: 400 });
+    }
+
     const item = await criarCliente(empresaId, {
       nome,
       cpf: c.cpf ? String(c.cpf).trim() || null : null,
@@ -52,6 +57,7 @@ export async function POST(request: Request) {
       whatsapp: Boolean(c.whatsapp),
       endereco,
       cep: c.cep ? String(c.cep).trim() || null : null,
+      nota: notaBruta,
       foto,
     });
     return NextResponse.json({ item }, { status: 201 });

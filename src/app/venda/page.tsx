@@ -8,6 +8,7 @@ import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
 import PainelPix from "@/components/PainelPix";
 import CampoFoto from "@/components/CampoFoto";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
+import FormularioCliente from "@/components/FormularioCliente";
 import { useCarrinho, type ItemCarrinho, type ProdutoCarrinho } from "@/lib/carrinho";
 
 type Produto = ProdutoCarrinho;
@@ -86,6 +87,8 @@ export default function Venda() {
   const [buscaCliente, setBuscaCliente] = useState<string | null>(null);
   const [termoCliente, setTermoCliente] = useState("");
   const [clientes, setClientes] = useState<{ id: number; nome: string }[]>([]);
+  /** Parte de fiado que está com o cadastro de cliente aberto, ou null. */
+  const [cadastrandoCliente, setCadastrandoCliente] = useState<string | null>(null);
   const [escolha, setEscolha] = useState<Escolha | null>(null);
   const escolhaAberta = useRef(false);
   const [novo, setNovo] = useState<ProdutoNovo | null>(null);
@@ -498,6 +501,7 @@ export default function Venda() {
   function escolherCliente(parteId: string, id: number, nome: string) {
     setPartes((ps) => ps.map((p) => (p.id === parteId ? { ...p, clienteId: id, clienteNome: nome } : p)));
     setBuscaCliente(null);
+    setCadastrandoCliente(null);
     setClientes([]);
     setTermoCliente("");
   }
@@ -509,6 +513,7 @@ export default function Venda() {
     setFinalizada(null);
     setPartes([]);
     setBuscaCliente(null);
+    setCadastrandoCliente(null);
     setFechada(false);
     setFinalizando(false);
     setAviso("");
@@ -1017,7 +1022,12 @@ export default function Venda() {
 
               {p.forma === "fiado" && (
                 <div className="fiado-cliente">
-                  {p.clienteNome && buscaCliente !== p.id ? (
+                  {cadastrandoCliente === p.id ? (
+                    <FormularioCliente
+                      aoSalvar={(c) => escolherCliente(p.id, c.id, c.nome)}
+                      aoCancelar={() => setCadastrandoCliente(null)}
+                    />
+                  ) : p.clienteNome && buscaCliente !== p.id ? (
                     <p className="parte-forma">
                       Cliente: <strong>{p.clienteNome}</strong>{" "}
                       <button
@@ -1047,12 +1057,14 @@ export default function Venda() {
                             </button>
                           </li>
                         ))}
-                        {clientes.length === 0 && (
-                          <li className="vazio" style={{ padding: 12 }}>
-                            Nenhum cliente. Cadastre em “Clientes”.
-                          </li>
-                        )}
                       </ul>
+                      <button
+                        type="button"
+                        className="botao neutro"
+                        onClick={() => setCadastrandoCliente(p.id)}
+                      >
+                        + Cadastrar novo cliente
+                      </button>
                     </>
                   )}
                 </div>

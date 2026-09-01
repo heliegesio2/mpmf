@@ -66,6 +66,8 @@ const MIGRACOES_IDEMPOTENTES = [
      criado_em timestamptz NOT NULL DEFAULT now()
    )`,
   "CREATE INDEX IF NOT EXISTS idx_fiado_empresa ON fiado (empresa_id, pago, criado_em DESC)",
+  "ALTER TABLE cliente ADD COLUMN IF NOT EXISTS nota integer",
+  "CREATE INDEX IF NOT EXISTS idx_cliente_cpf ON cliente ((regexp_replace(coalesce(cpf, ''), '\\D', '', 'g')))",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -530,6 +532,7 @@ export type Cliente = {
   whatsapp: boolean;
   endereco: string;
   cep: string | null;
+  nota: number | null;
   criado_em: string;
   saldo_fiado?: string;
 };
@@ -541,10 +544,43 @@ export type ClienteEntrada = {
   whatsapp: boolean;
   endereco: string;
   cep: string | null;
+  nota: number | null;
   foto: string;
 };
 
-const CAMPOS_CLIENTE = "id, nome, cpf, telefone, whatsapp, endereco, cep, criado_em";
+const CAMPOS_CLIENTE = "id, nome, cpf, telefone, whatsapp, endereco, cep, nota, criado_em";
+
+/** So digitos do CPF. */
+function soDigitos(v: string | null | undefined): string {
+  return String(v ?? "").replace(/\D/g, "");
+}
+
+/**
+ * Reputacao do CPF cruzando TODAS as empresas — media das notas dadas e
+ * quantas lojas ja cadastraram esse cliente. So numeros agregados, sem nome
+ * nem endereco de ninguem. Serve pra decidir fiado.
+ */
+export async function reputacaoPorCpf(
+  cpf: string
+): Promise<{ media: number | null; avaliacoes: number; cadastros: number }> {
+  await garantirSchema();
+  const digitos = soDigitos(cpf);
+  if (digitos.length < 11) return { media: null, avaliacoes: 0, cadastros: 0 };
+  const { rows } = await pool.query<{ media: number | null; avaliacoes: string; cadastros: string }>(
+    `SELECT avg(nota)::float8 AS media,
+            count(nota) AS avaliacoes,
+            count(*) AS cadastros
+       FROM cliente
+      WHERE regexp_replace(coalesce(cpf, ''), '\\D', '', 'g') = $1`,
+    [digitos]
+  );
+  const r = rows[0];
+  return {
+    media: r.media,
+    avaliacoes: Number(r.avaliacoes),
+    cadastros: Number(r.cadastros),
+  };
+}
 
 export async function listarClientes(empresaId: number, termo = ""): Promise<Cliente[]> {
   await garantirSchema();
@@ -554,7 +590,7 @@ export async function listarClientes(empresaId: number, termo = ""): Promise<Cli
            OR regexp_replace(coalesce(c.cpf,''), '\\D', '', 'g') LIKE '%' || regexp_replace($2::text, '\\D', '', 'g') || '%')`
     : "";
   const { rows } = await pool.query<Cliente>(
-    `SELECT c.id, c.nome, c.cpf, c.telefone, c.whatsapp, c.endereco, c.cep, c.criado_em,
+    `SELECT c.id, c.nome, c.cpf, c.telefone, c.whatsapp, c.endereco, c.cep, c.nota, c.criado_em,
             coalesce((SELECT sum(valor) FROM fiado f
                        WHERE f.cliente_id = c.id AND f.pago = false), 0)::float8 AS saldo_fiado
        FROM cliente c
@@ -586,10 +622,10 @@ export async function fotoCliente(empresaId: number, id: number): Promise<string
 export async function criarCliente(empresaId: number, c: ClienteEntrada): Promise<Cliente> {
   await garantirSchema();
   const { rows } = await pool.query<Cliente>(
-    `INSERT INTO cliente (empresa_id, nome, cpf, telefone, whatsapp, endereco, cep, foto)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `INSERT INTO cliente (empresa_id, nome, cpf, telefone, whatsapp, endereco, cep, nota, foto)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING ${CAMPOS_CLIENTE}`,
-    [empresaId, c.nome, c.cpf, c.telefone, c.whatsapp, c.endereco, c.cep, c.foto]
+    [empresaId, c.nome, c.cpf, c.telefone, c.whatsapp, c.endereco, c.cep, c.nota, c.foto]
   );
   return rows[0];
 }
