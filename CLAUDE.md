@@ -89,11 +89,15 @@ a low connection cap that doesn't survive that pattern. The pooler can hand out 
 connection whose `search_path` doesn't match the database's configured default (observed empty even after
 `ALTER DATABASE ... SET search_path`), which breaks every unqualified table reference. `pool.on("connect", ...)`
 forces `SET search_path TO public` on every new physical connection to route around that — don't remove it.
-That same handler also runs the **additive** migrations (`db/08`, `db/09` — `ALTER TABLE produto ADD COLUMN
-IF NOT EXISTS …`) as a separate idempotent query, because the hand-applied migration repeatedly missed the
-Neon branch the deployment actually uses and every product screen 500s without those columns. New
-migrations still go in `db/NN_*.sql`; mirror a pure `ADD COLUMN IF NOT EXISTS` one into `COLUNAS_ADITIVAS`
-too. The `POST/PUT/GET` product routes also return the raw Postgres error in a `detalhe` field on 500.
+
+**Auto-migrate**: `garantirSchema()` runs every statement in `MIGRACOES_IDEMPOTENTES` (the additive
+`ALTER TABLE … ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` from `db/08`–`db/10`) — **one
+`pool.query` per statement** (Neon's pooler chokes on multi-statement), result cached per process, retried
+on failure. Every `db.ts` domain function that touches those tables does `await garantirSchema()` first.
+This exists because the hand-applied migration repeatedly missed the Neon branch the deployment uses and
+every screen 500s without the columns. New migrations still go in `db/NN_*.sql`; mirror a pure
+`ADD COLUMN / CREATE TABLE ... IF NOT EXISTS` one into `MIGRACOES_IDEMPOTENTES` too. The product/empresa/
+client/fiado routes also return the raw Postgres error in a `detalhe` field on 500.
 
 `produto.estoque_minimo` + `estoque_minimo_embalagem` (`db/09_estoque_minimo.sql`) are the per-product
 low-stock alert: `produtosEstoqueBaixo` flags rows where `estoque <= COALESCE(estoque_minimo, <default>)`,
@@ -172,6 +176,22 @@ which shows it. The price-lookup screen's edit pencil links straight to `/produt
 on 500 (surfaced in the UI) — deliberate, so a missing migration on a deployed DB is diagnosable instead
 of a blank "não foi possível salvar".
 
+### Configurações, clientes, fiado (`db/10`)
+
+- `/configuracoes` (client screen, `GET`/`PUT /api/empresa`) — the store edits its **own** row:
+  name, CNPJ (`empresa.documento`), address, hours (`horario`), and the **Pix key** (`pix_chave` /
+  `pix_nome`, added to `empresa`). Only non-super-admins have the `LOJA` menu, so only they see it.
+- `/clientes` (Cascos-style list + inline form) — `cliente` table. **Photo (`foto`, data URL) and
+  `endereco` are NOT NULL / required**; `cpf`, `telefone`, `whatsapp` bool, `cep` optional. Photo served
+  via `GET /api/clientes/:id/foto` (same decode as products). Rows show `saldo_fiado` (subselect over
+  open `fiado`).
+- **Fiado** (`fiado` table: `cliente_id`, `valor`, `descricao`, `pago`) — a payment option on `/venda`.
+  `/contas` ("Contas a receber") groups open debts by client with per-entry "marcar pago" and per-client
+  "quitar tudo". `criarFiado` re-checks `cliente.empresa_id` in the INSERT so a session can't post to
+  another store's client.
+
+Still **no sales ledger** — a split sale persists nothing except its `fiado` parts.
+
 ### Reports dashboard (`/relatorios`)
 
 There is **no sales ledger / stock-movement table** — the app records the current product row
@@ -205,15 +225,22 @@ also fires `/api/produtos/identificar-foto` (vision) to auto-fill the name. Conf
 `/api/produtos` and drops the returned product straight into the cart with the originally-spoken
 quantity. `novoAberto`/`escolhaAberta` refs block further speech while either panel is open.
 
-Cart items show the product photo (`<FotoProduto>` — an `<img>` hitting `/api/produtos/:id/foto` that
-removes itself on the 404 for photoless products, since the `buscar_produto` SQL function doesn't return
-`tem_foto`).
+Cart items show the product photo via `<FotoAmpliavel>` (`src/components/FotoAmpliavel.tsx`) — an `<img>`
+that removes itself on the 404 for photoless products (`buscar_produto` doesn't return `tem_foto`) and
+opens a full-screen `.foto-overlay` on click. Same component is used on the Produtos grid and Clientes.
+
+**Payment is split into parts** — `partes: PartePagamento[]` (`{forma, valor, pixOk?, clienteId?}`),
+`forma` ∈ dinheiro/debito/credito/pix/fiado. Tapping a form button **adds a part** pre-filled with the
+remaining amount; tap another to split. `podeFinalizar` needs `soma(partes) ≥ total`, every pix part
+confirmed (`PainelPix` "Recebi o Pix"), every fiado part with a `clienteId` (inline client search).
+`fechar()` `POST`s `/api/fiado` for each fiado part **before** completing — a failure aborts the sale.
+Nothing else about the sale persists. `finalizada` snapshots `{itens, partes}` for the receipt.
 
 **Cart persistence** — the cart lives in `src/lib/carrinho.tsx` (`CarrinhoProvider` in the root layout,
 `useCarrinho()` hook), mirrored to `localStorage` (`mpmf.carrinho`) so navigating away and back keeps the
-items. It's emptied only on finish (`fechar()` snapshots `finalizada` for the receipt, then clears),
-cancel (`novaVenda()`), or logout (`esquecerCarrinho()` in `MenuLateral`). The top-bar cart button
-(`.atalho-venda`, hidden for a store-less super-admin) shows an item-count badge and links here.
+items. It's emptied only on finish, cancel (`novaVenda()`), or logout (`esquecerCarrinho()` in
+`MenuLateral`). The top-bar cart button (`.atalho-venda`, hidden for a store-less super-admin) shows an
+item-count badge and links here.
 
 ### Voice input
 
