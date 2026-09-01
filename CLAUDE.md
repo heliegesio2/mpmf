@@ -181,10 +181,15 @@ of a blank "não foi possível salvar".
 - `/configuracoes` (client screen, `GET`/`PUT /api/empresa`) — the store edits its **own** row:
   name, CNPJ (`empresa.documento`), address, hours (`horario`), and the **Pix key** (`pix_chave` /
   `pix_nome`, added to `empresa`). Only non-super-admins have the `LOJA` menu, so only they see it.
-- `/clientes` (Cascos-style list + inline form) — `cliente` table. **Photo (`foto`, data URL) and
-  `endereco` are NOT NULL / required**; `cpf`, `telefone`, `whatsapp` bool, `cep` optional. Photo served
-  via `GET /api/clientes/:id/foto` (same decode as products). Rows show `saldo_fiado` (subselect over
-  open `fiado`).
+- `/clientes` — list + `<FormularioCliente>` (shared: also embedded in the `/venda` fiado picker via a
+  "+ Cadastrar novo cliente" button). `cliente` table. **Photo (`foto`, data URL) and `endereco` are
+  NOT NULL / required**; `cpf`, `telefone`, `whatsapp` bool, `cep`, `nota` (1–10, `db/11`) optional.
+  Photo via `GET /api/clientes/:id/foto`. Rows show `saldo_fiado` (subselect over open `fiado`).
+- **Cross-tenant reputation** — `GET /api/clientes/reputacao?cpf=` (`reputacaoPorCpf`) is the one query
+  that deliberately ignores `empresa_id`: it averages `nota` for a CPF across **all** stores so a
+  shopkeeper can gauge a new fiado customer. It returns only aggregates (`media`, `avaliacoes`,
+  `cadastros`) — never a name/address/row from another store. `FormularioCliente` calls it as the CPF is
+  typed.
 - **Fiado** (`fiado` table: `cliente_id`, `valor`, `descricao`, `pago`) — a payment option on `/venda`.
   `/contas` ("Contas a receber") groups open debts by client with per-entry "marcar pago" and per-client
   "quitar tudo". `criarFiado` re-checks `cliente.empresa_id` in the INSERT so a session can't post to
