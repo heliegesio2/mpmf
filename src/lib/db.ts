@@ -20,28 +20,41 @@ export const pool =
 // O pooler da Neon (PgBouncer) pode reaproveitar uma conexao de servidor com
 // search_path desatualizado/vazio; forcar em toda nova conexao fisica evita
 // "relation does not exist" mesmo quando o ALTER DATABASE nao chega a valer.
-//
-// Junto vai um "auto-migrate" das colunas aditivas (db/08, db/09): ADD COLUMN
-// IF NOT EXISTS e idempotente e barato, e roda antes de qualquer query do app
-// nessa conexao. Existe porque a migracao manual em producao ja errou de banco
-// (branch da Neon) mais de uma vez e todas as telas de produto quebram sem
-// essas colunas. Migracoes novas continuam indo em db/NN_*.sql; as que forem
-// so "ADD COLUMN IF NOT EXISTS" podem ser espelhadas aqui.
-// consultas separadas de proposito: se o ALTER falhar (permissao, tabela
-// ausente), nao pode arrastar o SET search_path junto no rollback.
-const COLUNAS_ADITIVAS = `
-  ALTER TABLE produto ADD COLUMN IF NOT EXISTS foto text;
-  ALTER TABLE produto ADD COLUMN IF NOT EXISTS estoque_minimo numeric(12,3);
-  ALTER TABLE produto ADD COLUMN IF NOT EXISTS estoque_minimo_embalagem text;
-`;
 pool.on("connect", (client) => {
   client.query("SET search_path TO public").catch(() => {});
-  client.query(COLUNAS_ADITIVAS).catch((erro) => {
-    console.error("Falha ao garantir colunas aditivas de produto:", erro);
-  });
 });
 
 if (process.env.NODE_ENV !== "production") global._pgPool = pool;
+
+// ---------- auto-migrate das colunas aditivas (db/08, db/09) ----------
+// A migracao manual em producao ja errou de banco (branch da Neon) varias
+// vezes e TODAS as telas de produto quebram sem essas colunas. Cada ALTER vai
+// numa query separada (o pooler da Neon nao lida bem com multi-statement) e o
+// resultado fica cacheado por processo; em caso de falha, tenta de novo na
+// proxima chamada. Migracoes novas continuam em db/NN_*.sql; as que forem so
+// "ADD COLUMN IF NOT EXISTS" mirram nesta lista tambem.
+const COLUNAS_ADITIVAS = [
+  "ALTER TABLE produto ADD COLUMN IF NOT EXISTS foto text",
+  "ALTER TABLE produto ADD COLUMN IF NOT EXISTS estoque_minimo numeric(12,3)",
+  "ALTER TABLE produto ADD COLUMN IF NOT EXISTS estoque_minimo_embalagem text",
+];
+
+let _schema: Promise<void> | null = null;
+
+function garantirSchema(): Promise<void> {
+  if (!_schema) {
+    _schema = (async () => {
+      for (const stmt of COLUNAS_ADITIVAS) await pool.query(stmt);
+    })().catch((erro) => {
+      _schema = null; // permite nova tentativa
+      console.error("auto-migrate de produto falhou:", erro);
+      throw new Error(
+        `auto-migrate falhou: ${erro instanceof Error ? erro.message : String(erro)}`
+      );
+    });
+  }
+  return _schema;
+}
 
 export type Produto = {
   id: number;
@@ -90,6 +103,7 @@ export async function buscarProduto(
   termo: string,
   limite = 8
 ): Promise<Produto[]> {
+  await garantirSchema();
   const { rows } = await pool.query<Produto>(
     "SELECT * FROM buscar_produto($1::bigint, $2::text, $3::int)",
     [empresaId, termo, limite]
@@ -98,6 +112,7 @@ export async function buscarProduto(
 }
 
 export async function produtoPorId(empresaId: number, id: number): Promise<Produto | null> {
+  await garantirSchema();
   const { rows } = await pool.query<Produto>(
     `SELECT ${CAMPOS} FROM produto WHERE id = $1 AND empresa_id = $2`,
     [id, empresaId]
@@ -110,6 +125,7 @@ export async function listarProdutos(
   empresaId: number,
   termo = ""
 ): Promise<Produto[]> {
+  await garantirSchema();
   const t = termo.trim();
   if (!t) {
     const { rows } = await pool.query<Produto>(
@@ -133,6 +149,7 @@ export async function criarProduto(
   empresaId: number,
   p: ProdutoEntrada
 ): Promise<Produto> {
+  await garantirSchema();
   const foto = p.foto ? p.foto : null;
   const { rows } = await pool.query<Produto>(
     `INSERT INTO produto
@@ -154,6 +171,7 @@ export async function atualizarProduto(
   id: number,
   p: ProdutoEntrada
 ): Promise<Produto | null> {
+  await garantirSchema();
   // foto: undefined mantém a atual, "" apaga, string grava a nova
   const foto = p.foto === undefined ? null : p.foto;
   // o empresa_id no WHERE impede alterar produto de outra loja
@@ -185,6 +203,7 @@ export async function atualizarEstoqueProduto(
   id: number,
   novoEstoque: number
 ): Promise<Produto | null> {
+  await garantirSchema();
   const { rows } = await pool.query<Produto>(
     `UPDATE produto SET estoque = $3, alterado_em = now()
       WHERE id = $1 AND empresa_id = $2
@@ -196,6 +215,7 @@ export async function atualizarEstoqueProduto(
 
 /** Data URL da foto do produto, ou null. Fora de CAMPOS por ser pesada. */
 export async function fotoProduto(empresaId: number, id: number): Promise<string | null> {
+  await garantirSchema();
   const { rows } = await pool.query<{ foto: string | null }>(
     "SELECT foto FROM produto WHERE id = $1 AND empresa_id = $2",
     [id, empresaId]
@@ -530,6 +550,7 @@ export async function produtosEstoqueBaixo(
   limiarPadrao = 3,
   limite = 15
 ): Promise<ProdutoAlerta[]> {
+  await garantirSchema();
   const { rows } = await pool.query<ProdutoAlerta>(
     `SELECT id, nome, preco::float8, preco_compra::float8, estoque::float8 AS estoque,
             estoque_minimo::float8 AS estoque_minimo, estoque_minimo_embalagem
