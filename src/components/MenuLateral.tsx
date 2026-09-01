@@ -20,6 +20,9 @@ const LOJA = [
   { href: "/cascos", rotulo: "Cascos", descricao: "Registrar empréstimo de cascos" },
   { href: "/caixa", rotulo: "Caixa", descricao: "Informar o valor final do dia" },
   { href: "/relatorios", rotulo: "Relatórios", descricao: "Gastos, estoque, caixa e alertas" },
+  { href: "/clientes", rotulo: "Clientes", descricao: "Cadastro com foto, para fiado" },
+  { href: "/contas", rotulo: "Contas a receber", descricao: "Fiado em aberto e quitação" },
+  { href: "/configuracoes", rotulo: "Configurações", descricao: "Dados da empresa e chave Pix" },
 ];
 
 const ADMIN = [
