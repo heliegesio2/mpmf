@@ -69,6 +69,16 @@ const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE cliente ADD COLUMN IF NOT EXISTS nota integer",
   "CREATE INDEX IF NOT EXISTS idx_cliente_cpf ON cliente ((regexp_replace(coalesce(cpf, ''), '\\D', '', 'g')))",
   "ALTER TABLE produto ADD COLUMN IF NOT EXISTS preco_embalagem numeric(10,2)",
+  "ALTER TABLE usuario ALTER COLUMN senha_hash DROP NOT NULL",
+  `CREATE TABLE IF NOT EXISTS usuario_identidade (
+     id bigserial PRIMARY KEY,
+     usuario_id bigint NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+     provedor text NOT NULL,
+     provedor_id text NOT NULL,
+     criado_em timestamptz NOT NULL DEFAULT now(),
+     UNIQUE (provedor, provedor_id)
+   )`,
+  "CREATE INDEX IF NOT EXISTS idx_identidade_usuario ON usuario_identidade (usuario_id)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -401,7 +411,7 @@ export type UsuarioLogin = {
   id: number;
   nome: string;
   email: string;
-  senha_hash: string;
+  senha_hash: string | null;
   papel: "super_admin" | "admin" | "operador";
   ativo: boolean;
   empresa_id: number | null;
@@ -409,16 +419,47 @@ export type UsuarioLogin = {
   empresa_situacao: string | null;
 };
 
-export async function usuarioPorEmail(email: string): Promise<UsuarioLogin | null> {
-  const { rows } = await pool.query<UsuarioLogin>(
-    `SELECT u.id, u.nome, u.email, u.senha_hash, u.papel, u.ativo, u.empresa_id,
+const CAMPOS_LOGIN = `u.id, u.nome, u.email, u.senha_hash, u.papel, u.ativo, u.empresa_id,
             e.nome AS empresa_nome, e.situacao AS empresa_situacao
        FROM usuario u
-       LEFT JOIN empresa e ON e.id = u.empresa_id
-      WHERE lower(u.email) = lower($1)`,
+       LEFT JOIN empresa e ON e.id = u.empresa_id`;
+
+export async function usuarioPorEmail(email: string): Promise<UsuarioLogin | null> {
+  const { rows } = await pool.query<UsuarioLogin>(
+    `SELECT ${CAMPOS_LOGIN} WHERE lower(u.email) = lower($1)`,
     [email.trim()]
   );
   return rows[0] ?? null;
+}
+
+// ---------- identidades sociais (Google/Facebook) ----------
+
+export async function usuarioPorIdentidade(
+  provedor: string,
+  provedorId: string
+): Promise<UsuarioLogin | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<UsuarioLogin>(
+    `SELECT ${CAMPOS_LOGIN}
+       JOIN usuario_identidade i ON i.usuario_id = u.id
+      WHERE i.provedor = $1 AND i.provedor_id = $2`,
+    [provedor, provedorId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function vincularIdentidade(
+  usuarioId: number,
+  provedor: string,
+  provedorId: string
+): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    `INSERT INTO usuario_identidade (usuario_id, provedor, provedor_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (provedor, provedor_id) DO NOTHING`,
+    [usuarioId, provedor, provedorId]
+  );
 }
 
 // ---------- custos (gastos) ----------

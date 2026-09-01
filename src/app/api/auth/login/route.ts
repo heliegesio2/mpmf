@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { usuarioPorEmail } from "@/lib/db";
-import { COOKIE_SESSAO, criarToken } from "@/lib/auth";
+import { COOKIE_SESSAO } from "@/lib/auth";
 import { conferirSenha } from "@/lib/senha";
+import { autorizarLogin } from "@/lib/login";
 
 export const dynamic = "force-dynamic";
 
@@ -25,46 +26,31 @@ export async function POST(request: Request) {
 
     if (!usuario) return negar("e-mail nao cadastrado");
     if (!usuario.ativo) return negar("usuario inativo");
+    // conta só de rede social não tem senha
+    if (!usuario.senha_hash) {
+      return NextResponse.json(
+        { erro: "Esta conta entra pelo Google ou Facebook." },
+        { status: 401 }
+      );
+    }
     if (!(await conferirSenha(String(senha), usuario.senha_hash))) return negar("senha incorreta");
 
-    if (usuario.papel !== "super_admin") {
-      if (usuario.empresa_situacao === "pendente") {
-        return NextResponse.json(
-          { erro: "A empresa ainda está aguardando aprovação." },
-          { status: 403 }
-        );
-      }
-      if (usuario.empresa_situacao === "reprovada") {
-        return NextResponse.json(
-          { erro: "O cadastro desta empresa foi reprovado." },
-          { status: 403 }
-        );
-      }
-    }
-
-    const { token, expiraEm } = await criarToken({
-      usuarioId: usuario.id,
-      nome: usuario.nome,
-      papel: usuario.papel,
-      empresaId: usuario.empresa_id,
-      empresaNome: usuario.empresa_nome,
-    });
+    const r = await autorizarLogin(usuario);
+    if (!r.ok) return NextResponse.json({ erro: r.erro }, { status: r.status });
 
     const resposta = NextResponse.json({
-      nome: usuario.nome,
-      papel: usuario.papel,
-      empresaNome: usuario.empresa_nome,
-      destino: usuario.papel === "super_admin" ? "/admin/empresas" : "/",
+      nome: r.nome,
+      papel: r.papel,
+      empresaNome: r.empresaNome,
+      destino: r.destino,
     });
-
-    resposta.cookies.set(COOKIE_SESSAO, token, {
-      httpOnly: true,                                   // o JavaScript da página não lê
+    resposta.cookies.set(COOKIE_SESSAO, r.token, {
+      httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      expires: expiraEm,
+      expires: r.expiraEm,
     });
-
     return resposta;
   } catch (erro) {
     console.error("Falha no login:", erro);
