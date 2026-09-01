@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { pool, listarEmpresas } from "@/lib/db";
 import { gerarHashSenha } from "@/lib/senha";
 import { exigirSuperAdmin, sessaoAtual } from "@/lib/sessao";
+import { COOKIE_CADASTRO_SOCIAL, lerCadastroSocial } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,12 @@ export async function POST(request: Request) {
   const sessao = await sessaoAtual();
   const souSuperAdmin = sessao?.papel === "super_admin";
 
+  // cadastro vindo do login social: a identidade (e-mail/nome) já foi
+  // verificada pelo Google/Facebook e está num cookie assinado.
+  const social = souSuperAdmin
+    ? null
+    : await lerCadastroSocial((await cookies()).get(COOKIE_CADASTRO_SOCIAL)?.value);
+
   const cliente = await pool.connect();
   try {
     const c = await request.json();
@@ -43,7 +51,9 @@ export async function POST(request: Request) {
 
     const brutos: any[] = souSuperAdmin
       ? Array.isArray(c.usuarios) ? c.usuarios : []
-      : [{ nome: c.responsavel, email: c.email, senha: c.senha, papel: "admin" }];
+      : social
+        ? [{ nome: c.responsavel || social.nome, email: social.email, senha: "", papel: "admin" }]
+        : [{ nome: c.responsavel, email: c.email, senha: c.senha, papel: "admin" }];
 
     if (brutos.length === 0) {
       return NextResponse.json({ erro: "Informe ao menos um usuário." }, { status: 400 });
@@ -63,7 +73,8 @@ export async function POST(request: Request) {
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(u.email)) {
         return NextResponse.json({ erro: `E-mail inválido: ${u.email || "(vazio)"}` }, { status: 400 });
       }
-      if (u.senha.length < 8) {
+      // conta de rede social entra sem senha
+      if (!social && u.senha.length < 8) {
         return NextResponse.json({ erro: "A senha precisa ter ao menos 8 caracteres." }, { status: 400 });
       }
     }
@@ -98,21 +109,30 @@ export async function POST(request: Request) {
     );
 
     for (const u of usuarios) {
-      await cliente.query(
+      const senhaHash = social ? null : await gerarHashSenha(u.senha);
+      const novo = await cliente.query<{ id: number }>(
         `INSERT INTO usuario (empresa_id, nome, email, senha_hash, papel)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [empresa.rows[0].id, u.nome, u.email, await gerarHashSenha(u.senha), u.papel]
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [empresa.rows[0].id, u.nome, u.email, senhaHash, u.papel]
       );
+      if (social) {
+        await cliente.query(
+          `INSERT INTO usuario_identidade (usuario_id, provedor, provedor_id) VALUES ($1, $2, $3)`,
+          [novo.rows[0].id, social.provedor, social.provedorId]
+        );
+      }
     }
 
     await cliente.query("COMMIT");
 
-    return NextResponse.json(
+    const resposta = NextResponse.json(
       souSuperAdmin
         ? { ok: true, aviso: "Empresa cadastrada e aprovada." }
         : { ok: true, aviso: "Cadastro enviado. Aguarde a aprovação para entrar." },
       { status: 201 }
     );
+    if (social) resposta.cookies.set(COOKIE_CADASTRO_SOCIAL, "", { path: "/", maxAge: 0 });
+    return resposta;
   } catch (e: any) {
     await cliente.query("ROLLBACK").catch(() => {});
     if (e?.code === "23505") {
