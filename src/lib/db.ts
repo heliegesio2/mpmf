@@ -26,17 +26,46 @@ pool.on("connect", (client) => {
 
 if (process.env.NODE_ENV !== "production") global._pgPool = pool;
 
-// ---------- auto-migrate das colunas aditivas (db/08, db/09) ----------
+// ---------- auto-migrate das migracoes idempotentes (db/08..db/10) ----------
 // A migracao manual em producao ja errou de banco (branch da Neon) varias
-// vezes e TODAS as telas de produto quebram sem essas colunas. Cada ALTER vai
+// vezes e as telas quebram sem as colunas/tabelas novas. Cada instrucao vai
 // numa query separada (o pooler da Neon nao lida bem com multi-statement) e o
 // resultado fica cacheado por processo; em caso de falha, tenta de novo na
 // proxima chamada. Migracoes novas continuam em db/NN_*.sql; as que forem so
-// "ADD COLUMN IF NOT EXISTS" mirram nesta lista tambem.
-const COLUNAS_ADITIVAS = [
+// "ADD COLUMN / CREATE TABLE / CREATE INDEX ... IF NOT EXISTS" mirram aqui.
+const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE produto ADD COLUMN IF NOT EXISTS foto text",
   "ALTER TABLE produto ADD COLUMN IF NOT EXISTS estoque_minimo numeric(12,3)",
   "ALTER TABLE produto ADD COLUMN IF NOT EXISTS estoque_minimo_embalagem text",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS endereco text",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS cep text",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS horario text",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS pix_chave text",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS pix_nome text",
+  `CREATE TABLE IF NOT EXISTS cliente (
+     id bigserial PRIMARY KEY,
+     empresa_id bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     nome text NOT NULL,
+     cpf text,
+     telefone text,
+     whatsapp boolean NOT NULL DEFAULT false,
+     endereco text NOT NULL,
+     cep text,
+     foto text NOT NULL,
+     criado_em timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS idx_cliente_empresa ON cliente (empresa_id, nome)",
+  `CREATE TABLE IF NOT EXISTS fiado (
+     id bigserial PRIMARY KEY,
+     empresa_id bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     cliente_id bigint NOT NULL REFERENCES cliente(id) ON DELETE CASCADE,
+     valor numeric(10,2) NOT NULL CHECK (valor > 0),
+     descricao text,
+     pago boolean NOT NULL DEFAULT false,
+     pago_em timestamptz,
+     criado_em timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS idx_fiado_empresa ON fiado (empresa_id, pago, criado_em DESC)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -44,10 +73,10 @@ let _schema: Promise<void> | null = null;
 function garantirSchema(): Promise<void> {
   if (!_schema) {
     _schema = (async () => {
-      for (const stmt of COLUNAS_ADITIVAS) await pool.query(stmt);
+      for (const stmt of MIGRACOES_IDEMPOTENTES) await pool.query(stmt);
     })().catch((erro) => {
       _schema = null; // permite nova tentativa
-      console.error("auto-migrate de produto falhou:", erro);
+      console.error("auto-migrate falhou:", erro);
       throw new Error(
         `auto-migrate falhou: ${erro instanceof Error ? erro.message : String(erro)}`
       );
@@ -285,6 +314,62 @@ export async function editarEmpresa(
   return rows[0] ?? null;
 }
 
+// ---------- configuracoes da empresa (dados proprios + Pix) ----------
+
+export type EmpresaConfig = {
+  id: number;
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  cidade: string | null;
+  cep: string | null;
+  endereco: string | null;
+  horario: string | null;
+  pix_chave: string | null;
+  pix_nome: string | null;
+};
+
+export type EmpresaConfigEntrada = {
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  cidade: string | null;
+  cep: string | null;
+  endereco: string | null;
+  horario: string | null;
+  pixChave: string | null;
+  pixNome: string | null;
+};
+
+export async function configEmpresa(empresaId: number): Promise<EmpresaConfig | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<EmpresaConfig>(
+    `SELECT id, nome, documento, telefone, cidade, cep, endereco, horario, pix_chave, pix_nome
+       FROM empresa WHERE id = $1`,
+    [empresaId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function salvarConfigEmpresa(
+  empresaId: number,
+  d: EmpresaConfigEntrada
+): Promise<EmpresaConfig | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<EmpresaConfig>(
+    `UPDATE empresa
+        SET nome = $2, documento = $3, telefone = $4, cidade = $5, cep = $6,
+            endereco = $7, horario = $8, pix_chave = $9, pix_nome = $10
+      WHERE id = $1
+      RETURNING id, nome, documento, telefone, cidade, cep, endereco, horario, pix_chave, pix_nome`,
+    [
+      empresaId, d.nome, d.documento, d.telefone, d.cidade, d.cep,
+      d.endereco, d.horario, d.pixChave, d.pixNome,
+    ]
+  );
+  return rows[0] ?? null;
+}
+
 export type UsuarioResumo = {
   id: number;
   nome: string;
@@ -431,6 +516,162 @@ export async function excluirCasco(empresaId: number, id: number): Promise<boole
     [id, empresaId]
   );
   return (r.rowCount ?? 0) > 0;
+}
+
+// ---------- clientes ----------
+// A foto (data URL, obrigatoria) fica fora dos campos comuns; nas listas so
+// vai o saldo devedor calculado em cima de fiado.
+
+export type Cliente = {
+  id: number;
+  nome: string;
+  cpf: string | null;
+  telefone: string | null;
+  whatsapp: boolean;
+  endereco: string;
+  cep: string | null;
+  criado_em: string;
+  saldo_fiado?: string;
+};
+
+export type ClienteEntrada = {
+  nome: string;
+  cpf: string | null;
+  telefone: string | null;
+  whatsapp: boolean;
+  endereco: string;
+  cep: string | null;
+  foto: string;
+};
+
+const CAMPOS_CLIENTE = "id, nome, cpf, telefone, whatsapp, endereco, cep, criado_em";
+
+export async function listarClientes(empresaId: number, termo = ""): Promise<Cliente[]> {
+  await garantirSchema();
+  const t = termo.trim();
+  const filtro = t
+    ? `AND (f_unaccent(lower(c.nome)) LIKE '%' || f_unaccent(lower($2::text)) || '%'
+           OR regexp_replace(coalesce(c.cpf,''), '\\D', '', 'g') LIKE '%' || regexp_replace($2::text, '\\D', '', 'g') || '%')`
+    : "";
+  const { rows } = await pool.query<Cliente>(
+    `SELECT c.id, c.nome, c.cpf, c.telefone, c.whatsapp, c.endereco, c.cep, c.criado_em,
+            coalesce((SELECT sum(valor) FROM fiado f
+                       WHERE f.cliente_id = c.id AND f.pago = false), 0)::float8 AS saldo_fiado
+       FROM cliente c
+      WHERE c.empresa_id = $1 ${filtro}
+      ORDER BY c.nome`,
+    t ? [empresaId, t] : [empresaId]
+  );
+  return rows;
+}
+
+export async function clientePorId(empresaId: number, id: number): Promise<Cliente | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<Cliente>(
+    `SELECT ${CAMPOS_CLIENTE} FROM cliente WHERE id = $1 AND empresa_id = $2`,
+    [id, empresaId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function fotoCliente(empresaId: number, id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ foto: string | null }>(
+    "SELECT foto FROM cliente WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return rows[0]?.foto ?? null;
+}
+
+export async function criarCliente(empresaId: number, c: ClienteEntrada): Promise<Cliente> {
+  await garantirSchema();
+  const { rows } = await pool.query<Cliente>(
+    `INSERT INTO cliente (empresa_id, nome, cpf, telefone, whatsapp, endereco, cep, foto)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING ${CAMPOS_CLIENTE}`,
+    [empresaId, c.nome, c.cpf, c.telefone, c.whatsapp, c.endereco, c.cep, c.foto]
+  );
+  return rows[0];
+}
+
+export async function excluirCliente(empresaId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "DELETE FROM cliente WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+// ---------- fiado (contas a receber) ----------
+
+export type Fiado = {
+  id: number;
+  cliente_id: number;
+  cliente_nome: string;
+  valor: string;
+  descricao: string | null;
+  pago: boolean;
+  pago_em: string | null;
+  criado_em: string;
+};
+
+export async function listarFiado(
+  empresaId: number,
+  situacao: "abertas" | "pagas" | "todas" = "abertas"
+): Promise<Fiado[]> {
+  await garantirSchema();
+  const filtro =
+    situacao === "abertas" ? "AND f.pago = false"
+    : situacao === "pagas" ? "AND f.pago = true"
+    : "";
+  const { rows } = await pool.query<Fiado>(
+    `SELECT f.id, f.cliente_id, cl.nome AS cliente_nome, f.valor, f.descricao,
+            f.pago, f.pago_em, f.criado_em
+       FROM fiado f
+       JOIN cliente cl ON cl.id = f.cliente_id
+      WHERE f.empresa_id = $1 ${filtro}
+      ORDER BY cl.nome, f.criado_em DESC`,
+    [empresaId]
+  );
+  return rows;
+}
+
+export async function criarFiado(
+  empresaId: number,
+  clienteId: number,
+  valor: number,
+  descricao: string | null
+): Promise<Fiado | null> {
+  await garantirSchema();
+  // cliente_id checado contra a empresa da sessao pra nao lancar em cliente alheio
+  const { rows } = await pool.query<Fiado>(
+    `INSERT INTO fiado (empresa_id, cliente_id, valor, descricao)
+     SELECT $1, cl.id, $3, $4 FROM cliente cl
+      WHERE cl.id = $2 AND cl.empresa_id = $1
+     RETURNING id, cliente_id, (SELECT nome FROM cliente WHERE id = cliente_id) AS cliente_nome,
+               valor, descricao, pago, pago_em, criado_em`,
+    [empresaId, clienteId, valor, descricao]
+  );
+  return rows[0] ?? null;
+}
+
+export async function marcarFiadoPago(empresaId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "UPDATE fiado SET pago = true, pago_em = now() WHERE id = $1 AND empresa_id = $2 AND pago = false",
+    [id, empresaId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+export async function quitarFiadoDoCliente(empresaId: number, clienteId: number): Promise<number> {
+  await garantirSchema();
+  const r = await pool.query(
+    "UPDATE fiado SET pago = true, pago_em = now() WHERE empresa_id = $1 AND cliente_id = $2 AND pago = false",
+    [empresaId, clienteId]
+  );
+  return r.rowCount ?? 0;
 }
 
 // ---------- caixa (fechamento diario) ----------
