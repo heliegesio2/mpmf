@@ -27,8 +27,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ termo, itens: await buscarProduto(empresaId, termo, 8) });
   } catch (erro) {
     console.error("Falha na busca de produto:", erro);
+    const detalhe = erro instanceof Error ? erro.message : String(erro);
     return NextResponse.json(
-      { erro: "Não foi possível consultar o banco agora." },
+      { erro: "Não foi possível consultar o banco agora.", detalhe },
       { status: 500 }
     );
   }

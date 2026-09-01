@@ -63,12 +63,17 @@ export default function Produtos() {
     try {
       const r = await fetch(`/api/produtos?todos=1&q=${encodeURIComponent(termo)}`);
       const dados = await r.json();
-      if (!r.ok) throw new Error(dados?.erro);
+      if (!r.ok) {
+        throw new Error(
+          [dados?.erro, dados?.detalhe].filter(Boolean).join(" — ") ||
+            "Não foi possível carregar a lista."
+        );
+      }
       setItens(dados.itens);
       setErro(false);
-    } catch {
+    } catch (e) {
       setErro(true);
-      setAviso("Não foi possível carregar a lista.");
+      setAviso(e instanceof Error ? e.message : "Não foi possível carregar a lista.");
     } finally {
       setCarregando(false);
     }
