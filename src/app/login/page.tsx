@@ -4,13 +4,26 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import BotoesSociais from "@/components/BotoesSociais";
+
+const ERROS_OAUTH: Record<string, string> = {
+  "provedor-nao-configurado": "Esse login social ainda não está configurado.",
+  "provedor-invalido": "Provedor de login inválido.",
+  "acesso-negado": "Você cancelou o acesso.",
+  "sessao-expirada": "A tentativa de login expirou. Tente de novo.",
+  "falha-no-provedor": "O Google/Facebook não respondeu. Tente de novo.",
+};
 
 function Formulario() {
   const router = useRouter();
-  const de = useSearchParams().get("de");
+  const params = useSearchParams();
+  const de = params.get("de");
+  const erroUrl = params.get("erro");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [erro, setErro] = useState("");
+  const [erro, setErro] = useState(
+    erroUrl ? ERROS_OAUTH[erroUrl] ?? decodeURIComponent(erroUrl) : ""
+  );
   const [entrando, setEntrando] = useState(false);
 
   async function entrar() {
@@ -72,6 +85,8 @@ function Formulario() {
         <button className="botao primario grande" onClick={entrar} disabled={entrando}>
           {entrando ? "Entrando…" : "Entrar"}
         </button>
+
+        <BotoesSociais rotulo="Entrar" />
 
         <p className="rodape-login">
           Ainda não tem conta? <Link href="/cadastro">Cadastre sua empresa</Link>

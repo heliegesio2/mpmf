@@ -1035,6 +1035,43 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 .rodape-login { margin: 0; font-size: 14px; color: var(--creme-fraco); text-align: center; }
 .rodape-login a { color: var(--ambar); }
 
+/* ---- entrar com Google / Facebook ---- */
+.social { display: flex; flex-direction: column; gap: 10px; }
+.social-ou {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--creme-fraco);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+.social-ou::before,
+.social-ou::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--verde-linha);
+}
+.botao-social {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 13px 16px;
+  border-radius: 9px;
+  border: 1px solid var(--verde-linha);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+.botao-social.google { background: var(--creme); color: #1f1f1f; }
+.botao-social.facebook { background: #1877f2; color: #fff; border-color: #1877f2; }
+.botao-social:focus-visible { outline: 3px solid var(--ambar); outline-offset: 2px; }
+
 a.botao { display: block; text-align: center; text-decoration: none; }
 
 /* ============ rodapé do menu ============ */
