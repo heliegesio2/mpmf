@@ -627,6 +627,42 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .mic-campo:disabled { opacity: 0.3; cursor: not-allowed; }
 .ajuda-voz[data-erro="true"] { color: var(--tomate); }
 
+/* atalho pra abrir o WhatsApp, ao lado do microfone do campo de telefone */
+.mic-campo.whatsapp {
+  background: #25d366;
+  color: #fff;
+  text-decoration: none;
+}
+.mic-campo.whatsapp:hover { filter: brightness(1.08); }
+.check-whatsapp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--creme-fraco);
+  cursor: pointer;
+}
+.check-whatsapp input { width: 15px; height: 15px; }
+
+/* ícone do WhatsApp nas listas (clientes, cascos) */
+.zap-link {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 50%;
+  background: #25d366;
+  color: #fff;
+}
+.zap-link:hover { filter: brightness(1.08); }
+.zap-link svg { width: 16px; height: 16px; }
+.linha-com-zap { display: inline-flex; align-items: center; gap: 8px; }
+
 /* ============ foto do produto ============ */
 .campo-foto { display: flex; flex-direction: column; gap: 6px; }
 .campo-foto-rotulo {

@@ -40,6 +40,7 @@ export async function PUT(request: Request) {
       nome,
       documento: texto(c.documento),
       telefone: texto(c.telefone),
+      telefoneWhatsapp: Boolean(c.telefoneWhatsapp),
       cidade: texto(c.cidade),
       cep: texto(c.cep),
       endereco: texto(c.endereco),

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
+import CampoTelefone from "@/components/CampoTelefone";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -9,6 +10,7 @@ type Config = {
   nome: string;
   documento: string;
   telefone: string;
+  telefoneWhatsapp: boolean;
   cidade: string;
   cep: string;
   endereco: string;
@@ -21,6 +23,7 @@ const VAZIO: Config = {
   nome: "",
   documento: "",
   telefone: "",
+  telefoneWhatsapp: false,
   cidade: "",
   cep: "",
   endereco: "",
@@ -61,6 +64,7 @@ export default function Configuracoes() {
           nome: e.nome ?? "",
           documento: e.documento ?? "",
           telefone: e.telefone ?? "",
+          telefoneWhatsapp: Boolean(e.telefone_whatsapp),
           cidade: e.cidade ?? "",
           cep: e.cep ?? "",
           endereco: e.endereco ?? "",
@@ -101,7 +105,7 @@ export default function Configuracoes() {
 
   const comum = (k: keyof Config) => ({
     campo: k as string,
-    valor: form[k],
+    valor: String(form[k]),
     aoMudar: (v: string) => setForm((f) => ({ ...f, [k]: v })),
     ouvindo: ouvindoCampo === k,
     temVoz: disponivel,
@@ -122,7 +126,12 @@ export default function Configuracoes() {
             <div className="grade-form">
               <CampoVoz rotulo="Nome" placeholder="Mercado Mãe e Filho" largo {...comum("nome")} />
               <CampoVoz rotulo="CNPJ" placeholder="00.000.000/0000-00" {...comum("documento")} />
-              <CampoVoz rotulo="Telefone" placeholder="11989902144" numerico {...comum("telefone")} />
+              <CampoTelefone
+                rotulo="Telefone"
+                {...comum("telefone")}
+                ehWhatsapp={form.telefoneWhatsapp}
+                aoMudarWhatsapp={(v) => setForm((f) => ({ ...f, telefoneWhatsapp: v }))}
+              />
               <CampoVoz rotulo="Cidade" placeholder="São Paulo" {...comum("cidade")} />
               <CampoVoz rotulo="CEP" placeholder="00000-000" numerico {...comum("cep")} />
               <CampoVoz rotulo="Endereço" placeholder="Rua, número, bairro" largo {...comum("endereco")} />

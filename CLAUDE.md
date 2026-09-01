@@ -198,6 +198,13 @@ of a blank "não foi possível salvar".
 - `/configuracoes` (client screen, `GET`/`PUT /api/empresa`) — the store edits its **own** row:
   name, CNPJ (`empresa.documento`), address, hours (`horario`), and the **Pix key** (`pix_chave` /
   `pix_nome`, added to `empresa`). Only non-super-admins have the `LOJA` menu, so only they see it.
+  `/cadastro` (public store sign-up, `POST /api/empresas`) collects the same `horario` / `pix_chave` /
+  `pix_nome` up front so a freshly approved store already has a working Pix QR.
+- **WhatsApp on every phone field** (`db/14`) — `<CampoTelefone>` (`src/components/CampoTelefone.tsx`)
+  replaces a bare phone `CampoVoz` everywhere: phone input + mic + an "Esse número é WhatsApp" checkbox,
+  and a green `wa.me` shortcut once it's marked. Persisted as `empresa.telefone_whatsapp` /
+  `casco.telefone_whatsapp` / `cliente.whatsapp`. Lists (`/clientes`, `/cascos`) show a `.zap-link` icon
+  linking to `linkWhatsapp()` (`src/lib/whatsapp.ts`, normalizes any BR number to `https://wa.me/55…`).
 - `/clientes` — list + `<FormularioCliente>` (shared: also embedded in the `/venda` fiado picker via a
   "+ Cadastrar novo cliente" button). `cliente` table. **Photo (`foto`, data URL) and `endereco` are
   NOT NULL / required**; `cpf`, `telefone`, `whatsapp` bool, `cep`, `nota` (1–10, `db/11`) optional.

@@ -69,6 +69,8 @@ const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE cliente ADD COLUMN IF NOT EXISTS nota integer",
   "CREATE INDEX IF NOT EXISTS idx_cliente_cpf ON cliente ((regexp_replace(coalesce(cpf, ''), '\\D', '', 'g')))",
   "ALTER TABLE produto ADD COLUMN IF NOT EXISTS preco_embalagem numeric(10,2)",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS telefone_whatsapp boolean NOT NULL DEFAULT false",
+  "ALTER TABLE casco ADD COLUMN IF NOT EXISTS telefone_whatsapp boolean NOT NULL DEFAULT false",
   "ALTER TABLE usuario ALTER COLUMN senha_hash DROP NOT NULL",
   `CREATE TABLE IF NOT EXISTS usuario_identidade (
      id bigserial PRIMARY KEY,
@@ -83,7 +85,7 @@ const MIGRACOES_IDEMPOTENTES = [
 
 let _schema: Promise<void> | null = null;
 
-function garantirSchema(): Promise<void> {
+export function garantirSchema(): Promise<void> {
   if (!_schema) {
     _schema = (async () => {
       for (const stmt of MIGRACOES_IDEMPOTENTES) await pool.query(stmt);
@@ -337,6 +339,7 @@ export type EmpresaConfig = {
   nome: string;
   documento: string | null;
   telefone: string | null;
+  telefone_whatsapp: boolean;
   cidade: string | null;
   cep: string | null;
   endereco: string | null;
@@ -349,6 +352,7 @@ export type EmpresaConfigEntrada = {
   nome: string;
   documento: string | null;
   telefone: string | null;
+  telefoneWhatsapp: boolean;
   cidade: string | null;
   cep: string | null;
   endereco: string | null;
@@ -357,11 +361,13 @@ export type EmpresaConfigEntrada = {
   pixNome: string | null;
 };
 
+const CAMPOS_EMPRESA_CONFIG =
+  "id, nome, documento, telefone, telefone_whatsapp, cidade, cep, endereco, horario, pix_chave, pix_nome";
+
 export async function configEmpresa(empresaId: number): Promise<EmpresaConfig | null> {
   await garantirSchema();
   const { rows } = await pool.query<EmpresaConfig>(
-    `SELECT id, nome, documento, telefone, cidade, cep, endereco, horario, pix_chave, pix_nome
-       FROM empresa WHERE id = $1`,
+    `SELECT ${CAMPOS_EMPRESA_CONFIG} FROM empresa WHERE id = $1`,
     [empresaId]
   );
   return rows[0] ?? null;
@@ -374,12 +380,12 @@ export async function salvarConfigEmpresa(
   await garantirSchema();
   const { rows } = await pool.query<EmpresaConfig>(
     `UPDATE empresa
-        SET nome = $2, documento = $3, telefone = $4, cidade = $5, cep = $6,
-            endereco = $7, horario = $8, pix_chave = $9, pix_nome = $10
+        SET nome = $2, documento = $3, telefone = $4, telefone_whatsapp = $5, cidade = $6, cep = $7,
+            endereco = $8, horario = $9, pix_chave = $10, pix_nome = $11
       WHERE id = $1
-      RETURNING id, nome, documento, telefone, cidade, cep, endereco, horario, pix_chave, pix_nome`,
+      RETURNING ${CAMPOS_EMPRESA_CONFIG}`,
     [
-      empresaId, d.nome, d.documento, d.telefone, d.cidade, d.cep,
+      empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.cidade, d.cep,
       d.endereco, d.horario, d.pixChave, d.pixNome,
     ]
   );
@@ -512,6 +518,7 @@ export type Casco = {
   id: number;
   responsavel: string;
   telefone: string;
+  telefone_whatsapp: boolean;
   endereco: string;
   quantidade: number;
   devolvido: boolean;
@@ -519,14 +526,17 @@ export type Casco = {
   criado_em: string;
 };
 
+const CAMPOS_CASCO =
+  "id, responsavel, telefone, telefone_whatsapp, endereco, quantidade, devolvido, devolvido_em, criado_em";
+
 export async function listarCascos(empresaId: number, situacao?: string): Promise<Casco[]> {
+  await garantirSchema();
   const filtro =
     situacao === "emprestados" ? "AND devolvido = false"
     : situacao === "devolvidos" ? "AND devolvido = true"
     : "";
   const { rows } = await pool.query<Casco>(
-    `SELECT id, responsavel, telefone, endereco, quantidade, devolvido, devolvido_em, criado_em
-       FROM casco
+    `SELECT ${CAMPOS_CASCO} FROM casco
       WHERE empresa_id = $1 ${filtro}
       ORDER BY devolvido, criado_em DESC`,
     [empresaId]
@@ -536,22 +546,24 @@ export async function listarCascos(empresaId: number, situacao?: string): Promis
 
 export async function criarCasco(
   empresaId: number,
-  dados: { responsavel: string; telefone: string; endereco: string; quantidade: number }
+  dados: { responsavel: string; telefone: string; whatsapp: boolean; endereco: string; quantidade: number }
 ): Promise<Casco> {
+  await garantirSchema();
   const { rows } = await pool.query<Casco>(
-    `INSERT INTO casco (empresa_id, responsavel, telefone, endereco, quantidade)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, responsavel, telefone, endereco, quantidade, devolvido, devolvido_em, criado_em`,
-    [empresaId, dados.responsavel, dados.telefone, dados.endereco, dados.quantidade]
+    `INSERT INTO casco (empresa_id, responsavel, telefone, telefone_whatsapp, endereco, quantidade)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     RETURNING ${CAMPOS_CASCO}`,
+    [empresaId, dados.responsavel, dados.telefone, dados.whatsapp, dados.endereco, dados.quantidade]
   );
   return rows[0];
 }
 
 export async function marcarCascoDevolvido(empresaId: number, id: number): Promise<Casco | null> {
+  await garantirSchema();
   const { rows } = await pool.query<Casco>(
     `UPDATE casco SET devolvido = true, devolvido_em = now()
       WHERE id = $1 AND empresa_id = $2
-      RETURNING id, responsavel, telefone, endereco, quantidade, devolvido, devolvido_em, criado_em`,
+      RETURNING ${CAMPOS_CASCO}`,
     [id, empresaId]
   );
   return rows[0] ?? null;

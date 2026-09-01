@@ -43,7 +43,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ erro: "Informe a quantidade de cascos." }, { status: 400 });
     }
 
-    const item = await criarCasco(empresaId, { responsavel, telefone, endereco, quantidade });
+    const item = await criarCasco(empresaId, {
+      responsavel,
+      telefone,
+      whatsapp: Boolean(c.whatsapp),
+      endereco,
+      quantidade,
+    });
     return NextResponse.json({ item }, { status: 201 });
   } catch (e) {
     console.error("Falha ao registrar casco:", e);

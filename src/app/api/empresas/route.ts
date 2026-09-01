@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { pool, listarEmpresas } from "@/lib/db";
+import { pool, listarEmpresas, garantirSchema } from "@/lib/db";
 import { gerarHashSenha } from "@/lib/senha";
 import { exigirSuperAdmin, sessaoAtual } from "@/lib/sessao";
 import { COOKIE_CADASTRO_SOCIAL, lerCadastroSocial } from "@/lib/auth";
@@ -38,8 +38,10 @@ export async function POST(request: Request) {
     ? null
     : await lerCadastroSocial((await cookies()).get(COOKIE_CADASTRO_SOCIAL)?.value);
 
-  const cliente = await pool.connect();
+  let cliente: import("pg").PoolClient | undefined;
   try {
+    await garantirSchema();
+    cliente = await pool.connect();
     const c = await request.json();
     const nome = String(c.nome ?? "").trim();
     const documento = String(c.documento ?? "").replace(/\D/g, "");
@@ -99,13 +101,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const horario = c.horario ? String(c.horario).trim() || null : null;
+    const pixChave = c.pixChave ? String(c.pixChave).trim() || null : null;
+    const pixNome = c.pixNome ? String(c.pixNome).trim() || null : null;
+
     const empresa = await cliente.query<{ id: number }>(
       souSuperAdmin
-        ? `INSERT INTO empresa (nome, documento, telefone, cidade, situacao, decidida_em)
-           VALUES ($1, $2, $3, $4, 'aprovada', now()) RETURNING id`
-        : `INSERT INTO empresa (nome, documento, telefone, cidade)
-           VALUES ($1, $2, $3, $4) RETURNING id`,
-      [nome, documento, c.telefone ?? null, c.cidade ?? null]
+        ? `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome, situacao, decidida_em)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aprovada', now()) RETURNING id`
+        : `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [nome, documento, c.telefone ?? null, Boolean(c.telefoneWhatsapp), c.cidade ?? null, horario, pixChave, pixNome]
     );
 
     for (const u of usuarios) {
@@ -134,13 +140,13 @@ export async function POST(request: Request) {
     if (social) resposta.cookies.set(COOKIE_CADASTRO_SOCIAL, "", { path: "/", maxAge: 0 });
     return resposta;
   } catch (e: any) {
-    await cliente.query("ROLLBACK").catch(() => {});
+    await cliente?.query("ROLLBACK").catch(() => {});
     if (e?.code === "23505") {
       return NextResponse.json({ erro: "Empresa ou e-mail já cadastrado." }, { status: 409 });
     }
     console.error("Falha ao cadastrar empresa:", e);
     return NextResponse.json({ erro: "Não foi possível cadastrar." }, { status: 500 });
   } finally {
-    cliente.release();
+    cliente?.release();
   }
 }

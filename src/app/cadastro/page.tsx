@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BotoesSociais from "@/components/BotoesSociais";
 import { CampoVoz } from "@/components/CampoVoz";
+import CampoTelefone from "@/components/CampoTelefone";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -12,7 +13,11 @@ type Form = {
   nome: string;
   documento: string;
   telefone: string;
+  telefoneWhatsapp: boolean;
   cidade: string;
+  horario: string;
+  pixChave: string;
+  pixNome: string;
   responsavel: string;
   email: string;
   senha: string;
@@ -22,7 +27,11 @@ const VAZIO: Form = {
   nome: "",
   documento: "",
   telefone: "",
+  telefoneWhatsapp: false,
   cidade: "",
+  horario: "",
+  pixChave: "",
+  pixNome: "",
   responsavel: "",
   email: "",
   senha: "",
@@ -44,7 +53,11 @@ function Conteudo() {
       const campo = campoAtual.current as keyof Form | null;
       if (!campo) return;
       const soDigitos = campo === "documento" || campo === "telefone";
-      setForm((f) => ({ ...f, [campo]: soDigitos ? texto.replace(/\D/g, "") : capitalizar(texto) }));
+      const cru = campo === "pixChave" || campo === "horario";
+      setForm((f) => ({
+        ...f,
+        [campo]: soDigitos ? texto.replace(/\D/g, "") : cru ? texto : capitalizar(texto),
+      }));
       setErro("");
     },
     aoErrar: (m) => setErro(m),
@@ -70,7 +83,7 @@ function Conteudo() {
 
   const comum = (k: keyof Form) => ({
     campo: k as string,
-    valor: form[k],
+    valor: String(form[k]),
     aoMudar: (v: string) => setForm((f) => ({ ...f, [k]: v })),
     ouvindo: ouvindoCampo === k,
     temVoz: disponivel,
@@ -79,7 +92,7 @@ function Conteudo() {
   });
 
   const campo = (k: keyof Form) => ({
-    value: form[k],
+    value: String(form[k]),
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value }),
   });
 
@@ -155,8 +168,21 @@ function Conteudo() {
         <div className="grade-form">
           <CampoVoz rotulo="Nome da empresa" placeholder="Mercadinho do Bairro" largo {...comum("nome")} />
           <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comum("documento")} />
-          <CampoVoz rotulo="Telefone" placeholder="11989902144" numerico {...comum("telefone")} />
+          <CampoTelefone
+            rotulo="Telefone"
+            {...comum("telefone")}
+            ehWhatsapp={form.telefoneWhatsapp}
+            aoMudarWhatsapp={(v) => setForm((f) => ({ ...f, telefoneWhatsapp: v }))}
+          />
           <CampoVoz rotulo="Cidade" placeholder="São Paulo" largo {...comum("cidade")} />
+          <CampoVoz
+            rotulo="Horário de funcionamento"
+            placeholder="Seg a sáb, 7h às 20h"
+            largo
+            {...comum("horario")}
+          />
+          <CampoVoz rotulo="Chave Pix" placeholder="CPF/CNPJ, celular, e-mail ou aleatória" largo {...comum("pixChave")} />
+          <CampoVoz rotulo="Nome do recebedor no Pix" placeholder="Como aparece pra quem paga" largo {...comum("pixNome")} />
           <CampoVoz rotulo="Responsável" placeholder="Seu nome" largo {...comum("responsavel")} />
 
           {!social && (

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
+import CampoTelefone from "@/components/CampoTelefone";
 import CampoFoto from "@/components/CampoFoto";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
@@ -146,20 +147,12 @@ export default function FormularioCliente({ aoSalvar, aoCancelar }: Props) {
         </div>
 
         <CampoVoz rotulo="Nome" placeholder="Nome do cliente" largo {...comum("nome")} />
-        <CampoVoz rotulo="Telefone" placeholder="11989902144" numerico {...comum("telefone")} />
-
-        <label className="rotulo">
-          <span className="entrada" style={{ padding: "12px 14px" }}>
-            <input
-              type="checkbox"
-              checked={form.whatsapp}
-              onChange={(e) => setForm((f) => ({ ...f, whatsapp: e.target.checked }))}
-            />
-            <span style={{ marginLeft: 8, fontWeight: 500, textTransform: "none", letterSpacing: 0 }}>
-              Esse número é WhatsApp
-            </span>
-          </span>
-        </label>
+        <CampoTelefone
+          rotulo="Telefone"
+          {...comum("telefone")}
+          ehWhatsapp={form.whatsapp}
+          aoMudarWhatsapp={(v) => setForm((f) => ({ ...f, whatsapp: v }))}
+        />
 
         <CampoVoz rotulo="CPF" placeholder="000.000.000-00" numerico {...comum("cpf")} />
 
