@@ -65,6 +65,17 @@ bundle, so it must never be imported from `auth.ts` or anything the middleware p
 `middleware.ts` gates every route except `/login`, `/cadastro`, and `/api/*` (each API route checks its
 own session — see below) and `_next`/static assets. `/admin/*` additionally requires `papel === "super_admin"`.
 
+**Social login (Google/Facebook)** is hand-rolled Authorization Code, no library — `src/lib/oauth.ts`
+(`PROVEDORES` config, `urlAutorizacao`, `trocarCodigo`) + routes `src/app/api/auth/oauth/[provedor]`
+(start, sets a `oauth_state` cookie) and `.../callback`. The callback: identity match on
+`usuario_identidade (provedor, provedor_id)` → login; else email match → link the identity → login; else
+sign a short `cadastro_social` cookie (`src/lib/auth.ts` `criarCadastroSocial`) and send to
+`/cadastro?social=1`, where `POST /api/empresas` reads that cookie to create `empresa` + `usuario` (no
+`senha_hash` — `db/13` makes it nullable) + `usuario_identidade`. The approval-check + token-mint logic is
+shared by both password and OAuth login via `autorizarLogin()` in `src/lib/login.ts`. Env:
+`GOOGLE_/FACEBOOK_CLIENT_ID/SECRET` + `APP_URL` (canonical origin for the callback URL); unset → the
+buttons show but bounce to `/login?erro=provedor-nao-configurado`.
+
 `src/lib/sessao.ts` provides the server-side session helpers used by API routes:
 - `exigirSessao()` — any logged-in user, or a ready-made 401 response
 - `exigirSuperAdmin()` — super admin only, or a ready-made 403
