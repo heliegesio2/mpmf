@@ -21,7 +21,7 @@ const moeda = new Intl.NumberFormat("pt-BR", {
 
 function BotaoEditar({ id }: { id: number }) {
   return (
-    <Link href={`/produtos?editar=${id}`} className="editar-item" aria-label="Editar este produto">
+    <Link href={`/produtos/editar/${id}`} className="editar-item" aria-label="Editar este produto">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path
           d="M4 20h4L18.5 9.5a2.12 2.12 0 0 0-3-3L5 17v3Z"

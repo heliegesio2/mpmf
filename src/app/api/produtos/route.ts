@@ -47,6 +47,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ item: await criarProduto(empresaId, dados!) }, { status: 201 });
   } catch (erro) {
     console.error("Falha ao incluir produto:", erro);
-    return NextResponse.json({ erro: "Não foi possível salvar o produto." }, { status: 500 });
+    // detalhe do Postgres ajuda a diagnosticar (ex.: coluna/migração faltando)
+    const detalhe = erro instanceof Error ? erro.message : String(erro);
+    return NextResponse.json(
+      { erro: "Não foi possível salvar o produto.", detalhe },
+      { status: 500 }
+    );
   }
 }

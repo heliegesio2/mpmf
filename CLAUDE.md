@@ -149,16 +149,24 @@ voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen; the con
 line with no price rather than defaulting it. Created products get `preco_compra = 0` (unknown from a shelf
 photo) — expect the margin display on Produtos to show 100% until someone corrects it from a real invoice.
 
-### Produtos screen (`/produtos`)
+### Produtos screens
 
-Lands on the **grid** (`.grade-produtos` / `.card-produto` cards: photo, price, cost/margin, and an
-`.estoque-cel` badge that turns red via `data-critico` when `estoque <= estoque_minimo ?? 3`), a name
-filter, and three actions: **+ Novo produto** (opens the blank form), **📷 Novo produto por foto** (hidden
-file input → `comprimirParaDataURL` → `/api/produtos/identificar-foto` for the name → opens the form
-pre-filled with photo + suggested name), and **📦 Atualizar estoque por foto** (the separate
-`/produtos/estoque-foto` flow above — different thing: that one only bumps `estoque` on existing products).
-The Incluir/Alterar form (all fields incl. the low-stock alert and `<CampoFoto>`) replaces the grid while
-`incluindo || editandoId` is set; `?editar=<id>` from the price-lookup screen opens it straight into edit.
+`/produtos` is **list-only**: the grid (`.grade-produtos` / `.card-produto` cards — photo, price,
+cost/margin, and an `.estoque-cel` badge that turns red via `data-critico` when
+`estoque <= estoque_minimo ?? 3`), a name filter, and three actions: **+ Novo produto** (→
+`/produtos/novo`), **📷 Novo produto por foto** (compresses the photo → stashes it in
+`sessionStorage["mpmf.novoProdutoFoto"]` → `/produtos/novo`), and **📦 Atualizar estoque por foto** (→
+`/produtos/estoque-foto`, a different flow that only bumps `estoque`).
+
+The add/edit **form is its own screen** — `src/components/FormularioProduto.tsx`, rendered by
+`/produtos/novo` (create) and `/produtos/editar/[id]` (edit, fetches via `GET /api/produtos/:id`). On
+`/produtos/novo` it picks up the stashed photo and calls `/api/produtos/identificar-foto` to prefill the
+name. On save it drops a message in `sessionStorage["mpmf.produtoFlash"]` and routes back to `/produtos`,
+which shows it. The price-lookup screen's edit pencil links straight to `/produtos/editar/<id>`.
+
+`POST /api/produtos` and `PUT /api/produtos/:id` return the raw Postgres error text in a `detalhe` field
+on 500 (surfaced in the UI) — deliberate, so a missing migration on a deployed DB is diagnosable instead
+of a blank "não foi possível salvar".
 
 ### Reports dashboard (`/relatorios`)
 

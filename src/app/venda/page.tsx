@@ -292,7 +292,12 @@ export default function Venda() {
         }),
       });
       const dados = await r.json();
-      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível incluir o produto.");
+      if (!r.ok) {
+        throw new Error(
+          [dados?.erro, dados?.detalhe].filter(Boolean).join(" — ") ||
+            "Não foi possível incluir o produto."
+        );
+      }
 
       const { quantidade, emPeso } = novo;
       fecharNovo();
