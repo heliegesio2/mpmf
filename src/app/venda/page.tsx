@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatarQuantidade, interpretarItem } from "@/lib/falaVenda";
 import { sufixo } from "@/lib/tipos";
-import { numeroFalado } from "@/lib/voz";
+import { capitalizar, numeroFalado } from "@/lib/voz";
 import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
 import PainelPix from "@/components/PainelPix";
+import CampoFoto from "@/components/CampoFoto";
 
 type Produto = {
   id: number;
@@ -23,6 +24,13 @@ type Escolha = {
   quantidade: number;
   emPeso: boolean;
   termo: string;
+};
+
+/** Produto falado que não está no cadastro: inclui na hora, com foto e preço. */
+type ProdutoNovo = {
+  nome: string;
+  quantidade: number;
+  emPeso: boolean;
 };
 
 type Item = {
@@ -61,13 +69,17 @@ export default function Venda() {
   const [procurando, setProcurando] = useState(false);
   const [escolha, setEscolha] = useState<Escolha | null>(null);
   const escolhaAberta = useRef(false);
+  const [novo, setNovo] = useState<ProdutoNovo | null>(null);
+  const [novoPreco, setNovoPreco] = useState("");
+  const [novaFoto, setNovaFoto] = useState<string | null>(null);
+  const [salvandoNovo, setSalvandoNovo] = useState(false);
+  const novoAberto = useRef(false);
   /** Identificador desta venda, usado no Pix. */
   const [txid] = useState(() => `V${Date.now().toString(36).toUpperCase()}`);
 
   const reconhecimento = useRef<any>(null);
-  const querOuvir = useRef(false);
-  /** Para onde vai o que for falado: itens do carrinho ou valor entregue. */
-  const destino = useRef<"itens" | "recebido">("itens");
+  /** Para onde vai o que for falado. */
+  const destino = useRef<"itens" | "recebido" | "novoPreco">("itens");
 
   const total = itens.reduce(
     (s, i) => s + Number(i.produto.preco) * i.quantidade,
@@ -119,6 +131,11 @@ export default function Venda() {
         setAviso("Escolha um dos produtos da lista antes de falar o próximo.");
         return;
       }
+      if (novoAberto.current) {
+        setErro(true);
+        setAviso("Termine de incluir o produto novo antes de falar o próximo.");
+        return;
+      }
 
       const lido = interpretarItem(frase);
       if (!lido) {
@@ -148,8 +165,17 @@ export default function Venda() {
         }
 
         if (achados.length === 0) {
-          setErro(true);
-          setAviso(`Não achei "${lido.termo}" no cadastro.`);
+          // não está no cadastro: abre o quadro pra incluir na hora
+          novoAberto.current = true;
+          setNovo({
+            nome: capitalizar(lido.termo),
+            quantidade: lido.quantidade,
+            emPeso: lido.emPeso,
+          });
+          setNovoPreco("");
+          setNovaFoto(null);
+          setErro(false);
+          setAviso("");
           return;
         }
 
@@ -199,7 +225,69 @@ export default function Venda() {
     setErro(false);
   }
 
-  // ---------- reconhecimento contínuo ----------
+  function fecharNovo() {
+    novoAberto.current = false;
+    setNovo(null);
+    setNovoPreco("");
+    setNovaFoto(null);
+    setSalvandoNovo(false);
+  }
+
+  function cancelarNovo() {
+    fecharNovo();
+    setAviso("");
+    setErro(false);
+  }
+
+  /** Cria o produto no cadastro e já joga na venda. */
+  async function salvarNovo() {
+    if (!novo) return;
+    const nome = novo.nome.trim();
+    const preco = moedaParaNumero(novoPreco);
+    if (nome.length < 2) {
+      setErro(true);
+      setAviso("Dê um nome ao produto.");
+      return;
+    }
+    if (preco <= 0) {
+      setErro(true);
+      setAviso("Informe o preço de venda do produto.");
+      return;
+    }
+
+    setSalvandoNovo(true);
+    setErro(false);
+    try {
+      const r = await fetch("/api/produtos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nome,
+          tipoVenda: "unidade",
+          unidade: "unidade",
+          preco,
+          precoCompra: 0,
+          estoque: 0,
+          ...(novaFoto ? { foto: novaFoto } : {}),
+        }),
+      });
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível incluir o produto.");
+
+      const { quantidade, emPeso } = novo;
+      fecharNovo();
+      adicionarProduto(dados.item as Produto, quantidade, emPeso);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível incluir o produto.");
+      setSalvandoNovo(false);
+    }
+  }
+
+  // ---------- reconhecimento de fala (um item por vez) ----------
+  // Igual à tela de consulta de preço: cada toque no microfone ouve uma frase
+  // só e para. Falar item por item deixa a transcrição e a busca bem mais
+  // certeiras que o modo contínuo, que emendava produtos e errava mais.
   useEffect(() => {
     const SR =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -208,29 +296,37 @@ export default function Venda() {
     setDisponivel(true);
     const sr = new SR();
     sr.lang = "pt-BR";
-    sr.continuous = true;
-    sr.interimResults = false;
+    sr.continuous = false;
+    sr.interimResults = true;
     sr.maxAlternatives = 1;
 
     sr.onresult = (e: any) => {
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!e.results[i].isFinal) continue;
-        const texto = e.results[i][0].transcript.trim();
-        if (!texto) continue;
+      const texto = Array.from(e.results)
+        .map((r: any) => r[0].transcript)
+        .join("")
+        .trim();
+      const final = e.results[e.results.length - 1].isFinal;
 
-        if (destino.current === "recebido") {
-          const n = numeroFalado(texto);
-          if (n === null) {
-            setErro(true);
-            setAviso(`Não entendi "${texto}" como valor.`);
-          } else {
-            setRecebido(paraMoeda(n));
-            setErro(false);
-            setAviso("");
-          }
+      if (destino.current === "recebido" || destino.current === "novoPreco") {
+        if (!final) return;
+        const n = numeroFalado(texto);
+        if (n === null) {
+          setErro(true);
+          setAviso(`Não entendi "${texto}" como valor.`);
         } else {
-          adicionarPorFala(texto);
+          if (destino.current === "novoPreco") setNovoPreco(paraMoeda(n));
+          else setRecebido(paraMoeda(n));
+          setErro(false);
+          setAviso("");
         }
+        return;
+      }
+
+      // mostra no campo o que está sendo falado, como na tela de consulta
+      setDigitado(texto);
+      if (final && texto) {
+        adicionarPorFala(texto);
+        setDigitado("");
       }
     };
     sr.onerror = (e: any) => {
@@ -243,39 +339,34 @@ export default function Venda() {
       );
     };
     sr.onend = () => {
-      // o Chrome encerra sozinho depois de um tempo; religa enquanto o caixa quiser
-      if (querOuvir.current) {
-        try {
-          sr.start();
-          return;
-        } catch {
-          /* ignora */
-        }
-      }
       setOuvindo(false);
+      setAviso((a) =>
+        a === "Ouvindo. Diga um produto." ||
+        a === "Ouvindo. Diga o valor entregue." ||
+        a === "Ouvindo. Diga o preço."
+          ? ""
+          : a
+      );
     };
 
     reconhecimento.current = sr;
-    return () => {
-      querOuvir.current = false;
-      sr.abort();
-    };
+    return () => sr.abort();
   }, [adicionarPorFala]);
 
-  /** Liga o microfone apontando para um destino. Usado no foco dos campos. */
-  function ligarMicrofone(alvo: "itens" | "recebido") {
+  /** Liga o microfone apontando para um destino. Ouve uma frase e para. */
+  function ligarMicrofone(alvo: "itens" | "recebido" | "novoPreco") {
     const sr = reconhecimento.current;
     if (!sr) return;
     destino.current = alvo;
-    if (querOuvir.current) return;
-
-    querOuvir.current = true;
+    if (alvo === "itens") setDigitado("");
     setOuvindo(true);
     setErro(false);
     setAviso(
       alvo === "recebido"
         ? "Ouvindo. Diga o valor entregue."
-        : "Ouvindo. Diga os itens, um de cada vez."
+        : alvo === "novoPreco"
+          ? "Ouvindo. Diga o preço."
+          : "Ouvindo. Diga um produto."
     );
     try {
       sr.start();
@@ -285,35 +376,17 @@ export default function Venda() {
   }
 
   function desligarMicrofone() {
-    querOuvir.current = false;
     reconhecimento.current?.stop();
     setOuvindo(false);
     setAviso("");
   }
 
   function alternarMicrofone() {
-    const sr = reconhecimento.current;
-    if (!sr) return;
-
-    destino.current = "itens";
-
-    if (querOuvir.current) {
-      querOuvir.current = false;
-      sr.stop();
-      setOuvindo(false);
-      setAviso("");
+    if (ouvindo) {
+      desligarMicrofone();
       return;
     }
-
-    querOuvir.current = true;
-    setOuvindo(true);
-    setErro(false);
-    setAviso("Ouvindo. Diga os itens, um de cada vez.");
-    try {
-      sr.start();
-    } catch {
-      /* já iniciado */
-    }
+    ligarMicrofone("itens");
   }
 
   // ---------- ações do carrinho ----------
@@ -339,8 +412,7 @@ export default function Venda() {
   }
 
   function novaVenda() {
-    querOuvir.current = false;
-    reconhecimento.current?.stop();
+    reconhecimento.current?.abort();
     setOuvindo(false);
     setItens([]);
     setPagamento(null);
@@ -352,12 +424,12 @@ export default function Venda() {
     setPixAprovado(false);
     escolhaAberta.current = false;
     setEscolha(null);
+    fecharNovo();
   }
 
   function fechar() {
     if (!pagamento || itens.length === 0 || faltaDinheiro) return;
-    querOuvir.current = false;
-    reconhecimento.current?.stop();
+    reconhecimento.current?.abort();
     setOuvindo(false);
     setFechada(true);
   }
@@ -493,10 +565,99 @@ export default function Venda() {
         </section>
       )}
 
-      {itens.length === 0 && !procurando && !escolha ? (
+      {novo && (
+        <section className="escolha">
+          <p className="escolha-titulo">
+            “{novo.nome}” não está no cadastro. Tire a foto e informe o preço para
+            incluir agora e já colocar na venda.
+          </p>
+
+          <div className="grade-form">
+            <label className="rotulo largo">
+              Nome
+              <span className="entrada">
+                <input
+                  value={novo.nome}
+                  onChange={(e) => setNovo({ ...novo, nome: e.target.value })}
+                  autoComplete="off"
+                />
+              </span>
+            </label>
+
+            <label className="rotulo">
+              Preço de venda
+              <span
+                className="entrada"
+                data-moeda="true"
+                data-ouvindo={ouvindo && destino.current === "novoPreco"}
+              >
+                <span className="prefixo">R$</span>
+                <input
+                  value={novoPreco}
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  onChange={(e) => {
+                    if (ouvindo) desligarMicrofone();
+                    setNovoPreco(mascararMoeda(e.target.value));
+                  }}
+                />
+                <button
+                  type="button"
+                  className="mic-campo"
+                  data-ouvindo={ouvindo && destino.current === "novoPreco"}
+                  disabled={!disponivel}
+                  onClick={() =>
+                    ouvindo && destino.current === "novoPreco"
+                      ? desligarMicrofone()
+                      : ligarMicrofone("novoPreco")
+                  }
+                  aria-label="Falar o preço"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <rect x="9" y="2" width="6" height="12" rx="3" fill="currentColor" />
+                    <path d="M5 11a7 7 0 0 0 14 0M12 18v4" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                  </svg>
+                </button>
+              </span>
+            </label>
+
+            <div className="rotulo largo">
+              <CampoFoto
+                rotulo="Foto do produto"
+                preview={novaFoto ?? ""}
+                aoEscolher={(d) => {
+                  setNovaFoto(d);
+                  setErro(false);
+                }}
+                aoRemover={novaFoto ? () => setNovaFoto(null) : undefined}
+                aoErro={(m) => {
+                  setErro(true);
+                  setAviso(m);
+                }}
+              />
+            </div>
+          </div>
+
+          <div className="acoes">
+            <button
+              type="button"
+              className="botao primario"
+              onClick={salvarNovo}
+              disabled={salvandoNovo}
+            >
+              {salvandoNovo ? "Incluindo…" : "Incluir e adicionar à venda"}
+            </button>
+            <button type="button" className="botao neutro" onClick={cancelarNovo}>
+              Cancelar
+            </button>
+          </div>
+        </section>
+      )}
+
+      {itens.length === 0 && !procurando && !escolha && !novo ? (
         <p className="vazio">
-          Toque no microfone e diga os itens: “um pirulito”, “duzentos gramas de
-          tomate”, “um maço de cigarro”.
+          Toque no microfone e diga um item por vez: “um pirulito”. Toque de novo
+          para o próximo: “duzentos gramas de tomate”, “um maço de cigarro”.
         </p>
       ) : (
         <ul className="lista">

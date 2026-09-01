@@ -36,6 +36,7 @@ export type Produto = {
   preco: string;
   preco_compra: string;
   estoque: string;
+  tem_foto?: boolean;
   score?: number;
 };
 
@@ -48,10 +49,17 @@ export type ProdutoEntrada = {
   preco: number;
   precoCompra: number;
   estoque: number;
+  /**
+   * Foto como data URL. `undefined` = não mexe na foto atual;
+   * `""` = remove a foto; `"data:image/..."` = grava essa.
+   */
+  foto?: string;
 };
 
+// a coluna `foto` (data URL, pode ter centenas de KB) fica fora daqui de
+// propósito — as listas só precisam saber se existe uma foto (tem_foto).
 const CAMPOS =
-  "id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque";
+  "id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque, (foto IS NOT NULL) AS tem_foto";
 
 export async function buscarProduto(
   empresaId: number,
@@ -101,13 +109,14 @@ export async function criarProduto(
   empresaId: number,
   p: ProdutoEntrada
 ): Promise<Produto> {
+  const foto = p.foto ? p.foto : null;
   const { rows } = await pool.query<Produto>(
-    `INSERT INTO produto (empresa_id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `INSERT INTO produto (empresa_id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque, foto)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING ${CAMPOS}`,
     [
       empresaId, p.nome, p.categoria ?? null, p.local ?? null, p.unidade ?? "unidade",
-      p.tipoVenda, p.preco, p.precoCompra, p.estoque,
+      p.tipoVenda, p.preco, p.precoCompra, p.estoque, foto,
     ]
   );
   return rows[0];
@@ -118,17 +127,24 @@ export async function atualizarProduto(
   id: number,
   p: ProdutoEntrada
 ): Promise<Produto | null> {
+  // foto: undefined mantém a atual, "" apaga, string grava a nova
+  const foto = p.foto === undefined ? null : p.foto;
   // o empresa_id no WHERE impede alterar produto de outra loja
   const { rows } = await pool.query<Produto>(
     `UPDATE produto
         SET nome = $3, categoria = $4, local = $5, unidade = $6,
             tipo_venda = $7, preco = $8, preco_compra = $9, estoque = $10,
+            foto = CASE
+                     WHEN $11::text IS NULL THEN foto
+                     WHEN $11 = '' THEN NULL
+                     ELSE $11
+                   END,
             alterado_em = now()
       WHERE id = $1 AND empresa_id = $2
       RETURNING ${CAMPOS}`,
     [
       id, empresaId, p.nome, p.categoria ?? null, p.local ?? null,
-      p.unidade ?? "unidade", p.tipoVenda, p.preco, p.precoCompra, p.estoque,
+      p.unidade ?? "unidade", p.tipoVenda, p.preco, p.precoCompra, p.estoque, foto,
     ]
   );
   return rows[0] ?? null;
@@ -147,6 +163,15 @@ export async function atualizarEstoqueProduto(
     [id, empresaId, novoEstoque]
   );
   return rows[0] ?? null;
+}
+
+/** Data URL da foto do produto, ou null. Fora de CAMPOS por ser pesada. */
+export async function fotoProduto(empresaId: number, id: number): Promise<string | null> {
+  const { rows } = await pool.query<{ foto: string | null }>(
+    "SELECT foto FROM produto WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return rows[0]?.foto ?? null;
 }
 
 export async function excluirProduto(empresaId: number, id: number): Promise<boolean> {

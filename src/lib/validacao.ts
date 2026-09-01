@@ -29,6 +29,23 @@ export function validar(corpo: unknown): { dados?: ProdutoEntrada; erro?: string
   if (!Number.isFinite(estoque) || estoque < 0) return { erro: "Informe uma quantidade válida." };
   if (!VALORES.includes(tipoVenda)) return { erro: "Escolha unidade, quilo ou dúzia." };
 
+  // foto: opcional. ausente/undefined = não mexe; "" = remove; senão precisa
+  // ser um data URL de imagem e caber num limite razoável (o cliente já reduz).
+  const MAX_FOTO = 3_000_000; // ~2,2 MB de imagem depois do base64
+  let foto: string | undefined;
+  if (c.foto !== undefined && c.foto !== null) {
+    const bruta = String(c.foto);
+    if (bruta === "") {
+      foto = "";
+    } else if (!/^data:image\/(jpe?g|png|webp);base64,/.test(bruta)) {
+      return { erro: "Foto em formato não suportado." };
+    } else if (bruta.length > MAX_FOTO) {
+      return { erro: "A foto ficou grande demais. Tente de novo." };
+    } else {
+      foto = bruta;
+    }
+  }
+
   return {
     dados: {
       nome,
@@ -39,6 +56,7 @@ export function validar(corpo: unknown): { dados?: ProdutoEntrada; erro?: string
       preco,
       precoCompra,
       estoque,
+      ...(foto !== undefined ? { foto } : {}),
     },
   };
 }

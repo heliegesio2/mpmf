@@ -91,6 +91,16 @@ connection whose `search_path` doesn't match the database's configured default (
 `ALTER DATABASE ... SET search_path`), which breaks every unqualified table reference. `pool.on("connect", ...)`
 forces `SET search_path TO public` on every new physical connection to route around that — don't remove it.
 
+`produto.foto` (added in `db/08_foto_produto.sql`) holds an optional product photo as a
+`data:image/jpeg;base64,…` string in a `text` column — no object storage, same by-hand ethos as the rest.
+It's deliberately **kept out of `CAMPOS`** (the shared column list every produto query selects): list/search
+rows only carry a computed `tem_foto` boolean, and the image itself is fetched lazily as real bytes from
+`GET /api/produtos/:id/foto` (decodes the data URL). `criarProduto` takes an optional `foto`; in
+`atualizarProduto` the param is tri-state — `undefined` keeps the current photo, `""` clears it, a data URL
+replaces it (SQL `CASE`), so existing callers that don't pass `foto` (the purchase importer) leave it alone.
+Client-side downscale for these is `comprimirParaDataURL` in `src/lib/imagemCliente.ts` (900px / q0.7,
+smaller than the 1800px vision uploads); the shared `<CampoFoto>` component wraps capture + preview.
+
 Fuzzy product search (`buscar_produto` SQL function, defined in `db/01_schema.sql`) ranks by: exact
 barcode match (1.0) > name prefix/substring match (0.85–0.95) > all-words-present > trigram similarity.
 `pg_trgm.similarity_threshold` is lowered to `0.22` (Postgres default is `0.3`) because voice transcription
@@ -150,6 +160,24 @@ in the `// ---------- relatorios ----------` group in `db.ts`, all `SELECT`-only
 hand-rolled — `Estatistica` (KPI card), `GraficoColunas`, `GraficoBarrasHorizontais`, and an inline-SVG
 `GraficoLinha` with a touch/mouse cursor — no charting library; styling is CSS variables from `globals.css`.
 `GraficoColunas` hides per-bar value labels past 6 categories (falls back to hover `title`).
+
+### Sales screen (`/venda`)
+
+Speech recognition here is **single-shot**, deliberately matching the price-lookup screen (`/`):
+`continuous = false`, `interimResults = true`, one phrase per mic tap, no auto-restart. (It used to run
+`continuous = true` with a self-restarting loop; item-by-item transcribes and matches far more reliably.)
+One shared `SpeechRecognition` instance is routed by a `destino` ref — `"itens"` | `"recebido"` (cash
+given) | `"novoPreco"` (price of a not-yet-catalogued product).
+
+When a spoken item matches **nothing** in the catalog (after the full-term and last-word searches both
+come back empty), the screen opens an inline "novo produto" panel: editable name (seeded from the
+utterance), price (typed or voiced), and an optional photo via `<CampoFoto>`. Confirming `POST`s to
+`/api/produtos` (`tipoVenda`/`unidade` default to `"unidade"`, `precoCompra`/`estoque` `0`) and drops the
+returned product straight into the cart with the originally-spoken quantity. `novoAberto`/`escolhaAberta`
+refs block further speech while either panel is open.
+
+The top-bar cart button (fixed, in `MenuLateral.tsx`, `.atalho-venda`) is a global shortcut to this screen;
+hidden for a super-admin with no store.
 
 ### Voice input
 

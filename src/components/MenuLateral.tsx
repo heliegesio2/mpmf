@@ -60,8 +60,33 @@ export default function MenuLateral() {
         : ADMIN
       : LOJA;
 
+  // super admin sem loja própria não vende — não mostra o atalho do carrinho
+  const temLoja = sessao.papel !== "super_admin" || Boolean(sessao.empresaNome);
+
   return (
     <>
+      {temLoja && (
+        <Link
+          href="/venda"
+          className="atalho-venda"
+          data-ativo={caminho === "/venda"}
+          aria-label="Abrir a venda"
+          title="Venda"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M3 4h2l2.3 12.2a1 1 0 0 0 1 .8h9.1a1 1 0 0 0 1-.8L21 8H6"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <circle cx="10" cy="20" r="1.5" fill="currentColor" />
+            <circle cx="17" cy="20" r="1.5" fill="currentColor" />
+          </svg>
+        </Link>
+      )}
+
       <button
         type="button"
         className="abrir-menu"

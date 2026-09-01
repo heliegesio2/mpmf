@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { CampoVoz, SelecaoVoz } from "@/components/CampoVoz";
+import CampoFoto from "@/components/CampoFoto";
 import { useVoz } from "@/lib/useVoz";
 import { EMBALAGENS, TIPOS_VENDA, rotuloEmbalagem, sufixo } from "@/lib/tipos";
 import { capitalizar, numeroFalado, opcaoFalada } from "@/lib/voz";
@@ -19,6 +20,7 @@ type Produto = {
   preco: string;
   preco_compra: string;
   estoque: string;
+  tem_foto?: boolean;
 };
 
 type Formulario = {
@@ -57,6 +59,10 @@ function ProdutosConteudo() {
   const [filtro, setFiltro] = useState("");
   const [form, setForm] = useState<Formulario>(VAZIO);
   const [editandoId, setEditandoId] = useState<number | null>(null);
+  // foto: preview é o que aparece na tela; fotoNova só é enviada quando muda
+  // (null = mantém a atual, "" = remove, "data:..." = grava a nova)
+  const [fotoPreview, setFotoPreview] = useState("");
+  const [fotoNova, setFotoNova] = useState<string | null>(null);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -154,6 +160,8 @@ function ProdutosConteudo() {
       preco: paraMoeda(p.preco),
       estoque: p.estoque,
     });
+    setFotoPreview(p.tem_foto ? `/api/produtos/${p.id}/foto?t=${Date.now()}` : "");
+    setFotoNova(null);
     setAviso("");
     setErro(false);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -162,6 +170,8 @@ function ProdutosConteudo() {
   function limpar() {
     setEditandoId(null);
     setForm(VAZIO);
+    setFotoPreview("");
+    setFotoNova(null);
   }
 
   function cancelar() {
@@ -179,6 +189,8 @@ function ProdutosConteudo() {
         preco: num(form.preco),
         precoCompra: num(form.precoCompra || "0"),
         estoque: num(form.estoque),
+        // só manda a foto quando ela mudou nesta edição
+        ...(fotoNova !== null ? { foto: fotoNova } : {}),
       };
       const r = await fetch(
         editandoId ? `/api/produtos/${editandoId}` : "/api/produtos",
@@ -300,6 +312,26 @@ function ProdutosConteudo() {
             largo
             {...comum("local")}
           />
+
+          <div className="rotulo largo">
+            <CampoFoto
+              rotulo="Foto do produto"
+              preview={fotoPreview}
+              aoEscolher={(d) => {
+                setFotoNova(d);
+                setFotoPreview(d);
+                setErro(false);
+              }}
+              aoRemover={() => {
+                setFotoNova("");
+                setFotoPreview("");
+              }}
+              aoErro={(m) => {
+                setErro(true);
+                setAviso(m);
+              }}
+            />
+          </div>
         </div>
 
         {temMargem && (
@@ -360,6 +392,10 @@ function ProdutosConteudo() {
             const m = c > 0 ? ((v - c) / c) * 100 : null;
             return (
               <li key={p.id}>
+                {p.tem_foto && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img className="miniatura-produto" src={`/api/produtos/${p.id}/foto`} alt="" />
+                )}
                 <span className="rotulo-item">
                   {p.nome}
                   <span className="sub">

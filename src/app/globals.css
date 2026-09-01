@@ -74,6 +74,30 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .botao-fonte[data-ativo="true"] { background: var(--ambar); color: #14261c; }
 .botao-fonte:focus-visible { outline: 2px solid var(--creme); outline-offset: 2px; }
 
+/* ---- atalho do carrinho na barra superior ---- */
+.atalho-venda {
+  position: fixed;
+  top: 14px;
+  right: 100px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--verde-linha);
+  border-radius: 10px;
+  background: var(--verde-superficie);
+  color: var(--creme);
+  cursor: pointer;
+}
+.atalho-venda:hover { border-color: var(--creme-fraco); }
+.atalho-venda[data-ativo="true"] {
+  background: var(--ambar);
+  color: #14261c;
+  border-color: var(--ambar);
+}
+.atalho-venda:focus-visible { outline: 2px solid var(--creme); outline-offset: 2px; }
+
 .cabecalho-tela {
   display: flex;
   justify-content: space-between;
@@ -520,6 +544,50 @@ html[data-fonte="grande"] { zoom: 1.5; }
 
 .mic-campo:disabled { opacity: 0.3; cursor: not-allowed; }
 .ajuda-voz[data-erro="true"] { color: var(--tomate); }
+
+/* ============ foto do produto ============ */
+.campo-foto { display: flex; flex-direction: column; gap: 6px; }
+.campo-foto-rotulo {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--creme-fraco);
+}
+label.botao { display: inline-block; text-align: center; cursor: pointer; }
+.campo-foto-vazio {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px dashed var(--verde-linha);
+  border-radius: 8px;
+  background: var(--verde-fundo);
+  color: var(--creme);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.campo-foto-vazio span { font-size: 20px; }
+.campo-foto-vazio:hover { border-color: var(--ambar); }
+.campo-foto-vazio[data-ocupado="true"] { opacity: 0.6; pointer-events: none; }
+.campo-foto-tem { display: flex; align-items: flex-start; gap: 12px; }
+.campo-foto-tem img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--verde-linha);
+}
+.campo-foto-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.miniatura-produto {
+  width: 42px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--verde-linha);
+  flex: none;
+}
 
 /* ============ tela de venda ============ */
 .contador { display: flex; align-items: center; gap: 8px; flex: none; }

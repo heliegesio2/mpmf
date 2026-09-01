@@ -29,3 +29,6 @@ npm-debug.log*
 .idea/
 Thumbs.db
 .DS_Store
+
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
