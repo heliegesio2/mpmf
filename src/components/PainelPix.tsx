@@ -1,21 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-
-type Cobranca = {
-  modo: "mercadopago" | "estatico";
-  pagamentoId?: string;
-  copiaECola: string | null;
-  imagemBase64?: string | null;
-  status: string;
-};
 
 type Props = {
   valor: number;
   txid: string;
-  /** Chamado quando o Mercado Pago confirma o pagamento. */
-  aoAprovar: () => void;
+  /** true quando o caixa marcou que recebeu o Pix. */
+  confirmado: boolean;
+  aoConfirmar: () => void;
 };
 
 const moeda = new Intl.NumberFormat("pt-BR", {
@@ -23,108 +16,79 @@ const moeda = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 2,
 });
 
-export default function PainelPix({ valor, txid, aoAprovar }: Props) {
-  const [cobranca, setCobranca] = useState<Cobranca | null>(null);
+/**
+ * QR estatico do Pix, gerado da chave da empresa (ver /configuracoes).
+ * Nao ha confirmacao automatica — o caixa confere o comprovante e marca
+ * "Recebi o Pix".
+ */
+export default function PainelPix({ valor, txid, confirmado, aoConfirmar }: Props) {
+  const [copiaECola, setCopiaECola] = useState<string | null>(null);
   const [imagem, setImagem] = useState<string | null>(null);
   const [erro, setErro] = useState("");
   const [copiado, setCopiado] = useState(false);
-  const [aprovado, setAprovado] = useState(false);
-  const jaAvisou = useRef(false);
 
-  // ---------- cria a cobrança ----------
   useEffect(() => {
     let cancelado = false;
-
     (async () => {
       try {
         const r = await fetch("/api/pix", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ valor, txid, descricao: "Venda no balcão" }),
+          body: JSON.stringify({ valor, txid }),
         });
         const dados = await r.json();
-        if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível gerar o Pix.");
-        if (cancelado) return;
-
-        setCobranca(dados);
-
-        if (dados.imagemBase64) {
-          setImagem(`data:image/png;base64,${dados.imagemBase64}`);
-        } else if (dados.copiaECola) {
-          // o Mercado Pago não mandou imagem, então desenhamos o QR aqui
-          setImagem(
-            await QRCode.toDataURL(dados.copiaECola, { width: 320, margin: 1 })
+        if (!r.ok) {
+          throw new Error(
+            [dados?.erro, dados?.detalhe].filter(Boolean).join(" — ") ||
+              "Não foi possível gerar o Pix."
           );
         }
+        if (cancelado) return;
+        setCopiaECola(dados.copiaECola);
+        setImagem(await QRCode.toDataURL(dados.copiaECola, { width: 320, margin: 1 }));
       } catch (e) {
         if (!cancelado) setErro(e instanceof Error ? e.message : "Falha ao gerar o Pix.");
       }
     })();
-
     return () => {
       cancelado = true;
     };
   }, [valor, txid]);
 
-  // ---------- acompanha a confirmação ----------
-  const verificar = useCallback(async (id: string) => {
-    try {
-      const r = await fetch(`/api/pix/${id}`);
-      const dados = await r.json();
-      if (r.ok && dados.status === "approved") {
-        setAprovado(true);
-        if (!jaAvisou.current) {
-          jaAvisou.current = true;
-          aoAprovar();
-        }
-      }
-    } catch {
-      /* tenta de novo no próximo ciclo */
-    }
-  }, [aoAprovar]);
-
-  useEffect(() => {
-    if (cobranca?.modo !== "mercadopago" || !cobranca.pagamentoId || aprovado) return;
-    const id = cobranca.pagamentoId;
-    const t = setInterval(() => verificar(id), 4000);
-    return () => clearInterval(t);
-  }, [cobranca, aprovado, verificar]);
-
   async function copiar() {
-    if (!cobranca?.copiaECola) return;
-    await navigator.clipboard.writeText(cobranca.copiaECola);
+    if (!copiaECola) return;
+    await navigator.clipboard.writeText(copiaECola);
     setCopiado(true);
     setTimeout(() => setCopiado(false), 2000);
   }
 
   if (erro) return <p className="dica" data-erro="true">{erro}</p>;
-  if (!cobranca) return <p className="vazio">Gerando o QR do Pix…</p>;
+  if (!copiaECola) return <p className="vazio">Gerando o QR do Pix…</p>;
 
   return (
-    <div className="pix" data-aprovado={aprovado}>
-      {imagem ? (
+    <div className="pix" data-aprovado={confirmado}>
+      {imagem && (
         <img className="pix-qr" src={imagem} alt="QR code do Pix" width={220} height={220} />
-      ) : (
-        <p className="vazio">Sem QR disponível.</p>
       )}
 
       <div className="pix-lado">
         <p className="pix-valor">R$ {moeda.format(valor)}</p>
 
-        {aprovado ? (
-          <p className="pix-status aprovado">Pagamento confirmado</p>
-        ) : cobranca.modo === "mercadopago" ? (
-          <p className="pix-status">Aguardando o pagamento…</p>
+        {confirmado ? (
+          <p className="pix-status aprovado">Pix recebido</p>
         ) : (
           <p className="pix-status manual">
-            QR da chave. Confira o comprovante antes de finalizar — esta forma não
-            avisa quando o cliente paga.
+            Confira o comprovante no seu app antes de marcar como recebido.
           </p>
         )}
 
-        {cobranca.copiaECola && (
-          <button type="button" className="botao neutro" onClick={copiar}>
-            {copiado ? "Código copiado" : "Copiar código Pix"}
+        <button type="button" className="botao neutro" onClick={copiar}>
+          {copiado ? "Código copiado" : "Copiar código Pix"}
+        </button>
+
+        {!confirmado && (
+          <button type="button" className="botao primario" onClick={aoConfirmar}>
+            Recebi o Pix
           </button>
         )}
       </div>

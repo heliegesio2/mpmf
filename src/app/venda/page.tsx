@@ -849,7 +849,8 @@ export default function Venda() {
             <PainelPix
               valor={total}
               txid={txid}
-              aoAprovar={() => setPixAprovado(true)}
+              confirmado={pixAprovado}
+              aoConfirmar={() => setPixAprovado(true)}
             />
           )}
 

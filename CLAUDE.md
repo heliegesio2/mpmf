@@ -49,9 +49,8 @@ run `gerar-certificado.bat` as Administrator (installs mkcert, generates `certif
 ### Environment
 
 Copy `.env.example` to `.env.local`. Required: `DATABASE_URL`, `SESSION_SECRET` (≥24 chars — session
-signing fails loudly otherwise). Optional: `PIX_*` (static Pix key/name/city for QR generation),
-`MP_ACCESS_TOKEN`/`MP_EMAIL_CLIENTE` (Mercado Pago — enables payment-confirmation polling on the Pix QR;
-without it the QR is generated locally with no confirmation).
+signing fails loudly otherwise). Optional: `ANTHROPIC_API_KEY` (vision features), `PIX_*` (fallback
+static Pix key/name/city — only used when a store hasn't set its own key in `/configuracoes`).
 
 ## Architecture
 
@@ -234,9 +233,9 @@ conversions as manual typing — don't add a separate parser for voice-originate
 ### Pix payments
 
 `src/lib/pix.ts` builds the BR Code (EMV QR payload) by hand per the Banco Central spec — no external Pix
-library. If `MP_ACCESS_TOKEN` is set, `src/app/api/pix/[id]/route.ts` polls Mercado Pago for payment
-confirmation; without it, the QR is cosmetic (customer's bank app can still pay it, but the app has no way
-to know when).
+library, and **no Mercado Pago** (removed). `POST /api/pix` reads the store's `pix_chave` / `pix_nome`
+from `empresa` (set in `/configuracoes`; falls back to `PIX_*` env) and returns a static "copia e cola".
+There is no payment confirmation — `PainelPix` shows the QR and a manual "Recebi o Pix" button.
 
 ### Roles
 
