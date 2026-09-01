@@ -7,7 +7,15 @@ type Relatorios = {
   estoque: { produtosAtivos: number; valorVenda: number; valorCompra: number; lucroPotencial: number };
   porCategoria: { categoria: string; quantidade: number; valor: number }[];
   prejuizo: { id: number; nome: string; preco: number; preco_compra: number; estoque: number }[];
-  estoqueBaixo: { id: number; nome: string; preco: number; preco_compra: number; estoque: number }[];
+  estoqueBaixo: {
+    id: number;
+    nome: string;
+    preco: number;
+    preco_compra: number;
+    estoque: number;
+    estoque_minimo: number | null;
+    estoque_minimo_embalagem: string | null;
+  }[];
   porBeneficiario: { beneficiario: string; valor: number }[];
   porMes: { mes: string; valor: number }[];
   gastoMesAtual: number;
@@ -164,10 +172,20 @@ export default function Relatorios() {
       {estoqueBaixo.length > 0 && (
         <section className="cartao">
           <h2 className="titulo-cartao">📉 Estoque baixo</h2>
-          <p className="ajuda-voz">3 unidades ou menos — considere repor.</p>
+          <p className="ajuda-voz">
+            No limite de aviso do produto (ou 3 ou menos, para quem não configurou) — considere repor.
+          </p>
           {estoqueBaixo.map((p) => (
             <div className="alerta-item" key={p.id}>
-              <span className="rotulo-item">{p.nome}</span>
+              <span className="rotulo-item">
+                {p.nome}
+                {p.estoque_minimo !== null && (
+                  <span className="sub">
+                    avisar até {p.estoque_minimo}
+                    {p.estoque_minimo_embalagem ? ` ${p.estoque_minimo_embalagem}` : ""}
+                  </span>
+                )}
+              </span>
               <span className="valor-alerta">{p.estoque}</span>
             </div>
           ))}

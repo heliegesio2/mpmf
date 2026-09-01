@@ -9,9 +9,14 @@ type Props = {
   preview: string;
   /** Recebe o data URL já reduzido da foto escolhida. */
   aoEscolher: (dataUrl: string) => void;
-  /** Quando presente, mostra a opção de tirar a foto. */
+  /** Quando presente, mostra a opção de remover a foto. */
   aoRemover?: () => void;
   aoErro?: (mensagem: string) => void;
+  /**
+   * Quando presente, manda a foto pra IA identificar o produto e devolve o
+   * nome sugerido (só chama se vier nome; falha é silenciosa).
+   */
+  aoIdentificarNome?: (nome: string) => void;
 };
 
 /**
@@ -19,21 +24,52 @@ type Props = {
  * miniatura e deixa trocar/remover. A imagem é reduzida no navegador antes de
  * sair daqui (ver comprimirParaDataURL).
  */
-export default function CampoFoto({ rotulo = "Foto", preview, aoEscolher, aoRemover, aoErro }: Props) {
+export default function CampoFoto({
+  rotulo = "Foto",
+  preview,
+  aoEscolher,
+  aoRemover,
+  aoErro,
+  aoIdentificarNome,
+}: Props) {
   const input = useRef<HTMLInputElement>(null);
   const id = useId();
   const [ocupado, setOcupado] = useState(false);
+  const [identificando, setIdentificando] = useState(false);
 
   async function selecionado(arquivo: File | undefined) {
     if (!arquivo) return;
     setOcupado(true);
+    let dataUrl = "";
     try {
-      aoEscolher(await comprimirParaDataURL(arquivo));
+      dataUrl = await comprimirParaDataURL(arquivo);
+      aoEscolher(dataUrl);
     } catch {
       aoErro?.("Não consegui usar essa foto. Tente outra.");
-    } finally {
       setOcupado(false);
       if (input.current) input.current.value = "";
+      return;
+    }
+    setOcupado(false);
+    if (input.current) input.current.value = "";
+
+    if (aoIdentificarNome && dataUrl) {
+      setIdentificando(true);
+      try {
+        const r = await fetch("/api/produtos/identificar-foto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ foto: dataUrl }),
+        });
+        const dados = await r.json();
+        if (r.ok && typeof dados.nome === "string" && dados.nome.trim()) {
+          aoIdentificarNome(dados.nome.trim());
+        }
+      } catch {
+        /* identificação é um plus; sem ela o lojista digita o nome */
+      } finally {
+        setIdentificando(false);
+      }
     }
   }
 
@@ -72,6 +108,8 @@ export default function CampoFoto({ rotulo = "Foto", preview, aoEscolher, aoRemo
           {ocupado ? "Abrindo…" : "Tirar foto"}
         </label>
       )}
+
+      {identificando && <span className="campo-foto-dica">Lendo a foto pra sugerir o nome…</span>}
     </div>
   );
 }

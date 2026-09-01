@@ -2,21 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatarQuantidade, interpretarItem } from "@/lib/falaVenda";
-import { sufixo } from "@/lib/tipos";
+import { EMBALAGENS, TIPOS_VENDA, sufixo } from "@/lib/tipos";
 import { capitalizar, numeroFalado } from "@/lib/voz";
 import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
 import PainelPix from "@/components/PainelPix";
 import CampoFoto from "@/components/CampoFoto";
+import { useCarrinho, type ItemCarrinho, type ProdutoCarrinho } from "@/lib/carrinho";
 
-type Produto = {
-  id: number;
-  nome: string;
-  categoria?: string | null;
-  unidade: string;
-  tipo_venda: string;
-  preco: string;
-  score?: number;
-};
+type Produto = ProdutoCarrinho;
 
 /** Quando a fala casa com mais de um produto, o caixa escolhe qual entra. */
 type Escolha = {
@@ -31,13 +24,14 @@ type ProdutoNovo = {
   nome: string;
   quantidade: number;
   emPeso: boolean;
+  tipoVenda: string;
+  embalagem: string;
+  estoque: string;
+  estoqueMinimo: string;
+  estoqueMinimoEmbalagem: string;
 };
 
-type Item = {
-  chave: string;
-  produto: Produto;
-  quantidade: number;
-};
+type Item = ItemCarrinho;
 
 type Pagamento = "dinheiro" | "pix" | "debito" | "credito";
 
@@ -55,8 +49,23 @@ const moeda = new Intl.NumberFormat("pt-BR", {
   maximumFractionDigits: 2,
 });
 
+/** Miniatura do produto; some sozinha se ele não tiver foto (404). */
+function FotoProduto({ id }: { id: number }) {
+  const [falhou, setFalhou] = useState(false);
+  if (falhou) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      className="miniatura-produto"
+      src={`/api/produtos/${id}/foto`}
+      alt=""
+      onError={() => setFalhou(true)}
+    />
+  );
+}
+
 export default function Venda() {
-  const [itens, setItens] = useState<Item[]>([]);
+  const { itens, setItens, limpar: limparCarrinho } = useCarrinho();
   const [pagamento, setPagamento] = useState<Pagamento | null>(null);
   const [fechada, setFechada] = useState(false);
   const [ouvindo, setOuvindo] = useState(false);
@@ -80,8 +89,12 @@ export default function Venda() {
   const reconhecimento = useRef<any>(null);
   /** Para onde vai o que for falado. */
   const destino = useRef<"itens" | "recebido" | "novoPreco">("itens");
+  // cópia dos itens no momento de fechar, pro comprovante — o carrinho em si
+  // é esvaziado assim que a venda fecha (comportamento de carrinho de verdade).
+  const [finalizada, setFinalizada] = useState<Item[] | null>(null);
 
-  const total = itens.reduce(
+  const itensVenda = fechada && finalizada ? finalizada : itens;
+  const total = itensVenda.reduce(
     (s, i) => s + Number(i.produto.preco) * i.quantidade,
     0
   );
@@ -171,6 +184,11 @@ export default function Venda() {
             nome: capitalizar(lido.termo),
             quantidade: lido.quantidade,
             emPeso: lido.emPeso,
+            tipoVenda: lido.emPeso ? "quilo" : "unidade",
+            embalagem: "unidade",
+            estoque: "",
+            estoqueMinimo: "",
+            estoqueMinimoEmbalagem: "unidade",
           });
           setNovoPreco("");
           setNovaFoto(null);
@@ -263,11 +281,13 @@ export default function Venda() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           nome,
-          tipoVenda: "unidade",
-          unidade: "unidade",
+          tipoVenda: novo.tipoVenda,
+          unidade: novo.embalagem,
           preco,
           precoCompra: 0,
-          estoque: 0,
+          estoque: novo.estoque === "" ? 0 : Number(novo.estoque.replace(",", ".")),
+          estoqueMinimo: novo.estoqueMinimo,
+          estoqueMinimoEmbalagem: novo.estoqueMinimoEmbalagem,
           ...(novaFoto ? { foto: novaFoto } : {}),
         }),
       });
@@ -414,7 +434,8 @@ export default function Venda() {
   function novaVenda() {
     reconhecimento.current?.abort();
     setOuvindo(false);
-    setItens([]);
+    limparCarrinho();
+    setFinalizada(null);
     setPagamento(null);
     setFechada(false);
     setAviso("");
@@ -431,6 +452,8 @@ export default function Venda() {
     if (!pagamento || itens.length === 0 || faltaDinheiro) return;
     reconhecimento.current?.abort();
     setOuvindo(false);
+    setFinalizada(itens);
+    limparCarrinho();
     setFechada(true);
   }
 
@@ -442,7 +465,7 @@ export default function Venda() {
         <section className="etiqueta">
           <h1 className="nome">Venda concluída</h1>
           <p className="meta">
-            {itens.length} {itens.length === 1 ? "item" : "itens"} · {rotulo}
+            {itensVenda.length} {itensVenda.length === 1 ? "item" : "itens"} · {rotulo}
           </p>
           <div className="valor">
             <span className="cifrao">R$</span>
@@ -451,8 +474,9 @@ export default function Venda() {
         </section>
 
         <ul className="lista">
-          {itens.map((i) => (
+          {itensVenda.map((i) => (
             <li key={i.chave}>
+              <FotoProduto id={i.produto.id} />
               <span className="rotulo-item">
                 {i.produto.nome}
                 <span className="sub">
@@ -543,6 +567,7 @@ export default function Venda() {
             {escolha.opcoes.map((p) => (
               <li key={p.id}>
                 <button type="button" onClick={() => confirmarEscolha(p)}>
+                  <FotoProduto id={p.id} />
                   <span className="rotulo-item">
                     {p.nome}
                     <span className="sub">
@@ -573,6 +598,23 @@ export default function Venda() {
           </p>
 
           <div className="grade-form">
+            <div className="rotulo largo">
+              <CampoFoto
+                rotulo="Foto do produto"
+                preview={novaFoto ?? ""}
+                aoEscolher={(d) => {
+                  setNovaFoto(d);
+                  setErro(false);
+                }}
+                aoRemover={novaFoto ? () => setNovaFoto(null) : undefined}
+                aoErro={(m) => {
+                  setErro(true);
+                  setAviso(m);
+                }}
+                aoIdentificarNome={(nome) => setNovo((n) => (n ? { ...n, nome } : n))}
+              />
+            </div>
+
             <label className="rotulo largo">
               Nome
               <span className="entrada">
@@ -621,21 +663,82 @@ export default function Venda() {
               </span>
             </label>
 
-            <div className="rotulo largo">
-              <CampoFoto
-                rotulo="Foto do produto"
-                preview={novaFoto ?? ""}
-                aoEscolher={(d) => {
-                  setNovaFoto(d);
-                  setErro(false);
-                }}
-                aoRemover={novaFoto ? () => setNovaFoto(null) : undefined}
-                aoErro={(m) => {
-                  setErro(true);
-                  setAviso(m);
-                }}
-              />
-            </div>
+            <label className="rotulo">
+              Vendido por
+              <span className="entrada">
+                <select
+                  value={novo.tipoVenda}
+                  onChange={(e) => setNovo({ ...novo, tipoVenda: e.target.value })}
+                >
+                  {TIPOS_VENDA.map((t) => (
+                    <option key={t.valor} value={t.valor}>
+                      {t.rotulo}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </label>
+
+            <label className="rotulo">
+              Embalagem
+              <span className="entrada">
+                <select
+                  value={novo.embalagem}
+                  onChange={(e) => setNovo({ ...novo, embalagem: e.target.value })}
+                >
+                  {EMBALAGENS.map((emb) => (
+                    <option key={emb.valor} value={emb.valor}>
+                      {emb.rotulo}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </label>
+
+            <label className="rotulo">
+              Quantidade em estoque
+              <span className="entrada">
+                <input
+                  value={novo.estoque}
+                  inputMode="decimal"
+                  placeholder="12"
+                  onChange={(e) => setNovo({ ...novo, estoque: e.target.value })}
+                />
+              </span>
+            </label>
+
+            <p className="ajuda-voz largo-linha">
+              Aviso de estoque baixo (opcional): quando a quantidade chegar nesse número ou menos,
+              o produto entra nos alertas dos Relatórios.
+            </p>
+
+            <label className="rotulo">
+              Avisar quando cair até
+              <span className="entrada">
+                <input
+                  value={novo.estoqueMinimo}
+                  inputMode="decimal"
+                  placeholder="ex.: 2"
+                  onChange={(e) => setNovo({ ...novo, estoqueMinimo: e.target.value })}
+                />
+              </span>
+            </label>
+
+            <label className="rotulo">
+              Contando em
+              <span className="entrada">
+                <select
+                  value={novo.estoqueMinimoEmbalagem}
+                  onChange={(e) => setNovo({ ...novo, estoqueMinimoEmbalagem: e.target.value })}
+                >
+                  {EMBALAGENS.map((emb) => (
+                    <option key={emb.valor} value={emb.valor}>
+                      {emb.rotulo}
+                    </option>
+                  ))}
+                </select>
+              </span>
+            </label>
           </div>
 
           <div className="acoes">
@@ -669,6 +772,7 @@ export default function Venda() {
           )}
           {itens.map((i) => (
             <li key={i.chave}>
+              <FotoProduto id={i.produto.id} />
               <span className="rotulo-item">
                 {i.produto.nome}
                 <span className="sub">

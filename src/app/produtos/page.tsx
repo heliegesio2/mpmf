@@ -20,6 +20,8 @@ type Produto = {
   preco: string;
   preco_compra: string;
   estoque: string;
+  estoque_minimo: string | null;
+  estoque_minimo_embalagem: string | null;
   tem_foto?: boolean;
 };
 
@@ -32,6 +34,8 @@ type Formulario = {
   precoCompra: string;
   preco: string;
   estoque: string;
+  estoqueMinimo: string;
+  estoqueMinimoEmbalagem: string;
 };
 
 const VAZIO: Formulario = {
@@ -43,6 +47,8 @@ const VAZIO: Formulario = {
   precoCompra: "",
   preco: "",
   estoque: "",
+  estoqueMinimo: "",
+  estoqueMinimoEmbalagem: "unidade",
 };
 
 const moeda = new Intl.NumberFormat("pt-BR", {
@@ -159,6 +165,8 @@ function ProdutosConteudo() {
       precoCompra: paraMoeda(p.preco_compra),
       preco: paraMoeda(p.preco),
       estoque: p.estoque,
+      estoqueMinimo: p.estoque_minimo ? String(Number(p.estoque_minimo)) : "",
+      estoqueMinimoEmbalagem: p.estoque_minimo_embalagem || "unidade",
     });
     setFotoPreview(p.tem_foto ? `/api/produtos/${p.id}/foto?t=${Date.now()}` : "");
     setFotoNova(null);
@@ -304,6 +312,24 @@ function ProdutosConteudo() {
             {...comum("estoque")}
           />
 
+          <p className="ajuda-voz largo-linha">
+            Aviso de estoque baixo: quando a quantidade chegar nesse número (ou menos), o produto
+            entra nos alertas dos Relatórios. Deixe em branco pra usar o padrão da loja.
+          </p>
+
+          <CampoVoz
+            rotulo="Avisar quando cair até"
+            placeholder="ex.: 2"
+            numerico
+            {...comum("estoqueMinimo")}
+          />
+
+          <SelecaoVoz
+            rotulo="Contando em"
+            opcoes={EMBALAGENS}
+            {...comum("estoqueMinimoEmbalagem")}
+          />
+
           <CampoVoz rotulo="Categoria" placeholder="Salgadinho" {...comum("categoria")} />
 
           <CampoVoz
@@ -330,6 +356,9 @@ function ProdutosConteudo() {
                 setErro(true);
                 setAviso(m);
               }}
+              aoIdentificarNome={(nome) =>
+                setForm((f) => (f.nome.trim() ? f : { ...f, nome }))
+              }
             />
           </div>
         </div>

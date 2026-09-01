@@ -91,6 +91,12 @@ connection whose `search_path` doesn't match the database's configured default (
 `ALTER DATABASE ... SET search_path`), which breaks every unqualified table reference. `pool.on("connect", ...)`
 forces `SET search_path TO public` on every new physical connection to route around that — don't remove it.
 
+`produto.estoque_minimo` + `estoque_minimo_embalagem` (`db/09_estoque_minimo.sql`) are the per-product
+low-stock alert: `produtosEstoqueBaixo` flags rows where `estoque <= COALESCE(estoque_minimo, <default>)`,
+the embalagem string is just the alert wording ("Areia abaixo de 2 caixa(s)"). `atualizarProduto` fully
+replaces both (the produtos form always sends them); partial-update callers like the purchase importer
+must read the current values through and pass them back, same as they already do for name/categoria.
+
 `produto.foto` (added in `db/08_foto_produto.sql`) holds an optional product photo as a
 `data:image/jpeg;base64,…` string in a `text` column — no object storage, same by-hand ethos as the rest.
 It's deliberately **kept out of `CAMPOS`** (the shared column list every produto query selects): list/search
@@ -170,14 +176,21 @@ One shared `SpeechRecognition` instance is routed by a `destino` ref — `"itens
 given) | `"novoPreco"` (price of a not-yet-catalogued product).
 
 When a spoken item matches **nothing** in the catalog (after the full-term and last-word searches both
-come back empty), the screen opens an inline "novo produto" panel: editable name (seeded from the
-utterance), price (typed or voiced), and an optional photo via `<CampoFoto>`. Confirming `POST`s to
-`/api/produtos` (`tipoVenda`/`unidade` default to `"unidade"`, `precoCompra`/`estoque` `0`) and drops the
-returned product straight into the cart with the originally-spoken quantity. `novoAberto`/`escolhaAberta`
-refs block further speech while either panel is open.
+come back empty), the screen opens an inline "novo produto" panel with the full registration fields
+(name, price, vendido-por, embalagem, stock, low-stock alert) and a `<CampoFoto>` — taking the photo
+also fires `/api/produtos/identificar-foto` (vision) to auto-fill the name. Confirming `POST`s to
+`/api/produtos` and drops the returned product straight into the cart with the originally-spoken
+quantity. `novoAberto`/`escolhaAberta` refs block further speech while either panel is open.
 
-The top-bar cart button (fixed, in `MenuLateral.tsx`, `.atalho-venda`) is a global shortcut to this screen;
-hidden for a super-admin with no store.
+Cart items show the product photo (`<FotoProduto>` — an `<img>` hitting `/api/produtos/:id/foto` that
+removes itself on the 404 for photoless products, since the `buscar_produto` SQL function doesn't return
+`tem_foto`).
+
+**Cart persistence** — the cart lives in `src/lib/carrinho.tsx` (`CarrinhoProvider` in the root layout,
+`useCarrinho()` hook), mirrored to `localStorage` (`mpmf.carrinho`) so navigating away and back keeps the
+items. It's emptied only on finish (`fechar()` snapshots `finalizada` for the receipt, then clears),
+cancel (`novaVenda()`), or logout (`esquecerCarrinho()` in `MenuLateral`). The top-bar cart button
+(`.atalho-venda`, hidden for a store-less super-admin) shows an item-count badge and links here.
 
 ### Voice input
 

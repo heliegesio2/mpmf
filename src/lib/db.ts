@@ -36,6 +36,8 @@ export type Produto = {
   preco: string;
   preco_compra: string;
   estoque: string;
+  estoque_minimo: string | null;
+  estoque_minimo_embalagem: string | null;
   tem_foto?: boolean;
   score?: number;
 };
@@ -49,6 +51,10 @@ export type ProdutoEntrada = {
   preco: number;
   precoCompra: number;
   estoque: number;
+  /** Avisar quando o estoque cair até aqui. `null`/omitido = sem aviso próprio. */
+  estoqueMinimo?: number | null;
+  /** Rótulo da unidade do aviso ("unidade", "caixa"...). */
+  estoqueMinimoEmbalagem?: string | null;
   /**
    * Foto como data URL. `undefined` = não mexe na foto atual;
    * `""` = remove a foto; `"data:image/..."` = grava essa.
@@ -59,7 +65,8 @@ export type ProdutoEntrada = {
 // a coluna `foto` (data URL, pode ter centenas de KB) fica fora daqui de
 // propósito — as listas só precisam saber se existe uma foto (tem_foto).
 const CAMPOS =
-  "id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque, (foto IS NOT NULL) AS tem_foto";
+  "id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque, " +
+  "estoque_minimo, estoque_minimo_embalagem, (foto IS NOT NULL) AS tem_foto";
 
 export async function buscarProduto(
   empresaId: number,
@@ -111,12 +118,15 @@ export async function criarProduto(
 ): Promise<Produto> {
   const foto = p.foto ? p.foto : null;
   const { rows } = await pool.query<Produto>(
-    `INSERT INTO produto (empresa_id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque, foto)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `INSERT INTO produto
+       (empresa_id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque,
+        estoque_minimo, estoque_minimo_embalagem, foto)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${CAMPOS}`,
     [
       empresaId, p.nome, p.categoria ?? null, p.local ?? null, p.unidade ?? "unidade",
-      p.tipoVenda, p.preco, p.precoCompra, p.estoque, foto,
+      p.tipoVenda, p.preco, p.precoCompra, p.estoque,
+      p.estoqueMinimo ?? null, p.estoqueMinimoEmbalagem ?? null, foto,
     ]
   );
   return rows[0];
@@ -134,6 +144,7 @@ export async function atualizarProduto(
     `UPDATE produto
         SET nome = $3, categoria = $4, local = $5, unidade = $6,
             tipo_venda = $7, preco = $8, preco_compra = $9, estoque = $10,
+            estoque_minimo = $12, estoque_minimo_embalagem = $13,
             foto = CASE
                      WHEN $11::text IS NULL THEN foto
                      WHEN $11 = '' THEN NULL
@@ -145,6 +156,7 @@ export async function atualizarProduto(
     [
       id, empresaId, p.nome, p.categoria ?? null, p.local ?? null,
       p.unidade ?? "unidade", p.tipoVenda, p.preco, p.precoCompra, p.estoque, foto,
+      p.estoqueMinimo ?? null, p.estoqueMinimoEmbalagem ?? null,
     ]
   );
   return rows[0] ?? null;
@@ -475,6 +487,8 @@ export type ProdutoAlerta = {
   preco: number;
   preco_compra: number;
   estoque: number;
+  estoque_minimo?: number | null;
+  estoque_minimo_embalagem?: string | null;
 };
 
 /** Produtos vendendo abaixo do preco de compra — prejuizo por unidade vendida. */
@@ -490,18 +504,24 @@ export async function produtosNoPrejuizo(empresaId: number, limite = 10): Promis
   return rows;
 }
 
+/**
+ * Estoque baixo: usa o limite que o comerciante marcou no produto
+ * (`estoque_minimo`) e, pra quem não marcou nada, cai num padrão geral.
+ */
 export async function produtosEstoqueBaixo(
   empresaId: number,
-  limiar = 3,
+  limiarPadrao = 3,
   limite = 15
 ): Promise<ProdutoAlerta[]> {
   const { rows } = await pool.query<ProdutoAlerta>(
-    `SELECT id, nome, preco::float8, preco_compra::float8, estoque::float8 AS estoque
+    `SELECT id, nome, preco::float8, preco_compra::float8, estoque::float8 AS estoque,
+            estoque_minimo::float8 AS estoque_minimo, estoque_minimo_embalagem
        FROM produto
-      WHERE ativo AND empresa_id = $1 AND estoque <= $2
-      ORDER BY estoque ASC, nome
+      WHERE ativo AND empresa_id = $1
+        AND estoque <= COALESCE(estoque_minimo, $2)
+      ORDER BY (estoque - COALESCE(estoque_minimo, $2)) ASC, estoque ASC, nome
       LIMIT $3`,
-    [empresaId, limiar, limite]
+    [empresaId, limiarPadrao, limite]
   );
   return rows;
 }

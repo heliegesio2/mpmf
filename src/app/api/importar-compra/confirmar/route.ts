@@ -60,6 +60,9 @@ export async function POST(request: Request) {
           preco: item.precoVenda,
           precoCompra: item.precoCompra,
           estoque: Number(atual.estoque),
+          // preserva o aviso de estoque baixo já configurado no produto
+          estoqueMinimo: atual.estoque_minimo === null ? null : Number(atual.estoque_minimo),
+          estoqueMinimoEmbalagem: atual.estoque_minimo_embalagem,
         });
         resultados.push(atualizado);
       } else {

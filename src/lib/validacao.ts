@@ -29,6 +29,18 @@ export function validar(corpo: unknown): { dados?: ProdutoEntrada; erro?: string
   if (!Number.isFinite(estoque) || estoque < 0) return { erro: "Informe uma quantidade válida." };
   if (!VALORES.includes(tipoVenda)) return { erro: "Escolha unidade, quilo ou dúzia." };
 
+  // aviso de estoque baixo: opcional. vazio/ausente = sem aviso próprio.
+  const temMinimo =
+    c.estoqueMinimo !== undefined && c.estoqueMinimo !== null && String(c.estoqueMinimo).trim() !== "";
+  const estoqueMinimo = temMinimo ? numero(c.estoqueMinimo) : null;
+  if (estoqueMinimo !== null && (!Number.isFinite(estoqueMinimo) || estoqueMinimo < 0)) {
+    return { erro: "Informe um valor válido para o aviso de estoque baixo." };
+  }
+  const estoqueMinimoEmbalagem =
+    estoqueMinimo !== null && c.estoqueMinimoEmbalagem
+      ? String(c.estoqueMinimoEmbalagem).trim() || null
+      : null;
+
   // foto: opcional. ausente/undefined = não mexe; "" = remove; senão precisa
   // ser um data URL de imagem e caber num limite razoável (o cliente já reduz).
   const MAX_FOTO = 3_000_000; // ~2,2 MB de imagem depois do base64
@@ -56,6 +68,8 @@ export function validar(corpo: unknown): { dados?: ProdutoEntrada; erro?: string
       preco,
       precoCompra,
       estoque,
+      estoqueMinimo,
+      estoqueMinimoEmbalagem,
       ...(foto !== undefined ? { foto } : {}),
     },
   };

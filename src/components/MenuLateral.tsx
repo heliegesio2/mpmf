@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { esquecerCarrinho, useCarrinho } from "@/lib/carrinho";
 
 type Sessao = {
   nome: string;
@@ -30,6 +31,7 @@ export default function MenuLateral() {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [sessao, setSessao] = useState<Sessao | null>(null);
+  const { itens: itensCarrinho } = useCarrinho();
 
   useEffect(() => setAberto(false), [caminho]);
 
@@ -42,6 +44,7 @@ export default function MenuLateral() {
 
   async function sair() {
     await fetch("/api/auth/logout", { method: "POST" });
+    esquecerCarrinho();
     router.replace("/login");
     router.refresh();
   }
@@ -70,7 +73,11 @@ export default function MenuLateral() {
           href="/venda"
           className="atalho-venda"
           data-ativo={caminho === "/venda"}
-          aria-label="Abrir a venda"
+          aria-label={
+            itensCarrinho.length > 0
+              ? `Abrir a venda (${itensCarrinho.length} ${itensCarrinho.length === 1 ? "item" : "itens"})`
+              : "Abrir a venda"
+          }
           title="Venda"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -84,6 +91,9 @@ export default function MenuLateral() {
             <circle cx="10" cy="20" r="1.5" fill="currentColor" />
             <circle cx="17" cy="20" r="1.5" fill="currentColor" />
           </svg>
+          {itensCarrinho.length > 0 && (
+            <span className="atalho-venda-contador">{itensCarrinho.length}</span>
+          )}
         </Link>
       )}
 
