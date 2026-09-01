@@ -32,3 +32,6 @@ Thumbs.db
 
 # TypeScript incremental build cache
 tsconfig.tsbuildinfo
+
+# credenciais OAuth baixadas do Google/Facebook (nunca commitar)
+client_secret_*.json

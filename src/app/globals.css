@@ -1032,6 +1032,14 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 }
 .cartao-login .rotulo input:focus { outline: none; border-color: var(--ambar); }
 
+/* dentro do cartão de login, o input de CampoVoz não repete a borda do .entrada */
+.cartao-login .entrada input,
+.cartao-login .entrada select {
+  background: transparent;
+  border: 0;
+}
+.cartao-login .ajuda-voz { margin: -4px 0 12px; }
+
 .rodape-login { margin: 0; font-size: 14px; color: var(--creme-fraco); text-align: center; }
 .rodape-login a { color: var(--ambar); }
 

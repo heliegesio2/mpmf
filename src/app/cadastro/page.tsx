@@ -4,6 +4,9 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BotoesSociais from "@/components/BotoesSociais";
+import { CampoVoz } from "@/components/CampoVoz";
+import { useVoz } from "@/lib/useVoz";
+import { capitalizar } from "@/lib/voz";
 
 type Form = {
   nome: string;
@@ -36,6 +39,17 @@ function Conteudo() {
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
 
+  const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
+    aoFinalizar: (texto) => {
+      const campo = campoAtual.current as keyof Form | null;
+      if (!campo) return;
+      const soDigitos = campo === "documento" || campo === "telefone";
+      setForm((f) => ({ ...f, [campo]: soDigitos ? texto.replace(/\D/g, "") : capitalizar(texto) }));
+      setErro("");
+    },
+    aoErrar: (m) => setErro(m),
+  });
+
   useEffect(() => {
     if (!modoSocial) return;
     (async () => {
@@ -53,6 +67,16 @@ function Conteudo() {
       }
     })();
   }, [modoSocial]);
+
+  const comum = (k: keyof Form) => ({
+    campo: k as string,
+    valor: form[k],
+    aoMudar: (v: string) => setForm((f) => ({ ...f, [k]: v })),
+    ouvindo: ouvindoCampo === k,
+    temVoz: disponivel,
+    aoOuvir: ouvir,
+    aoParar: parar,
+  });
 
   const campo = (k: keyof Form) => ({
     value: form[k],
@@ -122,31 +146,18 @@ function Conteudo() {
           </p>
         )}
 
+        <p className="ajuda-voz" data-erro={!disponivel}>
+          {disponivel
+            ? "Toque no microfone do campo e fale."
+            : "Este navegador não reconhece fala. Abra no Chrome ou no Edge para usar os microfones."}
+        </p>
+
         <div className="grade-form">
-          <label className="rotulo largo">
-            Nome da empresa
-            <input {...campo("nome")} placeholder="Mercadinho do Bairro" />
-          </label>
-
-          <label className="rotulo">
-            CNPJ ou CPF
-            <input {...campo("documento")} inputMode="numeric" placeholder="Só números" />
-          </label>
-
-          <label className="rotulo">
-            Telefone
-            <input {...campo("telefone")} inputMode="tel" placeholder="11989902144" />
-          </label>
-
-          <label className="rotulo largo">
-            Cidade
-            <input {...campo("cidade")} placeholder="São Paulo" />
-          </label>
-
-          <label className="rotulo largo">
-            Responsável
-            <input {...campo("responsavel")} placeholder="Seu nome" />
-          </label>
+          <CampoVoz rotulo="Nome da empresa" placeholder="Mercadinho do Bairro" largo {...comum("nome")} />
+          <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comum("documento")} />
+          <CampoVoz rotulo="Telefone" placeholder="11989902144" numerico {...comum("telefone")} />
+          <CampoVoz rotulo="Cidade" placeholder="São Paulo" largo {...comum("cidade")} />
+          <CampoVoz rotulo="Responsável" placeholder="Seu nome" largo {...comum("responsavel")} />
 
           {!social && (
             <>
