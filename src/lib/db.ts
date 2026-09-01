@@ -20,8 +20,25 @@ export const pool =
 // O pooler da Neon (PgBouncer) pode reaproveitar uma conexao de servidor com
 // search_path desatualizado/vazio; forcar em toda nova conexao fisica evita
 // "relation does not exist" mesmo quando o ALTER DATABASE nao chega a valer.
+//
+// Junto vai um "auto-migrate" das colunas aditivas (db/08, db/09): ADD COLUMN
+// IF NOT EXISTS e idempotente e barato, e roda antes de qualquer query do app
+// nessa conexao. Existe porque a migracao manual em producao ja errou de banco
+// (branch da Neon) mais de uma vez e todas as telas de produto quebram sem
+// essas colunas. Migracoes novas continuam indo em db/NN_*.sql; as que forem
+// so "ADD COLUMN IF NOT EXISTS" podem ser espelhadas aqui.
+// consultas separadas de proposito: se o ALTER falhar (permissao, tabela
+// ausente), nao pode arrastar o SET search_path junto no rollback.
+const COLUNAS_ADITIVAS = `
+  ALTER TABLE produto ADD COLUMN IF NOT EXISTS foto text;
+  ALTER TABLE produto ADD COLUMN IF NOT EXISTS estoque_minimo numeric(12,3);
+  ALTER TABLE produto ADD COLUMN IF NOT EXISTS estoque_minimo_embalagem text;
+`;
 pool.on("connect", (client) => {
-  client.query("SET search_path TO public");
+  client.query("SET search_path TO public").catch(() => {});
+  client.query(COLUNAS_ADITIVAS).catch((erro) => {
+    console.error("Falha ao garantir colunas aditivas de produto:", erro);
+  });
 });
 
 if (process.env.NODE_ENV !== "production") global._pgPool = pool;

@@ -90,6 +90,11 @@ a low connection cap that doesn't survive that pattern. The pooler can hand out 
 connection whose `search_path` doesn't match the database's configured default (observed empty even after
 `ALTER DATABASE ... SET search_path`), which breaks every unqualified table reference. `pool.on("connect", ...)`
 forces `SET search_path TO public` on every new physical connection to route around that — don't remove it.
+That same handler also runs the **additive** migrations (`db/08`, `db/09` — `ALTER TABLE produto ADD COLUMN
+IF NOT EXISTS …`) as a separate idempotent query, because the hand-applied migration repeatedly missed the
+Neon branch the deployment actually uses and every product screen 500s without those columns. New
+migrations still go in `db/NN_*.sql`; mirror a pure `ADD COLUMN IF NOT EXISTS` one into `COLUNAS_ADITIVAS`
+too. The `POST/PUT/GET` product routes also return the raw Postgres error in a `detalhe` field on 500.
 
 `produto.estoque_minimo` + `estoque_minimo_embalagem` (`db/09_estoque_minimo.sql`) are the per-product
 low-stock alert: `produtosEstoqueBaixo` flags rows where `estoque <= COALESCE(estoque_minimo, <default>)`,
