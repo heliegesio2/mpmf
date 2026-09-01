@@ -41,6 +41,14 @@ export function validar(corpo: unknown): { dados?: ProdutoEntrada; erro?: string
       ? String(c.estoqueMinimoEmbalagem).trim() || null
       : null;
 
+  // preço da embalagem inteira (fardo/caixa...): opcional. vazio/ausente = null.
+  const temPrecoEmb =
+    c.precoEmbalagem !== undefined && c.precoEmbalagem !== null && String(c.precoEmbalagem).trim() !== "";
+  const precoEmbalagem = temPrecoEmb ? numero(c.precoEmbalagem) : null;
+  if (precoEmbalagem !== null && (!Number.isFinite(precoEmbalagem) || precoEmbalagem < 0)) {
+    return { erro: "Informe um preço de embalagem válido." };
+  }
+
   // foto: opcional. ausente/undefined = não mexe; "" = remove; senão precisa
   // ser um data URL de imagem e caber num limite razoável (o cliente já reduz).
   const MAX_FOTO = 3_000_000; // ~2,2 MB de imagem depois do base64
@@ -70,6 +78,7 @@ export function validar(corpo: unknown): { dados?: ProdutoEntrada; erro?: string
       estoque,
       estoqueMinimo,
       estoqueMinimoEmbalagem,
+      precoEmbalagem,
       ...(foto !== undefined ? { foto } : {}),
     },
   };

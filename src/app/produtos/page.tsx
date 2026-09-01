@@ -20,6 +20,7 @@ type Produto = {
   estoque: string;
   estoque_minimo: string | null;
   estoque_minimo_embalagem: string | null;
+  preco_embalagem: string | null;
   tem_foto?: boolean;
 };
 
@@ -230,6 +231,11 @@ export default function Produtos() {
                     <span className="preco">
                       R$ {moeda.format(v)}/{sufixo(p.tipo_venda)}
                     </span>
+                    {p.preco_embalagem && Number(p.preco_embalagem) > 0 && (
+                      <span className="preco">
+                        {rotuloEmbalagem(p.unidade)} R$ {moeda.format(Number(p.preco_embalagem))}
+                      </span>
+                    )}
                     <span className="custo">
                       custo R$ {moeda.format(c)}
                       {m !== null && ` · ${m.toFixed(0)}%`}

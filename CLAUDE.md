@@ -101,9 +101,15 @@ client/fiado routes also return the raw Postgres error in a `detalhe` field on 5
 
 `produto.estoque_minimo` + `estoque_minimo_embalagem` (`db/09_estoque_minimo.sql`) are the per-product
 low-stock alert: `produtosEstoqueBaixo` flags rows where `estoque <= COALESCE(estoque_minimo, <default>)`,
-the embalagem string is just the alert wording ("Areia abaixo de 2 caixa(s)"). `atualizarProduto` fully
-replaces both (the produtos form always sends them); partial-update callers like the purchase importer
-must read the current values through and pass them back, same as they already do for name/categoria.
+the embalagem string is just the alert wording ("Areia abaixo de 2 caixa(s)"). `produto.preco_embalagem`
+(`db/12`) is a second sale price for the **whole package** (fardo/caixa/…) when it's sold both loose and
+closed at different prices — nullable, shown in the form only when `unidade` ∉ {unidade, granel}. The
+"Preço de venda" label is dynamic (`por kg` / `por un` / `por dz`). `atualizarProduto` fully replaces all
+of these (the produtos form always sends them); partial-update callers like the purchase importer must
+read the current values through and pass them back, same as they already do for name/categoria.
+
+**Not wired into `/venda` yet** — selling by the package (parsing "um fardo de arroz", picking
+`preco_embalagem` over `preco`, deducting stock right) is a follow-up.
 
 `produto.foto` (added in `db/08_foto_produto.sql`) holds an optional product photo as a
 `data:image/jpeg;base64,…` string in a `text` column — no object storage, same by-hand ethos as the rest.

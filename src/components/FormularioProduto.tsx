@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 import { CampoVoz, SelecaoVoz } from "@/components/CampoVoz";
 import CampoFoto from "@/components/CampoFoto";
 import { useVoz } from "@/lib/useVoz";
-import { EMBALAGENS, TIPOS_VENDA, sufixo } from "@/lib/tipos";
+import { EMBALAGENS, TIPOS_VENDA, rotuloEmbalagem, sufixo } from "@/lib/tipos";
 import { capitalizar, numeroFalado, opcaoFalada } from "@/lib/voz";
 import { moedaParaNumero, paraMoeda } from "@/lib/moeda";
+
+/** Embalagens que não têm preço "fechado" separado — a unidade já é o item. */
+const SEM_PRECO_EMBALAGEM = new Set(["unidade", "granel"]);
 
 type Produto = {
   id: number;
@@ -21,6 +24,7 @@ type Produto = {
   estoque: string;
   estoque_minimo: string | null;
   estoque_minimo_embalagem: string | null;
+  preco_embalagem: string | null;
   tem_foto?: boolean;
 };
 
@@ -32,6 +36,7 @@ type Formulario = {
   tipoVenda: string;
   precoCompra: string;
   preco: string;
+  precoEmbalagem: string;
   estoque: string;
   estoqueMinimo: string;
   estoqueMinimoEmbalagem: string;
@@ -45,6 +50,7 @@ const VAZIO: Formulario = {
   tipoVenda: "unidade",
   precoCompra: "",
   preco: "",
+  precoEmbalagem: "",
   estoque: "",
   estoqueMinimo: "",
   estoqueMinimoEmbalagem: "unidade",
@@ -79,14 +85,20 @@ export default function FormularioProduto({ id }: { id?: number }) {
   // ---------- voz ----------
   const aplicarFala = useCallback((campo: string, texto: string) => {
     setErro(false);
-    if (campo === "preco" || campo === "precoCompra" || campo === "estoque" || campo === "estoqueMinimo") {
+    if (
+      campo === "preco" ||
+      campo === "precoCompra" ||
+      campo === "precoEmbalagem" ||
+      campo === "estoque" ||
+      campo === "estoqueMinimo"
+    ) {
       const n = numeroFalado(texto);
       if (n === null) {
         setErro(true);
         setAviso(`Não entendi "${texto}" como número. Tente "quatro e cinquenta".`);
         return;
       }
-      const ehDinheiro = campo === "preco" || campo === "precoCompra";
+      const ehDinheiro = campo === "preco" || campo === "precoCompra" || campo === "precoEmbalagem";
       setForm((f) => ({ ...f, [campo]: ehDinheiro ? paraMoeda(n) : String(n) }));
       setAviso("");
       return;
@@ -138,6 +150,7 @@ export default function FormularioProduto({ id }: { id?: number }) {
             tipoVenda: p.tipo_venda,
             precoCompra: paraMoeda(p.preco_compra),
             preco: paraMoeda(p.preco),
+            precoEmbalagem: p.preco_embalagem ? paraMoeda(p.preco_embalagem) : "",
             estoque: p.estoque,
             estoqueMinimo: p.estoque_minimo ? String(Number(p.estoque_minimo)) : "",
             estoqueMinimoEmbalagem: p.estoque_minimo_embalagem || "unidade",
@@ -286,7 +299,28 @@ export default function FormularioProduto({ id }: { id?: number }) {
             <SelecaoVoz rotulo="Embalagem" opcoes={EMBALAGENS} {...comum("unidade")} />
 
             <CampoVoz rotulo="Preço de compra" placeholder="0,00" moeda {...comum("precoCompra")} />
-            <CampoVoz rotulo="Preço de venda" placeholder="0,00" moeda {...comum("preco")} />
+            <CampoVoz
+              rotulo={`Preço de venda por ${sufixo(form.tipoVenda)}`}
+              placeholder="0,00"
+              moeda
+              {...comum("preco")}
+            />
+
+            {!SEM_PRECO_EMBALAGEM.has(form.unidade) && (
+              <CampoVoz
+                rotulo={`Preço por ${rotuloEmbalagem(form.unidade).toLowerCase()} fechado`}
+                placeholder="0,00"
+                moeda
+                {...comum("precoEmbalagem")}
+              />
+            )}
+
+            {!SEM_PRECO_EMBALAGEM.has(form.unidade) && (
+              <p className="ajuda-voz largo-linha">
+                Vende o {rotuloEmbalagem(form.unidade).toLowerCase()} inteiro por um preço diferente do
+                avulso/por {sufixo(form.tipoVenda)}? Informe aqui. Deixe em branco se só vende avulso.
+              </p>
+            )}
 
             <CampoVoz rotulo="Quantidade em estoque" placeholder="12" numerico {...comum("estoque")} />
 

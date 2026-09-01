@@ -68,6 +68,7 @@ const MIGRACOES_IDEMPOTENTES = [
   "CREATE INDEX IF NOT EXISTS idx_fiado_empresa ON fiado (empresa_id, pago, criado_em DESC)",
   "ALTER TABLE cliente ADD COLUMN IF NOT EXISTS nota integer",
   "CREATE INDEX IF NOT EXISTS idx_cliente_cpf ON cliente ((regexp_replace(coalesce(cpf, ''), '\\D', '', 'g')))",
+  "ALTER TABLE produto ADD COLUMN IF NOT EXISTS preco_embalagem numeric(10,2)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -99,6 +100,7 @@ export type Produto = {
   estoque: string;
   estoque_minimo: string | null;
   estoque_minimo_embalagem: string | null;
+  preco_embalagem: string | null;
   tem_foto?: boolean;
   score?: number;
 };
@@ -116,6 +118,8 @@ export type ProdutoEntrada = {
   estoqueMinimo?: number | null;
   /** Rótulo da unidade do aviso ("unidade", "caixa"...). */
   estoqueMinimoEmbalagem?: string | null;
+  /** Preço da embalagem inteira (fardo/caixa...). `null` = só avulso. */
+  precoEmbalagem?: number | null;
   /**
    * Foto como data URL. `undefined` = não mexe na foto atual;
    * `""` = remove a foto; `"data:image/..."` = grava essa.
@@ -127,7 +131,7 @@ export type ProdutoEntrada = {
 // propósito — as listas só precisam saber se existe uma foto (tem_foto).
 const CAMPOS =
   "id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque, " +
-  "estoque_minimo, estoque_minimo_embalagem, (foto IS NOT NULL) AS tem_foto";
+  "estoque_minimo, estoque_minimo_embalagem, preco_embalagem, (foto IS NOT NULL) AS tem_foto";
 
 export async function buscarProduto(
   empresaId: number,
@@ -185,13 +189,13 @@ export async function criarProduto(
   const { rows } = await pool.query<Produto>(
     `INSERT INTO produto
        (empresa_id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque,
-        estoque_minimo, estoque_minimo_embalagem, foto)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        estoque_minimo, estoque_minimo_embalagem, foto, preco_embalagem)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${CAMPOS}`,
     [
       empresaId, p.nome, p.categoria ?? null, p.local ?? null, p.unidade ?? "unidade",
       p.tipoVenda, p.preco, p.precoCompra, p.estoque,
-      p.estoqueMinimo ?? null, p.estoqueMinimoEmbalagem ?? null, foto,
+      p.estoqueMinimo ?? null, p.estoqueMinimoEmbalagem ?? null, foto, p.precoEmbalagem ?? null,
     ]
   );
   return rows[0];
@@ -210,7 +214,7 @@ export async function atualizarProduto(
     `UPDATE produto
         SET nome = $3, categoria = $4, local = $5, unidade = $6,
             tipo_venda = $7, preco = $8, preco_compra = $9, estoque = $10,
-            estoque_minimo = $12, estoque_minimo_embalagem = $13,
+            estoque_minimo = $12, estoque_minimo_embalagem = $13, preco_embalagem = $14,
             foto = CASE
                      WHEN $11::text IS NULL THEN foto
                      WHEN $11 = '' THEN NULL
@@ -222,7 +226,7 @@ export async function atualizarProduto(
     [
       id, empresaId, p.nome, p.categoria ?? null, p.local ?? null,
       p.unidade ?? "unidade", p.tipoVenda, p.preco, p.precoCompra, p.estoque, foto,
-      p.estoqueMinimo ?? null, p.estoqueMinimoEmbalagem ?? null,
+      p.estoqueMinimo ?? null, p.estoqueMinimoEmbalagem ?? null, p.precoEmbalagem ?? null,
     ]
   );
   return rows[0] ?? null;
