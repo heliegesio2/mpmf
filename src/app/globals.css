@@ -670,6 +670,24 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 /* linha de ajuda que ocupa as duas colunas do formulário */
 .grade-form .largo-linha { grid-column: 1 / -1; margin: 0; }
 
+/* foto ampliada por cima da tela */
+.foto-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.82);
+  cursor: zoom-out;
+}
+.foto-overlay img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
 /* ============ tela de venda ============ */
 .contador { display: flex; align-items: center; gap: 8px; flex: none; }
 .contador .botao.mini { width: 34px; padding: 8px 0; font-size: 17px; line-height: 1; }
