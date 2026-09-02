@@ -353,12 +353,7 @@ html[data-fonte="grande"] { zoom: 1.5; }
   gap: 16px;
   z-index: 20;
 }
-.menu-marca,
-.menu-rodape,
-.fechar-menu { flex: none; }
-/* a lista rola quando tem itens demais pra caber; o rodapé fica fixo embaixo */
-.menu ul { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-
+/* usada no cartão de login */
 .menu-marca {
   font-size: 17px;
   font-weight: 900;
@@ -373,6 +368,107 @@ html[data-fonte="grande"] { zoom: 1.5; }
   text-transform: uppercase;
   color: var(--ambar);
   margin-top: 4px;
+}
+
+.menu-conta,
+.fechar-menu { flex: none; }
+/* a lista rola quando tem itens demais pra caber; a conta fica fixa no topo */
+.menu ul { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+
+/* ---- bloco de conta do usuário (topo do menu) ---- */
+.menu-conta {
+  border: 1px solid var(--verde-linha);
+  border-radius: 12px;
+  background: var(--verde-superficie);
+  overflow: hidden;
+}
+.menu-conta-cabeca {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  color: var(--creme);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.menu-conta-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--ambar);
+  color: #14261c;
+  font-weight: 900;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+}
+.menu-conta-id { flex: 1; min-width: 0; }
+.menu-conta-id strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-conta-id span {
+  display: block;
+  font-size: 11px;
+  color: var(--creme-fraco);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu-conta-seta { flex: none; transition: transform 0.18s ease; }
+.menu-conta[data-aberta="true"] .menu-conta-seta { transform: rotate(180deg); }
+
+.menu-conta-acoes {
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+  border-top: 1px solid var(--verde-linha);
+}
+.menu-conta-acoes a,
+.menu-conta-acoes button {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--creme);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.menu-conta-acoes a:hover,
+.menu-conta-acoes button:hover { background: var(--verde-linha); }
+.menu-conta-acoes a[data-ativo="true"] { color: var(--ambar); }
+.menu-conta-fonte {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  font-size: 12px;
+  color: var(--creme-fraco);
+}
+/* dentro da janelinha o ajuste de fonte não é mais flutuante */
+.menu-conta-fonte .ajuste-fonte {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
 }
 
 .menu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; align-content: start; }
@@ -1117,24 +1213,6 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 .botao-social:focus-visible { outline: 3px solid var(--ambar); outline-offset: 2px; }
 
 a.botao { display: block; text-align: center; text-decoration: none; }
-
-/* ============ rodapé do menu ============ */
-.menu-rodape {
-  margin-top: auto;
-  display: grid;
-  gap: 10px;
-  padding-top: 16px;
-  border-top: 1px solid var(--verde-linha);
-}
-.menu-usuario {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--creme-fraco);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* ============ administração de empresas ============ */
 .abas { display: flex; gap: 8px; flex-wrap: wrap; }

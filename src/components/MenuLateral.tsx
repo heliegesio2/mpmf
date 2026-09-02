@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import AjusteFonte from "@/components/AjusteFonte";
 import { esquecerCarrinho, useCarrinho } from "@/lib/carrinho";
 
 type Sessao = {
@@ -22,21 +23,31 @@ const LOJA = [
   { href: "/relatorios", rotulo: "Relatórios", descricao: "Gastos, estoque, caixa e alertas" },
   { href: "/clientes", rotulo: "Clientes", descricao: "Cadastro com foto, para fiado" },
   { href: "/contas", rotulo: "Contas a receber", descricao: "Fiado em aberto e quitação" },
-  { href: "/configuracoes", rotulo: "Configurações", descricao: "Dados da empresa e chave Pix" },
 ];
 
 const ADMIN = [
   { href: "/admin/empresas", rotulo: "Empresas", descricao: "Aprovar ou reprovar" },
 ];
 
+function iniciais(nome: string): string {
+  const partes = nome.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return "?";
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase();
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase();
+}
+
 export default function MenuLateral() {
   const caminho = usePathname();
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
+  const [contaAberta, setContaAberta] = useState(false);
   const [sessao, setSessao] = useState<Sessao | null>(null);
   const { itens: itensCarrinho } = useCarrinho();
 
-  useEffect(() => setAberto(false), [caminho]);
+  useEffect(() => {
+    setAberto(false);
+    setContaAberta(false);
+  }, [caminho]);
 
   useEffect(() => {
     fetch("/api/auth/sessao")
@@ -115,9 +126,48 @@ export default function MenuLateral() {
       {aberto && <div className="fundo-menu" onClick={() => setAberto(false)} />}
 
       <nav className="menu" data-aberto={aberto} aria-label="Seções">
-        <div className="menu-marca">
-          {sessao.empresaNome ?? "Administração"}
-          <span>{sessao.papel === "super_admin" ? "super admin" : "balcão"}</span>
+        <div className="menu-conta" data-aberta={contaAberta}>
+          <button
+            type="button"
+            className="menu-conta-cabeca"
+            onClick={() => setContaAberta((v) => !v)}
+            aria-expanded={contaAberta}
+          >
+            <span className="menu-conta-avatar" aria-hidden="true">{iniciais(sessao.nome)}</span>
+            <span className="menu-conta-id">
+              <strong>{sessao.nome}</strong>
+              <span>
+                {sessao.empresaNome ?? "Administração"}
+                {sessao.papel === "super_admin" ? " · super admin" : ""}
+              </span>
+            </span>
+            <svg className="menu-conta-seta" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+
+          {contaAberta && (
+            <div className="menu-conta-acoes">
+              <div className="menu-conta-fonte">
+                <span>Tamanho da letra</span>
+                <AjusteFonte />
+              </div>
+              {temLoja && (
+                <Link href="/configuracoes" data-ativo={caminho === "/configuracoes"}>
+                  Configurações da empresa
+                </Link>
+              )}
+              <Link href="/perfil" data-ativo={caminho === "/perfil"}>
+                Meu perfil
+              </Link>
+              <Link href="/senha" data-ativo={caminho === "/senha"}>
+                Trocar senha
+              </Link>
+              <button type="button" onClick={sair}>
+                Sair
+              </button>
+            </div>
+          )}
         </div>
 
         <ul>
@@ -130,13 +180,6 @@ export default function MenuLateral() {
             </li>
           ))}
         </ul>
-
-        <div className="menu-rodape">
-          <p className="menu-usuario">{sessao.nome}</p>
-          <button type="button" className="botao neutro" onClick={sair}>
-            Sair
-          </button>
-        </div>
 
         <button type="button" className="fechar-menu" onClick={() => setAberto(false)}>
           Fechar

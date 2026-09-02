@@ -299,8 +299,20 @@ Three `papel` values: `super_admin` (approves/rejects stores in `/admin/empresas
 store per `db/03_super_admin_dono_loja.sql`), `admin`, `operador` — both scoped to one `empresa` via
 `empresa_id`, which is `NOT NULL`-enforced by a check constraint for non-super-admins.
 
+### Account menu (`MenuLateral`)
+
+The sidebar's top block (`.menu-conta`) is the user/account menu, petroprep-style: an initials avatar +
+name + store/role line, collapsible. Expanded, it holds the large-text toggle (`<AjusteFonte>`, rendered
+**here**, not in `layout.tsx` — `.menu-conta-fonte .ajuste-fonte` un-fixes its position), then
+**Configurações da empresa** (`/configuracoes`, store users only — it's no longer in the main `LOJA`
+list), **Meu perfil** (`/perfil` — edit own `usuario.nome`), **Trocar senha** (`/senha`), and **Sair**.
+`PUT /api/auth/perfil` re-mints the session cookie so the new name shows without re-login (the name lives
+inside the HMAC token). `GET/PUT /api/auth/senha` — `conferirSenha` on the current password first;
+Google-only accounts (`senha_hash IS NULL`) get a "no password" message instead of the form.
+
 ### UI conventions
 
 No CSS framework — plain `globals.css`. `AjusteFonte` toggles a large-text mode (persisted to
 `localStorage`, applied pre-paint via an inline `<script>` in `layout.tsx` to avoid a flash of normal-size
-text). All routes render inside `MenuLateral` (sidebar) from the root layout.
+text); the toggle itself lives in the account menu (above), so `/login` and `/cadastro` apply the stored
+preference but can't change it. All routes render inside `MenuLateral` (sidebar) from the root layout.

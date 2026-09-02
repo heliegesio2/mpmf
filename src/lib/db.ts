@@ -438,6 +438,20 @@ export async function usuarioPorEmail(email: string): Promise<UsuarioLogin | nul
   return rows[0] ?? null;
 }
 
+export async function usuarioPorId(id: number): Promise<UsuarioLogin | null> {
+  const { rows } = await pool.query<UsuarioLogin>(
+    `SELECT ${CAMPOS_LOGIN} WHERE u.id = $1`,
+    [id]
+  );
+  return rows[0] ?? null;
+}
+
+/** Troca o próprio nome (o usuário vem sempre da sessão). */
+export async function alterarNomeUsuario(id: number, nome: string): Promise<boolean> {
+  const r = await pool.query("UPDATE usuario SET nome = $2 WHERE id = $1", [id, nome]);
+  return (r.rowCount ?? 0) > 0;
+}
+
 // ---------- identidades sociais (Google/Facebook) ----------
 
 export async function usuarioPorIdentidade(
