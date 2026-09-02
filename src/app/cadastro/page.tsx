@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import BotoesSociais from "@/components/BotoesSociais";
+import Logo from "@/components/Logo";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
 import { useVoz } from "@/lib/useVoz";
@@ -150,6 +151,7 @@ function Conteudo() {
   return (
     <main className="tela-login">
       <section className="cartao-login largo">
+        <Logo className="grande logo-login" />
         <h1 className="titulo-cartao">Cadastrar empresa</h1>
 
         {social && (

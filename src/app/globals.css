@@ -528,6 +528,27 @@ html[data-fonte="grande"] { zoom: 1.5; }
   gap: 16px;
   z-index: 20;
 }
+/* ---- marca PDV Já ---- */
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--ambar);
+}
+.logo-marca { width: 30px; height: 30px; flex: none; }
+.logo-nome {
+  font-family: "Archivo", system-ui, sans-serif;
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+  color: var(--creme);
+  line-height: 1;
+}
+.logo-nome b { color: var(--ambar); font-weight: 900; }
+.logo.grande .logo-marca { width: 40px; height: 40px; }
+.logo.grande .logo-nome { font-size: 27px; }
+.logo-login { margin-bottom: 4px; }
+
 /* cabeçalho do menu lateral e do cartão de login */
 .menu-marca {
   font-size: 17px;
@@ -546,8 +567,21 @@ html[data-fonte="grande"] { zoom: 1.5; }
   margin-top: 4px;
 }
 
+.menu-logo,
 .menu-marca,
 .fechar-menu { flex: none; }
+.menu-logo { text-decoration: none; margin-bottom: -6px; }
+.menu .menu-marca {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--creme-fraco);
+}
+.menu .menu-marca span {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  margin-top: 2px;
+}
 /* os grupos rolam quando não cabem; a marca e o "Fechar" ficam fixos */
 .menu-grupos {
   flex: 1 1 auto;

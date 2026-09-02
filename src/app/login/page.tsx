@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import BotoesSociais from "@/components/BotoesSociais";
+import Logo from "@/components/Logo";
 
 const ERROS_OAUTH: Record<string, string> = {
   "provedor-nao-configurado": "Esse login social ainda não está configurado.",
@@ -49,10 +50,7 @@ function Formulario() {
   return (
     <main className="tela-login">
       <section className="cartao-login">
-        <div className="menu-marca">
-          Mercadinho
-          <span>balcão</span>
-        </div>
+        <Logo className="grande logo-login" />
 
         <h1 className="titulo-cartao">Entrar</h1>
 

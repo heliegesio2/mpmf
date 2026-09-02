@@ -29,6 +29,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // fora do middleware: rotas de API (cada uma confere a sessao por conta
-  // propria), arquivos estaticos e o favicon
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  // propria), arquivos estaticos e os icones/favicon (precisam abrir deslogado)
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|icon.svg|apple-icon|opengraph-image|manifest).*)",
+  ],
 };

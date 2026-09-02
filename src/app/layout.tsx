@@ -4,8 +4,9 @@ import { CarrinhoProvider } from "@/lib/carrinho";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Mercadinho — consulta e cadastro",
-  description: "Consulta de preço por voz e edição de produtos.",
+  title: "PDV Já — o balcão que entende sua voz",
+  description:
+    "Ponto de venda para mercadinhos: consulta de preço e venda por voz, contas a pagar e receber, estoque e relatórios.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

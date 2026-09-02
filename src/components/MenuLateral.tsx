@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AjusteFonte from "@/components/AjusteFonte";
+import Logo from "@/components/Logo";
 import { esquecerCarrinho, useCarrinho } from "@/lib/carrinho";
 
 type Sessao = {
@@ -248,6 +249,9 @@ export default function MenuLateral() {
       {aberto && <div className="fundo-menu" onClick={() => setAberto(false)} />}
 
       <nav className="menu" data-aberto={aberto} aria-label="Seções">
+        <Link href="/" className="menu-logo" aria-label="PDV Já — início">
+          <Logo />
+        </Link>
         <div className="menu-marca">
           {sessao.empresaNome ?? "Administração"}
           <span>{sessao.papel === "super_admin" ? "super admin" : "balcão"}</span>
