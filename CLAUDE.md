@@ -76,6 +76,15 @@ shared by both password and OAuth login via `autorizarLogin()` in `src/lib/login
 `GOOGLE_/FACEBOOK_CLIENT_ID/SECRET` + `APP_URL` (canonical origin for the callback URL); unset → the
 buttons show but bounce to `/login?erro=provedor-nao-configurado`.
 
+`trocarCodigo` also returns the provider's profile-picture URL (`picture` for Google, `picture.data.url`
+for Facebook — the userinfo URL asks for it, silhouettes dropped). `baixarFotoComoDataUrl` (in `oauth.ts`,
+best-effort: https only, `image/*`, ≤2MB, any failure → `null`) turns it into a data URL, and
+`definirFotoUsuarioSeVazia` writes it to `usuario.foto` **only when that column is null/empty** — so a
+photo the user later sets in `/perfil` is never clobbered. The callback fills it on every social login
+(login-by-identity and email-link paths); the new-signup path carries the short URL in the
+`cadastro_social` cookie (`fotoUrl`) and `POST /api/empresas` downloads it after COMMIT, outside the
+transaction.
+
 `src/lib/sessao.ts` provides the server-side session helpers used by API routes:
 - `exigirSessao()` — any logged-in user, or a ready-made 401 response
 - `exigirSuperAdmin()` — super admin only, or a ready-made 403

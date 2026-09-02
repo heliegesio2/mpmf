@@ -5,6 +5,14 @@
 
 export type ProvedorNome = "google" | "facebook";
 
+export type PerfilSocial = {
+  provedorId: string;
+  email: string;
+  nome: string;
+  /** URL pública da foto no provedor (Google/Facebook), quando houver. */
+  fotoUrl: string;
+};
+
 type Config = {
   authUrl: string;
   tokenUrl: string;
@@ -12,7 +20,7 @@ type Config = {
   scope: string;
   clientId?: string;
   clientSecret?: string;
-  parseUserinfo: (u: Record<string, unknown>) => { provedorId: string; email: string; nome: string };
+  parseUserinfo: (u: Record<string, unknown>) => PerfilSocial;
 };
 
 export const PROVEDORES: Record<ProvedorNome, Config> = {
@@ -27,20 +35,26 @@ export const PROVEDORES: Record<ProvedorNome, Config> = {
       provedorId: String(u.sub ?? ""),
       email: String(u.email ?? ""),
       nome: String(u.name ?? u.email ?? ""),
+      fotoUrl: String(u.picture ?? ""),
     }),
   },
   facebook: {
     authUrl: "https://www.facebook.com/v19.0/dialog/oauth",
     tokenUrl: "https://graph.facebook.com/v19.0/oauth/access_token",
-    userinfoUrl: "https://graph.facebook.com/me?fields=id,name,email",
+    userinfoUrl:
+      "https://graph.facebook.com/me?fields=id,name,email,picture.width(400).height(400)",
     scope: "email",
     clientId: process.env.FACEBOOK_CLIENT_ID,
     clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-    parseUserinfo: (u) => ({
-      provedorId: String(u.id ?? ""),
-      email: String(u.email ?? ""),
-      nome: String(u.name ?? u.email ?? ""),
-    }),
+    parseUserinfo: (u) => {
+      const pic = u.picture as { data?: { url?: string; is_silhouette?: boolean } } | undefined;
+      return {
+        provedorId: String(u.id ?? ""),
+        email: String(u.email ?? ""),
+        nome: String(u.name ?? u.email ?? ""),
+        fotoUrl: pic?.data?.is_silhouette ? "" : String(pic?.data?.url ?? ""),
+      };
+    },
   },
 };
 
@@ -85,7 +99,7 @@ export async function trocarCodigo(
   p: ProvedorNome,
   code: string,
   redirect: string
-): Promise<{ provedorId: string; email: string; nome: string }> {
+): Promise<PerfilSocial> {
   const c = PROVEDORES[p];
 
   const tr = await fetch(c.tokenUrl, {
@@ -116,4 +130,25 @@ export async function trocarCodigo(
   if (!dados.provedorId) throw new Error(`${p} não retornou o identificador da conta.`);
   if (!dados.email) throw new Error(`${p} não retornou o e-mail — revise as permissões do app.`);
   return dados;
+}
+
+/**
+ * Baixa a foto do provedor e devolve como data URL (image/jpeg|png…), pra
+ * guardar no mesmo formato de produto.foto / cliente.foto. Best-effort:
+ * qualquer falha (URL vazia, não-imagem, grande demais) devolve null e o
+ * login segue sem foto.
+ */
+export async function baixarFotoComoDataUrl(url: string): Promise<string | null> {
+  if (!url || !/^https:\/\//i.test(url)) return null;
+  try {
+    const r = await fetch(url, { redirect: "follow" });
+    if (!r.ok) return null;
+    const tipo = r.headers.get("content-type") ?? "";
+    if (!tipo.startsWith("image/")) return null;
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length === 0 || buf.length > 2_000_000) return null;
+    return `data:${tipo.split(";")[0]};base64,${buf.toString("base64")}`;
+  } catch {
+    return null;
+  }
 }

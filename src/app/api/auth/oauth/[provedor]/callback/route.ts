@@ -6,8 +6,19 @@ import {
   criarCadastroSocial,
 } from "@/lib/auth";
 import { autorizarLogin } from "@/lib/login";
-import { usuarioPorEmail, usuarioPorIdentidade, vincularIdentidade } from "@/lib/db";
-import { origemApp, provedorValido, redirectUri, trocarCodigo } from "@/lib/oauth";
+import {
+  definirFotoUsuarioSeVazia,
+  usuarioPorEmail,
+  usuarioPorIdentidade,
+  vincularIdentidade,
+} from "@/lib/db";
+import {
+  baixarFotoComoDataUrl,
+  origemApp,
+  provedorValido,
+  redirectUri,
+  trocarCodigo,
+} from "@/lib/oauth";
 
 export const dynamic = "force-dynamic";
 
@@ -53,6 +64,16 @@ export async function GET(request: Request, { params }: { params: Promise<{ prov
   }
 
   if (usuario) {
+    // pega a foto do provedor na primeira vez (não sobrescreve foto própria)
+    if (perfil.fotoUrl) {
+      try {
+        const dataUrl = await baixarFotoComoDataUrl(perfil.fotoUrl);
+        if (dataUrl) await definirFotoUsuarioSeVazia(usuario.id, dataUrl);
+      } catch (e) {
+        console.warn("foto social:", e);
+      }
+    }
+
     const r = await autorizarLogin(usuario);
     if (!r.ok) return falhar(r.erro);
     const resp = NextResponse.redirect(new URL(r.destino, base));
@@ -73,6 +94,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ prov
     provedorId: perfil.provedorId,
     email: perfil.email,
     nome: perfil.nome,
+    fotoUrl: perfil.fotoUrl || undefined,
   });
   const resp = NextResponse.redirect(new URL("/cadastro?social=1", base));
   resp.cookies.set(COOKIE_CADASTRO_SOCIAL, token, {

@@ -17,6 +17,11 @@ type Props = {
    * nome sugerido (só chama se vier nome; falha é silenciosa).
    */
   aoIdentificarNome?: (nome: string) => void;
+  /**
+   * Por padrão o seletor sugere a câmera (`capture`). Passe `semCaptura` pra
+   * abrir o seletor normal (galeria + câmera) — útil pra foto de perfil.
+   */
+  semCaptura?: boolean;
 };
 
 /**
@@ -31,6 +36,7 @@ export default function CampoFoto({
   aoRemover,
   aoErro,
   aoIdentificarNome,
+  semCaptura,
 }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const id = useId();
@@ -82,7 +88,7 @@ export default function CampoFoto({
         id={id}
         type="file"
         accept="image/*"
-        capture="environment"
+        {...(semCaptura ? {} : { capture: "environment" as const })}
         hidden
         onChange={(e) => selecionado(e.target.files?.[0])}
       />

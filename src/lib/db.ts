@@ -477,6 +477,16 @@ export async function fotoUsuario(id: number): Promise<string | null> {
   return rows[0]?.foto ?? null;
 }
 
+/** Preenche a foto (vinda do Google/Facebook) só se o usuário ainda não tiver uma. */
+export async function definirFotoUsuarioSeVazia(id: number, dataUrl: string): Promise<void> {
+  if (!dataUrl) return;
+  await garantirSchema();
+  await pool.query(
+    "UPDATE usuario SET foto = $2 WHERE id = $1 AND (foto IS NULL OR foto = '')",
+    [id, dataUrl]
+  );
+}
+
 // ---------- identidades sociais (Google/Facebook) ----------
 
 export async function usuarioPorIdentidade(

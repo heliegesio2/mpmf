@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { pool, listarEmpresas, garantirSchema } from "@/lib/db";
+import { pool, listarEmpresas, garantirSchema, definirFotoUsuarioSeVazia } from "@/lib/db";
 import { gerarHashSenha } from "@/lib/senha";
 import { exigirSuperAdmin, sessaoAtual } from "@/lib/sessao";
 import { COOKIE_CADASTRO_SOCIAL, lerCadastroSocial } from "@/lib/auth";
+import { baixarFotoComoDataUrl } from "@/lib/oauth";
 
 export const dynamic = "force-dynamic";
 
@@ -114,6 +115,7 @@ export async function POST(request: Request) {
       [nome, documento, c.telefone ?? null, Boolean(c.telefoneWhatsapp), c.cidade ?? null, horario, pixChave, pixNome]
     );
 
+    let usuarioSocialId: number | null = null;
     for (const u of usuarios) {
       const senhaHash = social ? null : await gerarHashSenha(u.senha);
       const novo = await cliente.query<{ id: number }>(
@@ -122,6 +124,7 @@ export async function POST(request: Request) {
         [empresa.rows[0].id, u.nome, u.email, senhaHash, u.papel]
       );
       if (social) {
+        usuarioSocialId = novo.rows[0].id;
         await cliente.query(
           `INSERT INTO usuario_identidade (usuario_id, provedor, provedor_id) VALUES ($1, $2, $3)`,
           [novo.rows[0].id, social.provedor, social.provedorId]
@@ -130,6 +133,16 @@ export async function POST(request: Request) {
     }
 
     await cliente.query("COMMIT");
+
+    // foto do provedor: best-effort, fora da transação
+    if (social?.fotoUrl && usuarioSocialId) {
+      try {
+        const dataUrl = await baixarFotoComoDataUrl(social.fotoUrl);
+        if (dataUrl) await definirFotoUsuarioSeVazia(usuarioSocialId, dataUrl);
+      } catch (e) {
+        console.warn("foto social no cadastro:", e);
+      }
+    }
 
     const resposta = NextResponse.json(
       souSuperAdmin

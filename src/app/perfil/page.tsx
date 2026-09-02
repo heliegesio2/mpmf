@@ -80,6 +80,7 @@ export default function Perfil() {
             <div className="rotulo largo">
               <CampoFoto
                 rotulo="Sua foto"
+                semCaptura
                 preview={foto}
                 aoEscolher={(d) => {
                   setFoto(d);

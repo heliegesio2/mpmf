@@ -110,6 +110,8 @@ export type CadastroSocial = {
   provedorId: string;
   email: string;
   nome: string;
+  /** URL da foto no provedor (curta — o data URL não caberia no cookie). */
+  fotoUrl?: string;
   exp: number;
 };
 
