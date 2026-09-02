@@ -2,11 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
+import CampoFoto from "@/components/CampoFoto";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
 export default function Perfil() {
   const [nome, setNome] = useState("");
+  // "" sem foto; um data URL foto nova; "/api/auth/foto" a foto que já está salva
+  const [foto, setFoto] = useState("");
+  const [fotoMexida, setFotoMexida] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
@@ -26,9 +30,10 @@ export default function Perfil() {
   useEffect(() => {
     (async () => {
       try {
-        const r = await fetch("/api/auth/sessao");
+        const r = await fetch("/api/auth/perfil");
         const d = await r.json();
-        setNome(d.sessao?.nome ?? "");
+        setNome(d.nome ?? "");
+        if (d.temFoto) setFoto(`/api/auth/foto?v=${Date.now()}`);
       } finally {
         setCarregando(false);
       }
@@ -39,15 +44,18 @@ export default function Perfil() {
     setSalvando(true);
     setErro(false);
     try {
+      const corpo: { nome: string; foto?: string } = { nome };
+      if (fotoMexida) corpo.foto = foto.startsWith("data:image/") ? foto : "";
+
       const r = await fetch("/api/auth/perfil", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nome }),
+        body: JSON.stringify(corpo),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
-      setAviso("Nome atualizado.");
-      // o nome aparece no menu a partir do token da sessão — recarrega pra refletir
+      setAviso("Perfil atualizado.");
+      // nome e foto aparecem no menu — recarrega pra refletir
       setTimeout(() => window.location.reload(), 700);
     } catch (e) {
       setErro(true);
@@ -65,11 +73,34 @@ export default function Perfil() {
         <p className="vazio">Carregando…</p>
       ) : (
         <section className="cartao">
-          <h2 className="titulo-cartao">Nome</h2>
           <p className="ajuda-voz" data-erro={!disponivel}>
-            É o nome que aparece no menu e nas telas. Toque no microfone e fale, ou digite.
+            Nome e foto aparecem no menu de conta (canto superior direito).
           </p>
           <div className="grade-form">
+            <div className="rotulo largo">
+              <CampoFoto
+                rotulo="Sua foto"
+                preview={foto}
+                aoEscolher={(d) => {
+                  setFoto(d);
+                  setFotoMexida(true);
+                  setErro(false);
+                }}
+                aoRemover={
+                  foto
+                    ? () => {
+                        setFoto("");
+                        setFotoMexida(true);
+                      }
+                    : undefined
+                }
+                aoErro={(m) => {
+                  setErro(true);
+                  setAviso(m);
+                }}
+              />
+            </div>
+
             <CampoVoz
               rotulo="Seu nome"
               placeholder="Como você quer ser chamado"
@@ -89,7 +120,7 @@ export default function Perfil() {
               onClick={salvar}
               disabled={salvando || nome.trim().length < 2}
             >
-              {salvando ? "Salvando…" : "Salvar nome"}
+              {salvando ? "Salvando…" : "Salvar perfil"}
             </button>
           </div>
           <p className="dica" data-erro={erro} role="status" aria-live="polite">

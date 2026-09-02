@@ -78,7 +78,7 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .atalho-venda {
   position: fixed;
   top: 14px;
-  right: 100px;
+  right: 64px;
   z-index: 30;
   display: grid;
   place-items: center;
@@ -112,6 +112,109 @@ html[data-fonte="grande"] { zoom: 1.5; }
   line-height: 18px;
   text-align: center;
 }
+
+/* ---- menu de conta (canto superior direito, com a foto do usuário) ---- */
+.conta-topo {
+  position: fixed;
+  top: 14px;
+  right: 14px;
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--verde-linha);
+  border-radius: 50%;
+  background: var(--verde-superficie);
+  overflow: hidden;
+  cursor: pointer;
+}
+.conta-topo:hover { border-color: var(--creme-fraco); }
+.conta-topo:focus-visible { outline: 2px solid var(--creme); outline-offset: 2px; }
+.conta-topo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.conta-iniciais {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  background: var(--ambar);
+  color: #14261c;
+  font-weight: 900;
+  font-size: 14px;
+}
+
+.fundo-conta { position: fixed; inset: 0; z-index: 34; }
+
+.conta-menu {
+  position: fixed;
+  top: 62px;
+  right: 14px;
+  z-index: 35;
+  width: 244px;
+  max-width: calc(100vw - 28px);
+  background: #0a1712;
+  border: 1px solid var(--verde-linha);
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+}
+.conta-menu-cabeca { padding: 8px 10px 10px; }
+.conta-menu-cabeca strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--creme);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conta-menu-cabeca span {
+  display: block;
+  font-size: 11px;
+  color: var(--creme-fraco);
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conta-menu-fonte {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  margin: 0 -6px;
+  border-top: 1px solid var(--verde-linha);
+  border-bottom: 1px solid var(--verde-linha);
+  font-size: 12px;
+  color: var(--creme-fraco);
+}
+/* na janelinha o ajuste de fonte não é flutuante */
+.conta-menu-fonte .ajuste-fonte {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: auto;
+}
+.conta-menu-acoes { display: grid; gap: 2px; padding-top: 6px; }
+.conta-menu-acoes a,
+.conta-menu-acoes button {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 0;
+  background: transparent;
+  color: var(--creme);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.conta-menu-acoes a:hover,
+.conta-menu-acoes button:hover { background: var(--verde-superficie); }
+.conta-menu-acoes a[data-ativo="true"] { color: var(--ambar); }
 
 .cabecalho-tela {
   display: flex;
@@ -353,12 +456,13 @@ html[data-fonte="grande"] { zoom: 1.5; }
   gap: 16px;
   z-index: 20;
 }
-/* usada no cartão de login */
+/* cabeçalho do menu lateral e do cartão de login */
 .menu-marca {
   font-size: 17px;
   font-weight: 900;
   letter-spacing: 0.02em;
   line-height: 1.1;
+  color: var(--creme);
 }
 .menu-marca span {
   display: block;
@@ -370,106 +474,10 @@ html[data-fonte="grande"] { zoom: 1.5; }
   margin-top: 4px;
 }
 
-.menu-conta,
+.menu-marca,
 .fechar-menu { flex: none; }
-/* a lista rola quando tem itens demais pra caber; a conta fica fixa no topo */
+/* a lista rola quando tem itens demais pra caber; o rodapé fica fixo embaixo */
 .menu ul { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
-
-/* ---- bloco de conta do usuário (topo do menu) ---- */
-.menu-conta {
-  border: 1px solid var(--verde-linha);
-  border-radius: 12px;
-  background: var(--verde-superficie);
-  overflow: hidden;
-}
-.menu-conta-cabeca {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  background: transparent;
-  border: 0;
-  color: var(--creme);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.menu-conta-avatar {
-  flex: none;
-  width: 34px;
-  height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--ambar);
-  color: #14261c;
-  font-weight: 900;
-  font-size: 13px;
-  letter-spacing: 0.02em;
-}
-.menu-conta-id { flex: 1; min-width: 0; }
-.menu-conta-id strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.menu-conta-id span {
-  display: block;
-  font-size: 11px;
-  color: var(--creme-fraco);
-  margin-top: 1px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.menu-conta-seta { flex: none; transition: transform 0.18s ease; }
-.menu-conta[data-aberta="true"] .menu-conta-seta { transform: rotate(180deg); }
-
-.menu-conta-acoes {
-  display: grid;
-  gap: 2px;
-  padding: 4px;
-  border-top: 1px solid var(--verde-linha);
-}
-.menu-conta-acoes a,
-.menu-conta-acoes button {
-  display: block;
-  width: 100%;
-  padding: 9px 10px;
-  border-radius: 8px;
-  border: 0;
-  background: transparent;
-  color: var(--creme);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-.menu-conta-acoes a:hover,
-.menu-conta-acoes button:hover { background: var(--verde-linha); }
-.menu-conta-acoes a[data-ativo="true"] { color: var(--ambar); }
-.menu-conta-fonte {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px 8px;
-  font-size: 12px;
-  color: var(--creme-fraco);
-}
-/* dentro da janelinha o ajuste de fonte não é mais flutuante */
-.menu-conta-fonte .ajuste-fonte {
-  position: static;
-  top: auto;
-  right: auto;
-  z-index: auto;
-}
 
 .menu ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; align-content: start; }
 .menu a {

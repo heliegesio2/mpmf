@@ -72,6 +72,7 @@ const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS telefone_whatsapp boolean NOT NULL DEFAULT false",
   "ALTER TABLE casco ADD COLUMN IF NOT EXISTS telefone_whatsapp boolean NOT NULL DEFAULT false",
   "ALTER TABLE usuario ALTER COLUMN senha_hash DROP NOT NULL",
+  "ALTER TABLE usuario ADD COLUMN IF NOT EXISTS foto text",
   `CREATE TABLE IF NOT EXISTS usuario_identidade (
      id bigserial PRIMARY KEY,
      usuario_id bigint NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
@@ -446,10 +447,34 @@ export async function usuarioPorId(id: number): Promise<UsuarioLogin | null> {
   return rows[0] ?? null;
 }
 
-/** Troca o próprio nome (o usuário vem sempre da sessão). */
-export async function alterarNomeUsuario(id: number, nome: string): Promise<boolean> {
-  const r = await pool.query("UPDATE usuario SET nome = $2 WHERE id = $1", [id, nome]);
-  return (r.rowCount ?? 0) > 0;
+/**
+ * Troca o próprio perfil (o usuário vem sempre da sessão).
+ * `foto`: `undefined` mantém a atual, `""` remove, um data URL substitui.
+ */
+export async function alterarPerfilUsuario(
+  id: number,
+  nome: string,
+  foto?: string
+): Promise<void> {
+  await garantirSchema();
+  if (foto === undefined) {
+    await pool.query("UPDATE usuario SET nome = $2 WHERE id = $1", [id, nome]);
+  } else {
+    await pool.query("UPDATE usuario SET nome = $2, foto = NULLIF($3, '') WHERE id = $1", [
+      id,
+      nome,
+      foto,
+    ]);
+  }
+}
+
+export async function fotoUsuario(id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ foto: string | null }>(
+    "SELECT foto FROM usuario WHERE id = $1",
+    [id]
+  );
+  return rows[0]?.foto ?? null;
 }
 
 // ---------- identidades sociais (Google/Facebook) ----------

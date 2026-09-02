@@ -41,6 +41,7 @@ export default function MenuLateral() {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [contaAberta, setContaAberta] = useState(false);
+  const [semFoto, setSemFoto] = useState(false);
   const [sessao, setSessao] = useState<Sessao | null>(null);
   const { itens: itensCarrinho } = useCarrinho();
 
@@ -111,6 +112,59 @@ export default function MenuLateral() {
         </Link>
       )}
 
+      {/* menu de conta — canto superior direito, com a foto do usuário */}
+      <button
+        type="button"
+        className="conta-topo"
+        onClick={() => setContaAberta((v) => !v)}
+        aria-label="Menu da conta"
+        aria-expanded={contaAberta}
+      >
+        {semFoto ? (
+          <span className="conta-iniciais" aria-hidden="true">{iniciais(sessao.nome)}</span>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src="/api/auth/foto" alt="" onError={() => setSemFoto(true)} />
+        )}
+      </button>
+
+      {contaAberta && (
+        <>
+          <div className="fundo-conta" onClick={() => setContaAberta(false)} />
+          <div className="conta-menu" role="menu">
+            <div className="conta-menu-cabeca">
+              <strong>{sessao.nome}</strong>
+              <span>
+                {sessao.empresaNome ?? "Administração"}
+                {sessao.papel === "super_admin" ? " · super admin" : ""}
+              </span>
+            </div>
+
+            <div className="conta-menu-fonte">
+              <span>Tamanho da letra</span>
+              <AjusteFonte />
+            </div>
+
+            <div className="conta-menu-acoes">
+              {temLoja && (
+                <Link href="/configuracoes" role="menuitem" data-ativo={caminho === "/configuracoes"}>
+                  Configurações da empresa
+                </Link>
+              )}
+              <Link href="/perfil" role="menuitem" data-ativo={caminho === "/perfil"}>
+                Meu perfil
+              </Link>
+              <Link href="/senha" role="menuitem" data-ativo={caminho === "/senha"}>
+                Trocar senha
+              </Link>
+              <button type="button" role="menuitem" onClick={sair}>
+                Sair
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
       <button
         type="button"
         className="abrir-menu"
@@ -126,48 +180,9 @@ export default function MenuLateral() {
       {aberto && <div className="fundo-menu" onClick={() => setAberto(false)} />}
 
       <nav className="menu" data-aberto={aberto} aria-label="Seções">
-        <div className="menu-conta" data-aberta={contaAberta}>
-          <button
-            type="button"
-            className="menu-conta-cabeca"
-            onClick={() => setContaAberta((v) => !v)}
-            aria-expanded={contaAberta}
-          >
-            <span className="menu-conta-avatar" aria-hidden="true">{iniciais(sessao.nome)}</span>
-            <span className="menu-conta-id">
-              <strong>{sessao.nome}</strong>
-              <span>
-                {sessao.empresaNome ?? "Administração"}
-                {sessao.papel === "super_admin" ? " · super admin" : ""}
-              </span>
-            </span>
-            <svg className="menu-conta-seta" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-
-          {contaAberta && (
-            <div className="menu-conta-acoes">
-              <div className="menu-conta-fonte">
-                <span>Tamanho da letra</span>
-                <AjusteFonte />
-              </div>
-              {temLoja && (
-                <Link href="/configuracoes" data-ativo={caminho === "/configuracoes"}>
-                  Configurações da empresa
-                </Link>
-              )}
-              <Link href="/perfil" data-ativo={caminho === "/perfil"}>
-                Meu perfil
-              </Link>
-              <Link href="/senha" data-ativo={caminho === "/senha"}>
-                Trocar senha
-              </Link>
-              <button type="button" onClick={sair}>
-                Sair
-              </button>
-            </div>
-          )}
+        <div className="menu-marca">
+          {sessao.empresaNome ?? "Administração"}
+          <span>{sessao.papel === "super_admin" ? "super admin" : "balcão"}</span>
         </div>
 
         <ul>

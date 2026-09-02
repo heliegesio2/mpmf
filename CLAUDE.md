@@ -301,14 +301,21 @@ store per `db/03_super_admin_dono_loja.sql`), `admin`, `operador` — both scope
 
 ### Account menu (`MenuLateral`)
 
-The sidebar's top block (`.menu-conta`) is the user/account menu, petroprep-style: an initials avatar +
-name + store/role line, collapsible. Expanded, it holds the large-text toggle (`<AjusteFonte>`, rendered
-**here**, not in `layout.tsx` — `.menu-conta-fonte .ajuste-fonte` un-fixes its position), then
-**Configurações da empresa** (`/configuracoes`, store users only — it's no longer in the main `LOJA`
-list), **Meu perfil** (`/perfil` — edit own `usuario.nome`), **Trocar senha** (`/senha`), and **Sair**.
-`PUT /api/auth/perfil` re-mints the session cookie so the new name shows without re-login (the name lives
-inside the HMAC token). `GET/PUT /api/auth/senha` — `conferirSenha` on the current password first;
-Google-only accounts (`senha_hash IS NULL`) get a "no password" message instead of the form.
+`.conta-topo` is a fixed **top-right** circular button showing the user's photo (`GET /api/auth/foto` —
+`usuario.foto`, `db/15`, data-URL `text` like `produto.foto`; falls back to an initials disc via an
+`onError` on the `<img>`). It sits at `right:14px`; the cart shortcut (`.atalho-venda`) moved to
+`right:64px` to make room. Clicking opens `.conta-menu`, a dropdown (`.fundo-conta` backdrop) petroprep-
+style: name + store/role header, the large-text toggle (`<AjusteFonte>`, rendered **here**, not in
+`layout.tsx` — `.conta-menu-fonte .ajuste-fonte` un-fixes its position), then **Configurações da empresa**
+(`/configuracoes`, store users only — no longer in the main `LOJA` list), **Meu perfil** (`/perfil` — edit
+own `usuario.nome` + photo via `<CampoFoto>`), **Trocar senha** (`/senha`), and **Sair**. The left drawer
+(`.menu`) keeps only navigation + a plain `.menu-marca` header.
+
+`GET/PUT /api/auth/perfil` — PUT takes `{nome, foto?}` (`foto` tri-state: key absent = keep, `""` = clear,
+data URL = replace, same convention as `atualizarProduto`) and re-mints the session cookie so the new name
+shows without re-login (the name lives inside the HMAC token); the `/perfil` page then does a full reload
+so the menu picks up the new photo. `GET/PUT /api/auth/senha` — `conferirSenha` on the current password
+first; Google-only accounts (`senha_hash IS NULL`) get a "no password" message instead of the form.
 
 ### UI conventions
 
