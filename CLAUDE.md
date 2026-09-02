@@ -390,8 +390,15 @@ store per `db/03_super_admin_dono_loja.sql`), `admin`, `operador` — both scope
 style: name + store/role header, the large-text toggle (`<AjusteFonte>`, rendered **here**, not in
 `layout.tsx` — `.conta-menu-fonte .ajuste-fonte` un-fixes its position), then **Configurações da empresa**
 (`/configuracoes`, store users only — no longer in the main `LOJA` list), **Meu perfil** (`/perfil` — edit
-own `usuario.nome` + photo via `<CampoFoto>`), **Trocar senha** (`/senha`), and **Sair**. The left drawer
-(`.menu`) keeps only navigation + a plain `.menu-marca` header.
+own `usuario.nome` + photo via `<CampoFoto>`), **Trocar senha** (`/senha`), and **Sair**.
+
+The left drawer (`.menu`) navigation is **grouped, collapsible** (`GRUPOS_LOJA` in `MenuLateral.tsx`):
+🛒 Balcão (`/`, `/venda`, `/caixa`) · 📦 Produtos (`/produtos`, `/compras/importar`) · 💰 Financeiro
+(`/contas-pagar`, `/contas`, `/custos`) · 👥 Cadastros (`/clientes`, `/fornecedores`, `/cascos`) · 📊
+Relatórios (`href` + no `itens` → a direct link, not a group) · 🏢 Administração (`/admin/empresas`,
+super-admin only). `gruposAbertos` is a `Set<string>` — "balcao" plus the group holding the current path
+start open; navigating opens the new path's group without closing the others. When adding a route, add it
+to a group's `itens`, not a flat list.
 
 `GET/PUT /api/auth/perfil` — PUT takes `{nome, foto?}` (`foto` tri-state: key absent = keep, `""` = clear,
 data URL = replace, same convention as `atualizarProduto`) and re-mints the session cookie so the new name

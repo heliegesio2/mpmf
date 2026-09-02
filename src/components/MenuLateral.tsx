@@ -12,24 +12,75 @@ type Sessao = {
   empresaNome: string | null;
 };
 
-const LOJA = [
-  { href: "/", rotulo: "Consultar preço", descricao: "Fale ou digite" },
-  { href: "/venda", rotulo: "Venda", descricao: "Ditar itens e fechar" },
-  { href: "/produtos", rotulo: "Produtos", descricao: "Incluir, alterar, excluir" },
-  { href: "/compras/importar", rotulo: "Importar compra", descricao: "Foto do cupom vira preço" },
-  { href: "/custos", rotulo: "Gastos", descricao: "Fale descrição, quem recebeu e o valor" },
-  { href: "/cascos", rotulo: "Cascos", descricao: "Registrar empréstimo de cascos" },
-  { href: "/caixa", rotulo: "Caixa", descricao: "Informar o valor final do dia" },
-  { href: "/relatorios", rotulo: "Relatórios", descricao: "Gastos, estoque, caixa e alertas" },
-  { href: "/clientes", rotulo: "Clientes", descricao: "Cadastro com foto, para fiado" },
-  { href: "/contas", rotulo: "Contas a receber", descricao: "Fiado em aberto e quitação" },
-  { href: "/contas-pagar", rotulo: "Contas a pagar", descricao: "Boletos e notas a vencer" },
-  { href: "/fornecedores", rotulo: "Fornecedores", descricao: "Cadastro de quem te abastece" },
+type ItemMenu = { href: string; rotulo: string; descricao: string };
+type GrupoMenu = {
+  id: string;
+  icone: string;
+  rotulo: string;
+  /** Grupo com subitens. */
+  itens?: ItemMenu[];
+  /** Grupo que é um link direto (sem subitens). */
+  href?: string;
+};
+
+const GRUPOS_LOJA: GrupoMenu[] = [
+  {
+    id: "balcao",
+    icone: "🛒",
+    rotulo: "Balcão",
+    itens: [
+      { href: "/", rotulo: "Consultar preço", descricao: "Fale ou digite" },
+      { href: "/venda", rotulo: "Venda", descricao: "Ditar itens e fechar" },
+      { href: "/caixa", rotulo: "Caixa", descricao: "Informar o valor final do dia" },
+    ],
+  },
+  {
+    id: "produtos",
+    icone: "📦",
+    rotulo: "Produtos",
+    itens: [
+      { href: "/produtos", rotulo: "Produtos", descricao: "Incluir, alterar, excluir" },
+      { href: "/compras/importar", rotulo: "Importar compra", descricao: "Foto do cupom vira preço" },
+    ],
+  },
+  {
+    id: "financeiro",
+    icone: "💰",
+    rotulo: "Financeiro",
+    itens: [
+      { href: "/contas-pagar", rotulo: "Contas a pagar", descricao: "Boletos e notas a vencer" },
+      { href: "/contas", rotulo: "Contas a receber", descricao: "Fiado em aberto e quitação" },
+      { href: "/custos", rotulo: "Gastos", descricao: "Fale descrição, quem recebeu e o valor" },
+    ],
+  },
+  {
+    id: "cadastros",
+    icone: "👥",
+    rotulo: "Cadastros",
+    itens: [
+      { href: "/clientes", rotulo: "Clientes", descricao: "Cadastro com foto, para fiado" },
+      { href: "/fornecedores", rotulo: "Fornecedores", descricao: "Cadastro de quem te abastece" },
+      { href: "/cascos", rotulo: "Cascos", descricao: "Registrar empréstimo de cascos" },
+    ],
+  },
+  { id: "relatorios", icone: "📊", rotulo: "Relatórios", href: "/relatorios" },
 ];
 
-const ADMIN = [
-  { href: "/admin/empresas", rotulo: "Empresas", descricao: "Aprovar ou reprovar" },
-];
+const GRUPO_ADMIN: GrupoMenu = {
+  id: "admin",
+  icone: "🏢",
+  rotulo: "Administração",
+  itens: [{ href: "/admin/empresas", rotulo: "Empresas", descricao: "Aprovar ou reprovar" }],
+};
+
+const TODOS_GRUPOS = [...GRUPOS_LOJA, GRUPO_ADMIN];
+
+function grupoDoCaminho(caminho: string): string | null {
+  const g = TODOS_GRUPOS.find(
+    (g) => g.href === caminho || g.itens?.some((i) => i.href === caminho)
+  );
+  return g?.id ?? null;
+}
 
 function iniciais(nome: string): string {
   const partes = nome.trim().split(/\s+/).filter(Boolean);
@@ -45,11 +96,17 @@ export default function MenuLateral() {
   const [contaAberta, setContaAberta] = useState(false);
   const [semFoto, setSemFoto] = useState(false);
   const [sessao, setSessao] = useState<Sessao | null>(null);
+  const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(
+    () => new Set(["balcao", grupoDoCaminho(caminho)].filter(Boolean) as string[])
+  );
   const { itens: itensCarrinho } = useCarrinho();
 
   useEffect(() => {
     setAberto(false);
     setContaAberta(false);
+    // abre o grupo que contém a tela atual (sem fechar os outros)
+    const id = grupoDoCaminho(caminho);
+    if (id) setGruposAbertos((s) => (s.has(id) ? s : new Set(s).add(id)));
   }, [caminho]);
 
   useEffect(() => {
@@ -58,6 +115,15 @@ export default function MenuLateral() {
       .then((d) => setSessao(d.sessao))
       .catch(() => setSessao(null));
   }, [caminho]);
+
+  function alternarGrupo(id: string) {
+    setGruposAbertos((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
 
   async function sair() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -73,12 +139,12 @@ export default function MenuLateral() {
 
   // super admin sem empresa propria: so ve a area de aprovar empresas.
   // com empresa propria (caso da Mercadinho): ve os dois blocos de menu.
-  const paginas =
+  const grupos =
     sessao.papel === "super_admin"
       ? sessao.empresaNome
-        ? [...ADMIN, ...LOJA]
-        : ADMIN
-      : LOJA;
+        ? [GRUPO_ADMIN, ...GRUPOS_LOJA]
+        : [GRUPO_ADMIN]
+      : GRUPOS_LOJA;
 
   // super admin sem loja própria não vende — não mostra o atalho do carrinho
   const temLoja = sessao.papel !== "super_admin" || Boolean(sessao.empresaNome);
@@ -187,16 +253,62 @@ export default function MenuLateral() {
           <span>{sessao.papel === "super_admin" ? "super admin" : "balcão"}</span>
         </div>
 
-        <ul>
-          {paginas.map((p) => (
-            <li key={p.href}>
-              <Link href={p.href} data-ativo={caminho === p.href}>
-                <strong>{p.rotulo}</strong>
-                <span>{p.descricao}</span>
+        <div className="menu-grupos">
+          {grupos.map((g) =>
+            g.href && !g.itens ? (
+              <Link
+                key={g.id}
+                href={g.href}
+                className="menu-grupo-link"
+                data-ativo={caminho === g.href}
+              >
+                <span className="menu-grupo-icone" aria-hidden="true">{g.icone}</span>
+                <strong>{g.rotulo}</strong>
               </Link>
-            </li>
-          ))}
-        </ul>
+            ) : (
+              <div key={g.id} className="menu-grupo" data-aberto={gruposAbertos.has(g.id)}>
+                <button
+                  type="button"
+                  className="menu-grupo-cabeca"
+                  onClick={() => alternarGrupo(g.id)}
+                  aria-expanded={gruposAbertos.has(g.id)}
+                >
+                  <span className="menu-grupo-icone" aria-hidden="true">{g.icone}</span>
+                  <strong>{g.rotulo}</strong>
+                  <svg
+                    className="menu-grupo-seta"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <path
+                      d="M6 9l6 6 6-6"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+
+                {gruposAbertos.has(g.id) && (
+                  <ul>
+                    {g.itens!.map((i) => (
+                      <li key={i.href}>
+                        <Link href={i.href} data-ativo={caminho === i.href}>
+                          <strong>{i.rotulo}</strong>
+                          <span>{i.descricao}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          )}
+        </div>
 
         <button type="button" className="fechar-menu" onClick={() => setAberto(false)}>
           Fechar
