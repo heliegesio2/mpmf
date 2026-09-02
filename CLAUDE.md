@@ -355,6 +355,13 @@ tokens. `src/lib/useVoz.ts` is the client hook wrapping `webkitSpeechRecognition
 one field listens at a time. `src/lib/falaVenda.ts` builds on both for the sales screen specifically.
 Firefox has no Web Speech API — screens must fall back to typing and say so (see README table).
 
+`interpretarItem` (`falaVenda.ts`) also recognises a **spoken money amount instead of a quantity** —
+"dez reais de tomate" / "tomate dez reais" → `{valorReais: 10, termo: "tomate"}`. `/venda`'s
+`adicionarProduto(produto, quantidade, emPeso, valorReais?)` then sets `quantidade = valorReais /
+produto.preco` (kept as kg for `tipo_venda === "quilo"`, rounded to whole pieces otherwise) and the
+confirmation reads "Tomate: R$ 10,00 ≈ 313 g". `valorReais` rides through the `Escolha` and `ProdutoNovo`
+states so the multi-match and cadastrar-na-hora paths compute it too.
+
 ### Money handling
 
 Money is entered and displayed as comma-decimal strings (`"4,50"`), the pt-BR convention, via

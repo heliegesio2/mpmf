@@ -19,6 +19,7 @@ type Escolha = {
   quantidade: number;
   emPeso: boolean;
   termo: string;
+  valorReais?: number;
 };
 
 /** Produto falado que não está no cadastro: inclui na hora, com foto e preço. */
@@ -31,6 +32,7 @@ type ProdutoNovo = {
   estoque: string;
   estoqueMinimo: string;
   estoqueMinimoEmbalagem: string;
+  valorReais?: number;
 };
 
 type Item = ItemCarrinho;
@@ -136,12 +138,28 @@ export default function Venda() {
   /** Interpreta a frase, procura o produto e joga no carrinho. */
   /** Coloca o produto no carrinho, somando se ele já estiver lá. */
   const adicionarProduto = useCallback(
-    (produto: Produto, quantidade: number, emPeso: boolean) => {
-      // "duzentos gramas" só faz sentido em produto vendido por quilo
-      const qtd =
-        emPeso && produto.tipo_venda !== "quilo"
-          ? Math.max(1, Math.round(quantidade))
-          : quantidade;
+    (produto: Produto, quantidade: number, emPeso: boolean, valorReais?: number) => {
+      let qtd: number;
+      let aviso = `${produto.nome} adicionado.`;
+
+      const preco = Number(produto.preco);
+      if (valorReais && valorReais > 0 && preco > 0) {
+        // "dez reais de tomate" -> quantidade = valor / preço
+        const bruto = valorReais / preco;
+        qtd =
+          produto.tipo_venda === "quilo"
+            ? Number(bruto.toFixed(3))
+            : Math.max(1, Math.round(bruto));
+        aviso = `${produto.nome}: R$ ${valorReais
+          .toFixed(2)
+          .replace(".", ",")} ≈ ${formatarQuantidade(qtd, produto.tipo_venda)}`;
+      } else {
+        // "duzentos gramas" só faz sentido em produto vendido por quilo
+        qtd =
+          emPeso && produto.tipo_venda !== "quilo"
+            ? Math.max(1, Math.round(quantidade))
+            : quantidade;
+      }
 
       setItens((atuais) => {
         const igual = atuais.find((i) => i.produto.id === produto.id);
@@ -159,7 +177,7 @@ export default function Venda() {
       });
 
       setErro(false);
-      setAviso(`${produto.nome} adicionado.`);
+      setAviso(aviso);
     },
     []
   );
@@ -212,11 +230,12 @@ export default function Venda() {
             nome: capitalizar(lido.termo),
             quantidade: lido.quantidade,
             emPeso: lido.emPeso,
-            tipoVenda: lido.emPeso ? "quilo" : "unidade",
+            tipoVenda: lido.emPeso || lido.valorReais ? "quilo" : "unidade",
             embalagem: "unidade",
             estoque: "",
             estoqueMinimo: "",
             estoqueMinimoEmbalagem: "unidade",
+            valorReais: lido.valorReais,
           });
           setNovoPreco("");
           setNovaFoto(null);
@@ -234,7 +253,7 @@ export default function Venda() {
         );
 
         if (candidatos.length === 1) {
-          adicionarProduto(candidatos[0], lido.quantidade, lido.emPeso);
+          adicionarProduto(candidatos[0], lido.quantidade, lido.emPeso, lido.valorReais);
           return;
         }
 
@@ -244,6 +263,7 @@ export default function Venda() {
           quantidade: lido.quantidade,
           emPeso: lido.emPeso,
           termo: lido.termo,
+          valorReais: lido.valorReais,
         });
         setErro(false);
         setAviso("");
@@ -259,7 +279,7 @@ export default function Venda() {
 
   function confirmarEscolha(produto: Produto) {
     if (!escolha) return;
-    adicionarProduto(produto, escolha.quantidade, escolha.emPeso);
+    adicionarProduto(produto, escolha.quantidade, escolha.emPeso, escolha.valorReais);
     escolhaAberta.current = false;
     setEscolha(null);
   }
@@ -327,9 +347,9 @@ export default function Venda() {
         );
       }
 
-      const { quantidade, emPeso } = novo;
+      const { quantidade, emPeso, valorReais } = novo;
       fecharNovo();
-      adicionarProduto(dados.item as Produto, quantidade, emPeso);
+      adicionarProduto(dados.item as Produto, quantidade, emPeso, valorReais);
     } catch (e) {
       setErro(true);
       setAviso(e instanceof Error ? e.message : "Não foi possível incluir o produto.");

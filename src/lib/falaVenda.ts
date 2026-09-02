@@ -6,6 +6,11 @@ export type ItemFalado = {
   emPeso: boolean;
   /** O que sobrou da frase, usado para procurar o produto. */
   termo: string;
+  /**
+   * Quando o caixa fala um VALOR em vez de quantidade ("dez reais de tomate"),
+   * guarda o valor em reais. A quantidade sai de valor / preço do produto.
+   */
+  valorReais?: number;
 };
 
 /** Palavras de peso reconhecidas e quanto valem em quilo. */
@@ -13,6 +18,9 @@ const PESOS: { padrao: RegExp; fator: number }[] = [
   { padrao: /\b(gramas?|grama|g)\b/, fator: 0.001 },
   { padrao: /\b(quilos?|kg|kilos?|quilogramas?)\b/, fator: 1 },
 ];
+
+/** Palavras que marcam dinheiro na fala. */
+const MOEDA = /(reais|real|contos?|pilas?|paus?|conto)/;
 
 /** Ruído que não ajuda a achar o produto. */
 const DESCARTE =
@@ -61,14 +69,43 @@ export function interpretarItem(fala: string): ItemFalado | null {
     }
   }
 
-  // 2. unidade de peso logo depois da quantidade
-  for (const { padrao, fator } of PESOS) {
-    const m = t.match(new RegExp("^" + padrao.source.replace(/\\b/g, "") + "\\b"));
-    if (m) {
-      emPeso = true;
-      quantidade = quantidade * fator;
-      t = t.slice(m[0].length).trim();
-      break;
+  // 2a. "dez reais de tomate" — o número falado era dinheiro, não quantidade
+  let valorReais: number | undefined;
+  const moedaInicio = t.match(new RegExp("^" + MOEDA.source + "\\b\\s*"));
+  if (moedaInicio && quantidade > 0) {
+    valorReais = quantidade;
+    quantidade = 1;
+    t = t.slice(moedaInicio[0].length).trim();
+  }
+
+  // 2b. unidade de peso logo depois da quantidade
+  if (valorReais === undefined) {
+    for (const { padrao, fator } of PESOS) {
+      const m = t.match(new RegExp("^" + padrao.source.replace(/\\b/g, "") + "\\b"));
+      if (m) {
+        emPeso = true;
+        quantidade = quantidade * fator;
+        t = t.slice(m[0].length).trim();
+        break;
+      }
+    }
+  }
+
+  // 2c. dinheiro no fim: "tomate (de) dez reais" | "tomate 10 reais"
+  if (valorReais === undefined) {
+    // pega só o último token (ou "cento e cinquenta") logo antes de "reais"
+    const fim = t.match(new RegExp("\\s+(?:de\\s+)?([^\\s]+(?:\\s+e\\s+[^\\s]+)?)\\s+" + MOEDA.source + "\\s*$"));
+    if (fim) {
+      const bruto = fim[1].trim();
+      const tokens = bruto.split(/\s+/).filter((w) => w && w !== "e");
+      const soNumeros =
+        tokens.length > 0 &&
+        tokens.every((w) => /^\d+(?:[.,]\d+)?$/.test(w) || frasePraNumero(w) !== null);
+      const n = /^\d/.test(bruto) ? Number(bruto.replace(",", ".")) : frasePraNumero(bruto);
+      if (soNumeros && n !== null && n > 0) {
+        valorReais = n;
+        t = t.slice(0, fim.index!).trim();
+      }
     }
   }
 
@@ -88,7 +125,12 @@ export function interpretarItem(fala: string): ItemFalado | null {
 
   if (!t) return null;
 
-  return { quantidade: Number(quantidade.toFixed(3)), emPeso, termo: t };
+  return {
+    quantidade: Number(quantidade.toFixed(3)),
+    emPeso,
+    termo: t,
+    ...(valorReais !== undefined ? { valorReais: Number(valorReais.toFixed(2)) } : {}),
+  };
 }
 
 /** Formata a quantidade conforme o tipo de venda do produto. */
