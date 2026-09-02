@@ -24,7 +24,21 @@ const MOEDA = /(reais|real|contos?|pilas?|paus?|conto)/;
 
 /** Ruído que não ajuda a achar o produto. */
 const DESCARTE =
-  /^(de|do|da|dos|das|um|uma|uns|umas|o|a|os|as|por favor|me ve|me da|mais)\s+/;
+  /^(de|do|da|dos|das|em|no|na|um|uma|uns|umas|o|a|os|as|por favor|me ve|me da|mais)\s+/;
+
+/**
+ * O reconhecimento de fala do Chrome em pt-BR transcreve "dez reais" como
+ * "R$ 10" — então "dez reais de tomate" chega como "R$ 10 de tomate", e o
+ * "$" é jogado fora antes de dar pra reconhecer o dinheiro. Aqui, antes de
+ * limpar a pontuação, todo "R$ 10" / "10 R$" vira "10 reais".
+ */
+function normalizarMoeda(t: string): string {
+  return t
+    .replace(/r\$\s*(\d+(?:[.,]\d+)?)/g, " $1 reais ")
+    .replace(/(\d+(?:[.,]\d+)?)\s*r\$/g, " $1 reais ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 /**
  * "duzentos gramas de tomate"  -> { quantidade: 0.2,  emPeso: true,  termo: "tomate" }
@@ -34,7 +48,10 @@ const DESCARTE =
  * "leite"                      -> { quantidade: 1,    emPeso: false, termo: "leite" }
  */
 export function interpretarItem(fala: string): ItemFalado | null {
-  let t = semAcento(fala).replace(/[^a-z0-9\s,.]/g, " ").replace(/\s+/g, " ").trim();
+  let t = normalizarMoeda(semAcento(fala))
+    .replace(/[^a-z0-9\s,.]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
   if (!t) return null;
 
   let quantidade = 1;
@@ -122,6 +139,8 @@ export function interpretarItem(fala: string): ItemFalado | null {
     anterior = t;
     t = t.replace(DESCARTE, "").trim();
   }
+  // tira pontuação que sobra nas pontas ("tomate." quando a fala termina com ponto)
+  t = t.replace(/^[,.\s]+|[,.\s]+$/g, "");
 
   if (!t) return null;
 
