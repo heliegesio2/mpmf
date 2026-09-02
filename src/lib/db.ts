@@ -108,6 +108,7 @@ const MIGRACOES_IDEMPOTENTES = [
    )`,
   "CREATE INDEX IF NOT EXISTS idx_conta_pagar_empresa ON conta_pagar (empresa_id, pago, vencimento)",
   "ALTER TABLE conta_pagar ADD COLUMN IF NOT EXISTS categoria text",
+  "ALTER TABLE conta_pagar ADD COLUMN IF NOT EXISTS recorrente boolean NOT NULL DEFAULT false",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -988,6 +989,7 @@ export type ContaPagar = {
   descricao: string | null;
   valor: string;
   vencimento: string | null;
+  recorrente: boolean;
   tem_foto: boolean;
   pago: boolean;
   pago_em: string | null;
@@ -1001,12 +1003,14 @@ export type ContaPagarEntrada = {
   valor: number;
   vencimento: string | null;
   foto: string | null;
+  /** Repete todo mês — ao quitar, o sistema já lança a do mês seguinte. */
+  recorrente: boolean;
   /** Já entra quitada (checkbox "conta já paga" no cadastro). */
   pago: boolean;
 };
 
 const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, c.categoria, c.descricao, c.valor,
-       to_char(c.vencimento, 'YYYY-MM-DD') AS vencimento, (c.foto IS NOT NULL) AS tem_foto,
+       to_char(c.vencimento, 'YYYY-MM-DD') AS vencimento, c.recorrente, (c.foto IS NOT NULL) AS tem_foto,
        c.pago, c.pago_em, c.criado_em`;
 
 export async function listarContasPagar(
@@ -1023,7 +1027,7 @@ export async function listarContasPagar(
        FROM conta_pagar c
        LEFT JOIN fornecedor fo ON fo.id = c.fornecedor_id
       WHERE c.empresa_id = $1 ${filtro}
-      ORDER BY c.pago, c.vencimento ASC NULLS LAST, c.criado_em DESC`,
+      ORDER BY c.pago, c.vencimento DESC NULLS LAST, c.criado_em DESC`,
     [empresaId]
   );
   return rows;
@@ -1037,12 +1041,13 @@ export async function criarContaPagar(
   // fornecedor_id (quando vem) é conferido contra a empresa da sessão
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO conta_pagar (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, foto,
-                              pago, pago_em)
+                              recorrente, pago, pago_em)
      VALUES ($1,
              (SELECT id FROM fornecedor WHERE id = $2 AND empresa_id = $1),
-             $3, $4, $5, $6, $7, $8, CASE WHEN $8 THEN now() END)
+             $3, $4, $5, $6, $7, $8, $9, CASE WHEN $9 THEN now() END)
      RETURNING id`,
-    [empresaId, d.fornecedorId, d.categoria, d.descricao, d.valor, d.vencimento, d.foto, d.pago]
+    [empresaId, d.fornecedorId, d.categoria, d.descricao, d.valor, d.vencimento, d.foto,
+     d.recorrente, d.pago]
   );
   const criada = await pool.query<ContaPagar>(
     `SELECT ${CAMPOS_CONTA_PAGAR}
@@ -1053,13 +1058,39 @@ export async function criarContaPagar(
   return criada.rows[0];
 }
 
-export async function marcarContaPagarPaga(empresaId: number, id: number): Promise<boolean> {
+export async function marcarContaPagarPaga(
+  empresaId: number,
+  id: number
+): Promise<{ ok: boolean; proximaVencimento: string | null }> {
   await garantirSchema();
-  const r = await pool.query(
-    "UPDATE conta_pagar SET pago = true, pago_em = now() WHERE id = $1 AND empresa_id = $2 AND pago = false",
+  const { rows } = await pool.query<{
+    fornecedor_id: number | null;
+    categoria: string | null;
+    descricao: string | null;
+    valor: string;
+    vencimento: string | null;
+    recorrente: boolean;
+  }>(
+    `UPDATE conta_pagar SET pago = true, pago_em = now()
+      WHERE id = $1 AND empresa_id = $2 AND pago = false
+      RETURNING fornecedor_id, categoria, descricao, valor,
+                to_char(vencimento, 'YYYY-MM-DD') AS vencimento, recorrente`,
     [id, empresaId]
   );
-  return (r.rowCount ?? 0) > 0;
+  const c = rows[0];
+  if (!c) return { ok: false, proximaVencimento: null };
+  if (!c.recorrente) return { ok: true, proximaVencimento: null };
+
+  // conta recorrente: já lança a do mês seguinte (sem foto — é outro boleto)
+  const prox = await pool.query<{ vencimento: string | null }>(
+    `INSERT INTO conta_pagar (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, recorrente)
+     VALUES ($1, $2, $3, $4, $5,
+             CASE WHEN $6::date IS NOT NULL THEN ($6::date + interval '1 month')::date END,
+             true)
+     RETURNING to_char(vencimento, 'YYYY-MM-DD') AS vencimento`,
+    [empresaId, c.fornecedor_id, c.categoria, c.descricao, c.valor, c.vencimento]
+  );
+  return { ok: true, proximaVencimento: prox.rows[0]?.vencimento ?? null };
 }
 
 export async function reabrirContaPagar(empresaId: number, id: number): Promise<boolean> {

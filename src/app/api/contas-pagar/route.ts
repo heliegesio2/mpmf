@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       valor: Math.round(valor * 100) / 100,
       vencimento,
       foto,
+      recorrente: Boolean(c.recorrente),
       pago: Boolean(c.pago),
     });
     return NextResponse.json({ item }, { status: 201 });

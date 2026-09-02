@@ -230,7 +230,7 @@ of a blank "não foi possível salvar".
 
 Still **no sales ledger** — a split sale persists nothing except its `fiado` parts.
 
-### Fornecedores + contas a pagar (`db/16`, `db/17`)
+### Fornecedores + contas a pagar (`db/16`, `db/17`, `db/18`)
 
 Two linked tables. `fornecedor` (nome required; `documento`/`telefone`+`telefone_whatsapp`/`endereco`/
 `observacao` optional — same `<CampoTelefone>` WhatsApp treatment as everything else). `conta_pagar`
@@ -240,22 +240,30 @@ button row offers `CATEGORIAS_CONTA_PAGAR` from `db.ts` (mercadoria/energia/agua
 salario/boleto — pretty labels in the page) plus "Outros" → a free-text box; the server just trims and
 caps it at 40 chars. `categoriasContaPagarUsadas` returns the distinct custom values the store has used
 and the GET list response carries them (`categorias`), so past custom categories come back as extra
-buttons. The vision extractor guesses a standard value. `criarContaPagar` also takes `pago` — the form's
-"esta conta já está paga" checkbox inserts the row already quitada (`pago_em = now()`).
+buttons. The vision extractor guesses a standard value. `criarContaPagar` also takes `pago` (form's
+"esta conta já está paga" → row inserted `pago_em = now()`) and `recorrente` (`db/18`). When
+`marcarContaPagarPaga` quits a `recorrente` row it **clones the next month's occurrence** in the same
+call (`vencimento + interval '1 month'`, no foto) and returns `proximaVencimento` for the toast;
+re-paying after a reopen clones again (accepted).
 
 - `/fornecedores` — list + `<FormularioFornecedor>` (shared: also embedded in `/contas-pagar`'s supplier
   picker, and pre-fillable via `inicial={{nome, documento}}` from a scanned bill). `/api/fornecedores`
   (+`?q=` name/CNPJ filter) and `/api/fornecedores/:id`.
-- `/contas-pagar` — the module. "Nova conta a pagar" takes a **photo of the boleto/nota** (`<CampoFoto>`
-  default `capture="environment"` — camera on mobile): `POST /api/contas-pagar/ler-foto` →
-  `src/lib/lerContaPagar.ts` (vision, `output_config` JSON schema, same shape as `importarCompra.ts`)
-  pulls `{fornecedorNome, fornecedorDocumento, categoria, valor, vencimento, documento}`, and
-  `acharFornecedorParecido` (in `db.ts` — CNPJ-digits exact match, else `pg_trgm`
-  `similarity` on the name) suggests an existing supplier; no match + a name read → inline
-  `<FormularioFornecedor>` prefilled. The photo itself is stored on the `conta_pagar` row and served as
-  bytes from `/api/contas-pagar/:id/foto` (kept out of the list query — only `tem_foto`). List has
-  em-aberto/pagas/todas tabs, a per-row "marcar pago"/"reabrir" (`PATCH …/:id {acao}`), overdue rows in
-  `--tomate`. **Paying a conta does NOT create a `custo`** — the two are separate ledgers.
+- `/contas-pagar` — **list-only**, same shape as `/produtos`: `+ Nova conta a pagar` (→
+  `/contas-pagar/nova`) and `📷 Nova conta por foto` (compresses the photo → `sessionStorage
+  ["mpmf.contaPagarFoto"]` → `/contas-pagar/nova`, which reads the stash and runs the extraction on
+  mount). em-aberto/pagas/todas tabs, per-row "marcar pago"/"reabrir" (`PATCH …/:id {acao}`), overdue
+  rows in `--tomate`. **Ordered by `vencimento DESC NULLS LAST`** (latest due date on top). The
+  `/contas-pagar/nova` form drops a `sessionStorage["mpmf.contaPagarFlash"]` message and routes back.
+- The photo of a boleto/nota (`<CampoFoto>` default `capture="environment"` — camera on mobile) → `POST
+  /api/contas-pagar/ler-foto` → `src/lib/lerContaPagar.ts` (vision, `output_config` JSON schema, same
+  shape as `importarCompra.ts`) pulls `{fornecedorNome, fornecedorDocumento, categoria, valor,
+  vencimento, documento}`, and `acharFornecedorParecido` (in `db.ts` — CNPJ-digits exact match, else
+  `pg_trgm` `similarity` on the name) suggests an existing supplier; no match + a name read → inline
+  `<FormularioFornecedor>` prefilled. The photo is stored on the `conta_pagar` row and served as bytes
+  from `/api/contas-pagar/:id/foto` (kept out of the list query — only `tem_foto`). Client-shared
+  constants/helpers (labels, `prazoVencimento`) live in `src/lib/contasPagar.ts` (no `pg` import).
+  **Paying a conta does NOT create a `custo`** — the two are separate ledgers.
 
 ### Reports dashboard (`/relatorios`)
 

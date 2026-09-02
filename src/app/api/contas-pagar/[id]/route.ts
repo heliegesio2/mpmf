@@ -22,12 +22,15 @@ export async function PATCH(request: Request, { params }: Ctx) {
     /* corpo vazio = pagar */
   }
 
-  const ok =
-    acao === "reabrir"
-      ? await reabrirContaPagar(empresaId, id)
-      : await marcarContaPagarPaga(empresaId, id);
-  if (!ok) return NextResponse.json({ erro: "Conta não encontrada ou já nesse estado." }, { status: 404 });
-  return NextResponse.json({ ok: true });
+  if (acao === "reabrir") {
+    const ok = await reabrirContaPagar(empresaId, id);
+    if (!ok) return NextResponse.json({ erro: "Conta não encontrada ou já nesse estado." }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  }
+
+  const r = await marcarContaPagarPaga(empresaId, id);
+  if (!r.ok) return NextResponse.json({ erro: "Conta não encontrada ou já nesse estado." }, { status: 404 });
+  return NextResponse.json({ ok: true, proximaVencimento: r.proximaVencimento });
 }
 
 /** DELETE /api/contas-pagar/:id */

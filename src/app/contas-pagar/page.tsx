@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import CampoFoto from "@/components/CampoFoto";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
-import FormularioFornecedor from "@/components/FormularioFornecedor";
-import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
+import { comprimirParaDataURL } from "@/lib/imagemCliente";
+import { ROTULO_CATEGORIA, prazoVencimento } from "@/lib/contasPagar";
 
 type ContaPagar = {
   id: number;
@@ -14,26 +15,15 @@ type ContaPagar = {
   descricao: string | null;
   valor: string;
   vencimento: string | null;
+  recorrente: boolean;
   tem_foto: boolean;
   pago: boolean;
   pago_em: string | null;
   criado_em: string;
 };
 
-type FornecedorLite = { id: number; nome: string };
-
-const CATEGORIAS: { valor: string; rotulo: string }[] = [
-  { valor: "mercadoria", rotulo: "Mercadoria" },
-  { valor: "energia", rotulo: "Luz" },
-  { valor: "agua", rotulo: "Água" },
-  { valor: "aluguel", rotulo: "Aluguel" },
-  { valor: "telefone", rotulo: "Telefone / Internet" },
-  { valor: "imposto", rotulo: "Impostos e taxas" },
-  { valor: "salario", rotulo: "Salários" },
-  { valor: "boleto", rotulo: "Boleto" },
-  { valor: "outros", rotulo: "Outros" },
-];
-const ROTULO_CATEGORIA = Object.fromEntries(CATEGORIAS.map((c) => [c.valor, c.rotulo]));
+const CHAVE_FOTO = "mpmf.contaPagarFoto";
+const CHAVE_FLASH = "mpmf.contaPagarFlash";
 
 const FILTROS = [
   { valor: "abertas", rotulo: "Em aberto" },
@@ -44,127 +34,15 @@ const FILTROS = [
 const moeda = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dataFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" });
 
-function hojeISO(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-/** Rótulo de vencimento: "vencida há 3 dias", "vence hoje", "vence em 5 dias". */
-function prazo(venc: string | null): { texto: string; atrasada: boolean } | null {
-  if (!venc) return null;
-  const dias = Math.round((Date.parse(venc + "T00:00:00") - Date.parse(hojeISO() + "T00:00:00")) / 86400000);
-  if (dias < 0) return { texto: `vencida há ${-dias} dia${dias === -1 ? "" : "s"}`, atrasada: true };
-  if (dias === 0) return { texto: "vence hoje", atrasada: true };
-  if (dias === 1) return { texto: "vence amanhã", atrasada: false };
-  return { texto: `vence em ${dias} dias`, atrasada: false };
-}
-
-/* ---------- seletor de fornecedor ---------- */
-function SeletorFornecedor({
-  valor,
-  aoEscolher,
-}: {
-  valor: FornecedorLite | null;
-  aoEscolher: (f: FornecedorLite | null) => void;
-}) {
-  const [busca, setBusca] = useState("");
-  const [opcoes, setOpcoes] = useState<FornecedorLite[]>([]);
-  const [cadastrando, setCadastrando] = useState(false);
-
-  useEffect(() => {
-    if (valor || cadastrando) return;
-    const t = setTimeout(async () => {
-      try {
-        const r = await fetch(`/api/fornecedores?q=${encodeURIComponent(busca)}`);
-        const d = await r.json();
-        if (r.ok) setOpcoes((d.itens as FornecedorLite[]).slice(0, 6));
-      } catch {
-        /* silencioso */
-      }
-    }, 250);
-    return () => clearTimeout(t);
-  }, [busca, valor, cadastrando]);
-
-  if (valor) {
-    return (
-      <div className="rotulo largo">
-        Fornecedor
-        <div className="fornecedor-escolhido">
-          <span>{valor.nome}</span>
-          <button type="button" className="botao mini" onClick={() => aoEscolher(null)}>
-            Trocar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (cadastrando) {
-    return (
-      <div className="rotulo largo">
-        Novo fornecedor
-        <FormularioFornecedor
-          inicial={{ nome: busca }}
-          aoSalvar={(f) => {
-            setCadastrando(false);
-            aoEscolher(f);
-          }}
-          aoCancelar={() => setCadastrando(false)}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="rotulo largo">
-      Fornecedor (opcional)
-      <input
-        value={busca}
-        onChange={(e) => setBusca(e.target.value)}
-        placeholder="Buscar fornecedor pelo nome"
-        autoComplete="off"
-      />
-      {(opcoes.length > 0 || busca.trim().length >= 2) && (
-        <div className="fornecedor-opcoes">
-          {opcoes.map((o) => (
-            <button key={o.id} type="button" onClick={() => aoEscolher(o)}>
-              {o.nome}
-            </button>
-          ))}
-          {busca.trim().length >= 2 && (
-            <button type="button" className="fornecedor-novo" onClick={() => setCadastrando(true)}>
-              + Cadastrar “{busca.trim()}”
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function ContasPagar() {
+  const router = useRouter();
   const [itens, setItens] = useState<ContaPagar[]>([]);
   const [filtro, setFiltro] = useState("abertas");
   const [carregando, setCarregando] = useState(true);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
-
-  const [categoriasUsadas, setCategoriasUsadas] = useState<string[]>([]);
-
-  // formulário
-  const [foto, setFoto] = useState("");
-  const [fornecedor, setFornecedor] = useState<FornecedorLite | null>(null);
-  const [categoria, setCategoria] = useState("");
-  const [categoriaLivre, setCategoriaLivre] = useState("");
-  const [descricao, setDescricao] = useState("");
-  const [valor, setValor] = useState("");
-  const [vencimento, setVencimento] = useState("");
-  const [jaPaga, setJaPaga] = useState(false);
   const [lendoFoto, setLendoFoto] = useState(false);
-  const [salvando, setSalvando] = useState(false);
-  // fornecedor lido da foto e ainda não cadastrado
-  const [nomeLido, setNomeLido] = useState("");
-  const [docLido, setDocLido] = useState("");
-  const [cadFornLido, setCadFornLido] = useState(false);
+  const fotoInput = useRef<HTMLInputElement>(null);
 
   const carregar = useCallback(async (situacao: string) => {
     setCarregando(true);
@@ -173,7 +51,6 @@ export default function ContasPagar() {
       const d = await r.json();
       if (!r.ok) throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — "));
       setItens(d.itens);
-      setCategoriasUsadas(d.categorias ?? []);
       setErro(false);
     } catch (e) {
       setErro(true);
@@ -187,89 +64,38 @@ export default function ContasPagar() {
     carregar(filtro);
   }, [filtro, carregar]);
 
-  async function lerBoleto(dataUrl: string) {
-    setFoto(dataUrl);
+  // aviso rápido depois de salvar na tela de cadastro
+  useEffect(() => {
+    try {
+      const flash = sessionStorage.getItem(CHAVE_FLASH);
+      if (flash) {
+        sessionStorage.removeItem(CHAVE_FLASH);
+        setAviso(flash);
+        setErro(false);
+      }
+    } catch {
+      /* sem sessionStorage */
+    }
+  }, []);
+
+  async function novaPorFoto(arquivo: File | undefined) {
+    if (!arquivo) return;
     setLendoFoto(true);
     setErro(false);
-    setAviso("Lendo o boleto…");
     try {
-      const r = await fetch("/api/contas-pagar/ler-foto", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ foto: dataUrl }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d?.erro ?? "Não consegui ler.");
-
-      const { dados, fornecedor: achado } = d;
-      if (dados.valor > 0) setValor(paraMoeda(dados.valor));
-      if (dados.vencimento) setVencimento(dados.vencimento);
-      if (dados.documento) setDescricao(dados.documento);
-      if (dados.categoria) setCategoria(dados.categoria);
-      if (achado) {
-        setFornecedor({ id: achado.id, nome: achado.nome });
-        setAviso(`Fornecedor reconhecido: ${achado.nome}.`);
-      } else if (dados.fornecedorNome) {
-        setNomeLido(dados.fornecedorNome);
-        setDocLido(dados.fornecedorDocumento || "");
-        setAviso(`Li "${dados.fornecedorNome}" — cadastre o fornecedor abaixo se quiser.`);
-      } else {
-        setAviso("Boleto lido. Confira os campos.");
+      const dataUrl = await comprimirParaDataURL(arquivo);
+      try {
+        sessionStorage.setItem(CHAVE_FOTO, dataUrl);
+      } catch {
+        /* sem sessionStorage: segue sem a foto pré-carregada */
       }
-    } catch (e) {
+      router.push("/contas-pagar/nova");
+    } catch {
       setErro(true);
-      setAviso(e instanceof Error ? e.message : "Não consegui ler o boleto. Preencha na mão.");
-    } finally {
+      setAviso("Não consegui usar essa foto. Tente outra.");
       setLendoFoto(false);
-    }
-  }
-
-  // "outros" com texto digitado -> vale o texto; senão o próprio valor do botão
-  const categoriaFinal =
-    categoria === "outros" ? categoriaLivre.trim() || "outros" : categoria;
-  const formularioValido = moedaParaNumero(valor) > 0 && Boolean(categoriaFinal);
-
-  function limparForm() {
-    setFoto("");
-    setFornecedor(null);
-    setCategoria("");
-    setCategoriaLivre("");
-    setDescricao("");
-    setValor("");
-    setVencimento("");
-    setJaPaga(false);
-    setNomeLido("");
-    setDocLido("");
-    setCadFornLido(false);
-  }
-
-  async function salvar() {
-    setSalvando(true);
-    setErro(false);
-    try {
-      const r = await fetch("/api/contas-pagar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fornecedorId: fornecedor?.id ?? null,
-          categoria: categoriaFinal,
-          descricao,
-          valor: moedaParaNumero(valor),
-          vencimento: vencimento || null,
-          foto: foto || null,
-          pago: jaPaga,
-        }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — ") || "Não foi possível salvar.");
-      setAviso("Conta a pagar incluída.");
-      limparForm();
-      await carregar(filtro);
-    } catch (e) {
-      setErro(true);
-      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
     } finally {
-      setSalvando(false);
+      if (fotoInput.current) fotoInput.current.value = "";
     }
   }
 
@@ -280,8 +106,17 @@ export default function ContasPagar() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ acao }),
       });
+      const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error();
-      setAviso(acao === "pagar" ? "Conta quitada." : "Conta reaberta.");
+      if (acao === "reabrir") {
+        setAviso("Conta reaberta.");
+      } else if (d.proximaVencimento) {
+        setAviso(
+          `Conta quitada. Próxima já lançada para ${dataFmt.format(new Date(d.proximaVencimento + "T00:00:00"))}.`
+        );
+      } else {
+        setAviso("Conta quitada.");
+      }
       setErro(false);
       await carregar(filtro);
     } catch {
@@ -308,7 +143,7 @@ export default function ContasPagar() {
     const abertas = itens.filter((c) => !c.pago);
     return {
       aberto: abertas.reduce((s, c) => s + Number(c.valor), 0),
-      vencidas: abertas.filter((c) => prazo(c.vencimento)?.atrasada).length,
+      vencidas: abertas.filter((c) => prazoVencimento(c.vencimento)?.atrasada).length,
     };
   }, [itens]);
 
@@ -325,147 +160,27 @@ export default function ContasPagar() {
         )}
       </header>
 
-      <section className="cartao">
-        <h2 className="titulo-cartao">Nova conta a pagar</h2>
-        <p className="ajuda-voz">
-          Tire a foto do boleto ou da nota — o sistema tenta ler fornecedor, valor e
-          vencimento. Depois é só conferir.
-        </p>
-
-        <div className="grade-form">
-          <div className="rotulo largo">
-            <CampoFoto
-              rotulo="Foto do boleto / nota"
-              preview={foto}
-              aoEscolher={lerBoleto}
-              aoRemover={foto ? () => setFoto("") : undefined}
-              aoErro={(m) => {
-                setErro(true);
-                setAviso(m);
-              }}
-            />
-          </div>
-
-          <div className="rotulo largo">
-            Categoria
-            <div className="categorias-conta">
-              {CATEGORIAS.filter((c) => c.valor !== "outros").map((c) => (
-                <button
-                  key={c.valor}
-                  type="button"
-                  className="botao pagamento"
-                  data-escolhido={categoria === c.valor}
-                  onClick={() => setCategoria(c.valor)}
-                >
-                  {c.rotulo}
-                </button>
-              ))}
-              {categoriasUsadas.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  className="botao pagamento"
-                  data-escolhido={categoria === c}
-                  onClick={() => setCategoria(c)}
-                >
-                  {c}
-                </button>
-              ))}
-              <button
-                type="button"
-                className="botao pagamento"
-                data-escolhido={categoria === "outros"}
-                onClick={() => setCategoria("outros")}
-              >
-                Outros
-              </button>
-            </div>
-            {categoria === "outros" && (
-              <input
-                value={categoriaLivre}
-                onChange={(e) => setCategoriaLivre(e.target.value)}
-                placeholder="Digite a categoria (ex.: Gás, Frete, Contador)"
-                maxLength={40}
-                autoComplete="off"
-                style={{ marginTop: 8 }}
-              />
-            )}
-          </div>
-
-          <SeletorFornecedor valor={fornecedor} aoEscolher={setFornecedor} />
-
-          {!fornecedor && nomeLido && !cadFornLido && (
-            <div className="rotulo largo">
-              <button type="button" className="botao neutro" onClick={() => setCadFornLido(true)}>
-                Cadastrar fornecedor “{nomeLido}”
-              </button>
-            </div>
-          )}
-          {!fornecedor && cadFornLido && (
-            <div className="rotulo largo">
-              Novo fornecedor
-              <FormularioFornecedor
-                inicial={{ nome: nomeLido, documento: docLido }}
-                aoSalvar={(f) => {
-                  setFornecedor(f);
-                  setCadFornLido(false);
-                  setNomeLido("");
-                }}
-                aoCancelar={() => setCadFornLido(false)}
-              />
-            </div>
-          )}
-
-          <label className="rotulo largo">
-            Descrição
-            <input
-              value={descricao}
-              onChange={(e) => setDescricao(e.target.value)}
-              placeholder="Boleto nota 4471, aluguel, energia…"
-              autoComplete="off"
-            />
-          </label>
-
-          <label className="rotulo">
-            Valor
-            <input
-              value={valor}
-              onChange={(e) => setValor(mascararMoeda(e.target.value))}
-              placeholder="0,00"
-              inputMode="decimal"
-              autoComplete="off"
-            />
-          </label>
-
-          <label className="rotulo">
-            Vencimento
-            <input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
-          </label>
-
-          <label className="check-whatsapp" style={{ gridColumn: "1 / -1" }}>
-            <input type="checkbox" checked={jaPaga} onChange={(e) => setJaPaga(e.target.checked)} />
-            Esta conta já está paga
-          </label>
-        </div>
-
-        <div className="acoes">
-          <button
-            className="botao primario"
-            onClick={salvar}
-            disabled={salvando || lendoFoto || !formularioValido}
-          >
-            {salvando
-              ? "Salvando…"
-              : jaPaga
-                ? "Incluir conta (já paga)"
-                : "Incluir conta a pagar"}
-          </button>
-        </div>
-
-        <p className="dica" data-erro={erro} role="status" aria-live="polite">
-          {aviso}
-        </p>
-      </section>
+      <div className="acoes">
+        <Link href="/contas-pagar/nova" className="botao primario">
+          + Nova conta a pagar
+        </Link>
+        <button
+          type="button"
+          className="botao neutro"
+          onClick={() => fotoInput.current?.click()}
+          disabled={lendoFoto}
+        >
+          {lendoFoto ? "Abrindo…" : "📷 Nova conta por foto"}
+        </button>
+        <input
+          ref={fotoInput}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          hidden
+          onChange={(e) => novaPorFoto(e.target.files?.[0])}
+        />
+      </div>
 
       <div className="abas">
         {FILTROS.map((f) => (
@@ -480,6 +195,12 @@ export default function ContasPagar() {
         ))}
       </div>
 
+      {aviso && (
+        <p className="dica" data-erro={erro} role="status" aria-live="polite">
+          {aviso}
+        </p>
+      )}
+
       {carregando ? (
         <p className="vazio">Carregando…</p>
       ) : itens.length === 0 ? (
@@ -487,7 +208,7 @@ export default function ContasPagar() {
       ) : (
         <ul className="lista">
           {itens.map((c) => {
-            const p = prazo(c.vencimento);
+            const p = prazoVencimento(c.vencimento);
             return (
               <li key={c.id}>
                 {c.tem_foto && (
@@ -502,6 +223,7 @@ export default function ContasPagar() {
                   <span className="sub">
                     {[
                       c.categoria ? ROTULO_CATEGORIA[c.categoria] ?? c.categoria : null,
+                      c.recorrente ? "recorrente" : null,
                       c.fornecedor_nome && c.descricao ? c.fornecedor_nome : null,
                       c.vencimento ? `vence ${dataFmt.format(new Date(c.vencimento + "T00:00:00"))}` : null,
                       c.pago && c.pago_em ? `pago em ${dataFmt.format(new Date(c.pago_em))}` : p?.texto,
