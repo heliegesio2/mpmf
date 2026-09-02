@@ -508,20 +508,21 @@ html[data-fonte="grande"] { zoom: 1.5; }
 }
 .editar-estoque input:focus { outline: none; border-color: var(--creme); }
 
-/* coluna direita do item no comprovante da venda: preço + estoque restante */
-.lista .col-direita {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
-  flex: none;
-}
-.lista .estoque-restante {
-  font-family: "IBM Plex Mono", monospace;
-  font-weight: 700;
+/* quadradinho de estoque restante no comprovante da venda — embaixo, à esquerda.
+   vermelho sólido só quando está no nível de reposição. */
+.chip-estoque-venda {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 9px;
+  border-radius: 7px;
   font-size: 12px;
-  color: var(--tomate);
-  white-space: nowrap;
+  font-weight: 700;
+  background: var(--verde-linha);
+  color: var(--creme);
+}
+.chip-estoque-venda[data-critico="true"] {
+  background: var(--tomate);
+  color: var(--creme);
 }
 
 /* ---- nota do cliente (verde / amarelo / vermelho) ---- */

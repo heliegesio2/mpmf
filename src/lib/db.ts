@@ -294,20 +294,30 @@ export async function atualizarEstoqueProduto(
  * `GREATEST(0, ...)` para nao deixar o estoque negativo. Uma query por item
  * (poucos itens por venda; o pooler da Neon nao gosta de multi-statement).
  */
+export type EstoqueRestante = { estoque: number; critico: boolean };
+
+/** `estoque <= estoque_minimo ?? 3` -> nível de reposição. */
+const LIMIAR_ESTOQUE_PADRAO = 3;
+
 export async function baixarEstoqueVenda(
   empresaId: number,
   itens: { id: number; quantidade: number }[]
-): Promise<Record<number, number>> {
-  const restante: Record<number, number> = {};
+): Promise<Record<number, EstoqueRestante>> {
+  const restante: Record<number, EstoqueRestante> = {};
   for (const it of itens) {
     if (!Number.isInteger(it.id) || !(it.quantidade > 0)) continue;
-    const { rows } = await pool.query<{ id: number; estoque: string }>(
+    const { rows } = await pool.query<{ id: number; estoque: string; estoque_minimo: string | null }>(
       `UPDATE produto SET estoque = GREATEST(0, estoque - $3), alterado_em = now()
         WHERE id = $1 AND empresa_id = $2
-        RETURNING id, estoque`,
+        RETURNING id, estoque, estoque_minimo`,
       [it.id, empresaId, it.quantidade]
     );
-    if (rows[0]) restante[Number(rows[0].id)] = Number(rows[0].estoque);
+    const r = rows[0];
+    if (r) {
+      const estoque = Number(r.estoque);
+      const limite = r.estoque_minimo != null ? Number(r.estoque_minimo) : LIMIAR_ESTOQUE_PADRAO;
+      restante[Number(r.id)] = { estoque, critico: estoque <= limite };
+    }
   }
   return restante;
 }

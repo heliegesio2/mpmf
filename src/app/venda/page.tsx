@@ -109,8 +109,8 @@ export default function Venda() {
   const [finalizada, setFinalizada] = useState<{
     itens: Item[];
     partes: PartePagamento[];
-    /** Estoque de cada produto DEPOIS da baixa da venda (id -> quantidade). */
-    estoques: Record<number, number>;
+    /** Estoque de cada produto DEPOIS da baixa da venda (id -> { estoque, critico }). */
+    estoques: Record<number, { estoque: number; critico: boolean }>;
   } | null>(null);
 
   const itensVenda = fechada && finalizada ? finalizada.itens : itens;
@@ -571,7 +571,7 @@ export default function Venda() {
       }
       // dá baixa no estoque — a venda já foi cobrada, então uma falha aqui
       // não desfaz a venda (o lojista reconta o estoque depois pela foto)
-      let estoques: Record<number, number> = {};
+      let estoques: Record<number, { estoque: number; critico: boolean }> = {};
       try {
         const r = await fetch("/api/venda/baixar-estoque", {
           method: "POST",
@@ -617,7 +617,7 @@ export default function Venda() {
 
         <ul className="lista">
           {itensVenda.map((i) => {
-            const estoque = finalizada?.estoques[i.produto.id];
+            const est = finalizada?.estoques[i.produto.id];
             return (
               <li key={i.chave}>
                 <FotoProduto id={i.produto.id} />
@@ -627,16 +627,14 @@ export default function Venda() {
                     {formatarQuantidade(i.quantidade, i.produto.tipo_venda)} × R${" "}
                     {moeda.format(Number(i.produto.preco))}
                   </span>
-                </span>
-                <span className="col-direita">
-                  <span className="preco">
-                    R$ {moeda.format(Number(i.produto.preco) * i.quantidade)}
-                  </span>
-                  {estoque !== undefined && (
-                    <span className="estoque-restante">
-                      {formatarQuantidade(estoque, i.produto.tipo_venda)} em estoque
+                  {est !== undefined && (
+                    <span className="chip-estoque-venda" data-critico={est.critico}>
+                      Estoque: {formatarQuantidade(est.estoque, i.produto.tipo_venda)}
                     </span>
                   )}
+                </span>
+                <span className="preco">
+                  R$ {moeda.format(Number(i.produto.preco) * i.quantidade)}
                 </span>
               </li>
             );
