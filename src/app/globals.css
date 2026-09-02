@@ -362,6 +362,38 @@ html[data-fonte="grande"] { zoom: 1.5; }
   color: var(--ambar);
   white-space: nowrap;
 }
+.lista .preco[data-critico="true"] { color: var(--tomate); }
+
+/* ---- seletor de fornecedor (contas a pagar) ---- */
+.fornecedor-escolhido {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--verde-linha);
+  border-radius: 10px;
+  background: var(--verde-superficie);
+  font-weight: 600;
+}
+.fornecedor-opcoes {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+.fornecedor-opcoes button {
+  text-align: left;
+  padding: 10px 12px;
+  border: 1px solid var(--verde-linha);
+  border-radius: 9px;
+  background: var(--verde-superficie);
+  color: var(--creme);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+.fornecedor-opcoes button:hover { border-color: var(--creme-fraco); }
+.fornecedor-opcoes .fornecedor-novo { color: var(--ambar); font-weight: 700; }
 
 /* ---- grid de produtos (tela de Produtos) ---- */
 .grade-produtos {

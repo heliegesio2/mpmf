@@ -23,6 +23,8 @@ const LOJA = [
   { href: "/relatorios", rotulo: "Relatórios", descricao: "Gastos, estoque, caixa e alertas" },
   { href: "/clientes", rotulo: "Clientes", descricao: "Cadastro com foto, para fiado" },
   { href: "/contas", rotulo: "Contas a receber", descricao: "Fiado em aberto e quitação" },
+  { href: "/contas-pagar", rotulo: "Contas a pagar", descricao: "Boletos e notas a vencer" },
+  { href: "/fornecedores", rotulo: "Fornecedores", descricao: "Cadastro de quem te abastece" },
 ];
 
 const ADMIN = [

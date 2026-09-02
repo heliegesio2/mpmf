@@ -230,6 +230,26 @@ of a blank "não foi possível salvar".
 
 Still **no sales ledger** — a split sale persists nothing except its `fiado` parts.
 
+### Fornecedores + contas a pagar (`db/16`)
+
+Two linked tables. `fornecedor` (nome required; `documento`/`telefone`+`telefone_whatsapp`/`endereco`/
+`observacao` optional — same `<CampoTelefone>` WhatsApp treatment as everything else). `conta_pagar`
+(`fornecedor_id` nullable `ON DELETE SET NULL`, `descricao`, `valor`, `vencimento` date, `foto` data-URL
+text like the others, `pago`/`pago_em`).
+
+- `/fornecedores` — list + `<FormularioFornecedor>` (shared: also embedded in `/contas-pagar`'s supplier
+  picker, and pre-fillable via `inicial={{nome, documento}}` from a scanned bill). `/api/fornecedores`
+  (+`?q=` name/CNPJ filter) and `/api/fornecedores/:id`.
+- `/contas-pagar` — the module. "Nova conta a pagar" takes a **photo of the boleto/nota**: `<CampoFoto>`
+  → `POST /api/contas-pagar/ler-foto` → `src/lib/lerContaPagar.ts` (vision, `output_config` JSON schema,
+  same shape as `importarCompra.ts`) pulls `{fornecedorNome, fornecedorDocumento, valor, vencimento,
+  documento}`, and `acharFornecedorParecido` (in `db.ts` — CNPJ-digits exact match, else `pg_trgm`
+  `similarity` on the name) suggests an existing supplier; no match + a name read → inline
+  `<FormularioFornecedor>` prefilled. The photo itself is stored on the `conta_pagar` row and served as
+  bytes from `/api/contas-pagar/:id/foto` (kept out of the list query — only `tem_foto`). List has
+  em-aberto/pagas/todas tabs, a per-row "marcar pago"/"reabrir" (`PATCH …/:id {acao}`), overdue rows in
+  `--tomate`. **Paying a conta does NOT create a `custo`** — the two are separate ledgers.
+
 ### Reports dashboard (`/relatorios`)
 
 There is **no sales ledger / stock-movement table** — the app records the current product row

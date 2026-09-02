@@ -82,6 +82,31 @@ const MIGRACOES_IDEMPOTENTES = [
      UNIQUE (provedor, provedor_id)
    )`,
   "CREATE INDEX IF NOT EXISTS idx_identidade_usuario ON usuario_identidade (usuario_id)",
+  `CREATE TABLE IF NOT EXISTS fornecedor (
+     id bigserial PRIMARY KEY,
+     empresa_id bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     nome text NOT NULL,
+     documento text,
+     telefone text,
+     telefone_whatsapp boolean NOT NULL DEFAULT false,
+     endereco text,
+     observacao text,
+     criado_em timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS idx_fornecedor_empresa ON fornecedor (empresa_id, nome)",
+  `CREATE TABLE IF NOT EXISTS conta_pagar (
+     id bigserial PRIMARY KEY,
+     empresa_id bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     fornecedor_id bigint REFERENCES fornecedor(id) ON DELETE SET NULL,
+     descricao text,
+     valor numeric(12,2) NOT NULL CHECK (valor > 0),
+     vencimento date,
+     foto text,
+     pago boolean NOT NULL DEFAULT false,
+     pago_em timestamptz,
+     criado_em timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS idx_conta_pagar_empresa ON conta_pagar (empresa_id, pago, vencimento)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -814,6 +839,234 @@ export async function quitarFiadoDoCliente(empresaId: number, clienteId: number)
     [empresaId, clienteId]
   );
   return r.rowCount ?? 0;
+}
+
+// ---------- fornecedores + contas a pagar ----------
+
+export type Fornecedor = {
+  id: number;
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  telefone_whatsapp: boolean;
+  endereco: string | null;
+  observacao: string | null;
+  criado_em: string;
+};
+
+export type FornecedorEntrada = {
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  telefoneWhatsapp: boolean;
+  endereco: string | null;
+  observacao: string | null;
+};
+
+const CAMPOS_FORNECEDOR =
+  "id, nome, documento, telefone, telefone_whatsapp, endereco, observacao, criado_em";
+
+export async function listarFornecedores(empresaId: number, q = ""): Promise<Fornecedor[]> {
+  await garantirSchema();
+  const t = q.trim();
+  const filtro = t
+    ? `AND (f_unaccent(lower(nome)) LIKE '%' || f_unaccent(lower($2::text)) || '%'
+           OR regexp_replace(coalesce(documento,''), '\\D', '', 'g')
+              LIKE '%' || regexp_replace($2::text, '\\D', '', 'g') || '%')`
+    : "";
+  const { rows } = await pool.query<Fornecedor>(
+    `SELECT ${CAMPOS_FORNECEDOR} FROM fornecedor
+      WHERE empresa_id = $1 ${filtro}
+      ORDER BY nome`,
+    t ? [empresaId, t] : [empresaId]
+  );
+  return rows;
+}
+
+export async function fornecedorPorId(empresaId: number, id: number): Promise<Fornecedor | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<Fornecedor>(
+    `SELECT ${CAMPOS_FORNECEDOR} FROM fornecedor WHERE id = $1 AND empresa_id = $2`,
+    [id, empresaId]
+  );
+  return rows[0] ?? null;
+}
+
+/** Melhor palpite de fornecedor já cadastrado a partir de um nome/CNPJ lido da nota. */
+export async function acharFornecedorParecido(
+  empresaId: number,
+  nome: string,
+  documento = ""
+): Promise<Fornecedor | null> {
+  await garantirSchema();
+  const doc = documento.replace(/\D/g, "");
+  if (doc) {
+    const porDoc = await pool.query<Fornecedor>(
+      `SELECT ${CAMPOS_FORNECEDOR} FROM fornecedor
+        WHERE empresa_id = $1 AND regexp_replace(coalesce(documento,''), '\\D', '', 'g') = $2
+        LIMIT 1`,
+      [empresaId, doc]
+    );
+    if (porDoc.rows[0]) return porDoc.rows[0];
+  }
+  const t = nome.trim();
+  if (t.length < 2) return null;
+  const { rows } = await pool.query<Fornecedor & { s: number }>(
+    `SELECT ${CAMPOS_FORNECEDOR},
+            similarity(f_unaccent(lower(nome)), f_unaccent(lower($2))) AS s
+       FROM fornecedor
+      WHERE empresa_id = $1
+        AND (f_unaccent(lower(nome)) LIKE '%' || f_unaccent(lower($2)) || '%'
+             OR similarity(f_unaccent(lower(nome)), f_unaccent(lower($2))) > 0.3)
+      ORDER BY s DESC
+      LIMIT 1`,
+    [empresaId, t]
+  );
+  return rows[0] ?? null;
+}
+
+export async function criarFornecedor(
+  empresaId: number,
+  d: FornecedorEntrada
+): Promise<Fornecedor> {
+  await garantirSchema();
+  const { rows } = await pool.query<Fornecedor>(
+    `INSERT INTO fornecedor (empresa_id, nome, documento, telefone, telefone_whatsapp, endereco, observacao)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING ${CAMPOS_FORNECEDOR}`,
+    [empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.endereco, d.observacao]
+  );
+  return rows[0];
+}
+
+export async function atualizarFornecedor(
+  empresaId: number,
+  id: number,
+  d: FornecedorEntrada
+): Promise<Fornecedor | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<Fornecedor>(
+    `UPDATE fornecedor
+        SET nome = $3, documento = $4, telefone = $5, telefone_whatsapp = $6,
+            endereco = $7, observacao = $8
+      WHERE id = $1 AND empresa_id = $2
+      RETURNING ${CAMPOS_FORNECEDOR}`,
+    [id, empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.endereco, d.observacao]
+  );
+  return rows[0] ?? null;
+}
+
+export async function excluirFornecedor(empresaId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query("DELETE FROM fornecedor WHERE id = $1 AND empresa_id = $2", [
+    id,
+    empresaId,
+  ]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+export type ContaPagar = {
+  id: number;
+  fornecedor_id: number | null;
+  fornecedor_nome: string | null;
+  descricao: string | null;
+  valor: string;
+  vencimento: string | null;
+  tem_foto: boolean;
+  pago: boolean;
+  pago_em: string | null;
+  criado_em: string;
+};
+
+export type ContaPagarEntrada = {
+  fornecedorId: number | null;
+  descricao: string | null;
+  valor: number;
+  vencimento: string | null;
+  foto: string | null;
+};
+
+const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, c.descricao, c.valor,
+       to_char(c.vencimento, 'YYYY-MM-DD') AS vencimento, (c.foto IS NOT NULL) AS tem_foto,
+       c.pago, c.pago_em, c.criado_em`;
+
+export async function listarContasPagar(
+  empresaId: number,
+  situacao: "abertas" | "pagas" | "todas" = "abertas"
+): Promise<ContaPagar[]> {
+  await garantirSchema();
+  const filtro =
+    situacao === "abertas" ? "AND c.pago = false"
+    : situacao === "pagas" ? "AND c.pago = true"
+    : "";
+  const { rows } = await pool.query<ContaPagar>(
+    `SELECT ${CAMPOS_CONTA_PAGAR}
+       FROM conta_pagar c
+       LEFT JOIN fornecedor fo ON fo.id = c.fornecedor_id
+      WHERE c.empresa_id = $1 ${filtro}
+      ORDER BY c.pago, c.vencimento ASC NULLS LAST, c.criado_em DESC`,
+    [empresaId]
+  );
+  return rows;
+}
+
+export async function criarContaPagar(
+  empresaId: number,
+  d: ContaPagarEntrada
+): Promise<ContaPagar> {
+  await garantirSchema();
+  // fornecedor_id (quando vem) é conferido contra a empresa da sessão
+  const { rows } = await pool.query<{ id: number }>(
+    `INSERT INTO conta_pagar (empresa_id, fornecedor_id, descricao, valor, vencimento, foto)
+     VALUES ($1,
+             (SELECT id FROM fornecedor WHERE id = $2 AND empresa_id = $1),
+             $3, $4, $5, $6)
+     RETURNING id`,
+    [empresaId, d.fornecedorId, d.descricao, d.valor, d.vencimento, d.foto]
+  );
+  const criada = await pool.query<ContaPagar>(
+    `SELECT ${CAMPOS_CONTA_PAGAR}
+       FROM conta_pagar c LEFT JOIN fornecedor fo ON fo.id = c.fornecedor_id
+      WHERE c.id = $1`,
+    [rows[0].id]
+  );
+  return criada.rows[0];
+}
+
+export async function marcarContaPagarPaga(empresaId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "UPDATE conta_pagar SET pago = true, pago_em = now() WHERE id = $1 AND empresa_id = $2 AND pago = false",
+    [id, empresaId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+export async function reabrirContaPagar(empresaId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "UPDATE conta_pagar SET pago = false, pago_em = NULL WHERE id = $1 AND empresa_id = $2 AND pago = true",
+    [id, empresaId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+export async function excluirContaPagar(empresaId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query("DELETE FROM conta_pagar WHERE id = $1 AND empresa_id = $2", [
+    id,
+    empresaId,
+  ]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+export async function fotoContaPagar(empresaId: number, id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ foto: string | null }>(
+    "SELECT foto FROM conta_pagar WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return rows[0]?.foto ?? null;
 }
 
 // ---------- caixa (fechamento diario) ----------
