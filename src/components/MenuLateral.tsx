@@ -11,6 +11,8 @@ type Sessao = {
   nome: string;
   papel: "super_admin" | "admin" | "operador";
   empresaNome: string | null;
+  /** Presente quando um super admin usou "entrar como" e está nesta sessão. */
+  origem: { usuarioId: number; nome: string } | null;
 };
 
 type ItemMenu = { href: string; rotulo: string; descricao: string };
@@ -133,6 +135,14 @@ export default function MenuLateral() {
     router.refresh();
   }
 
+  async function voltarAoPainel() {
+    const r = await fetch("/api/admin/parar-impersonar", { method: "POST" });
+    const d = await r.json().catch(() => ({}));
+    esquecerCarrinho();
+    router.replace(d?.destino ?? "/admin/empresas");
+    router.refresh();
+  }
+
   // nas telas de login e cadastro o menu nao aparece
   if (!sessao || caminho.startsWith("/login") || caminho.startsWith("/cadastro")) {
     return null;
@@ -152,6 +162,18 @@ export default function MenuLateral() {
 
   return (
     <>
+      {sessao.origem && (
+        <div className="faixa-impersonar" role="status">
+          <span>
+            Você está como <strong>{sessao.nome}</strong>
+            {sessao.empresaNome ? ` · ${sessao.empresaNome}` : ""}
+          </span>
+          <button type="button" onClick={voltarAoPainel}>
+            Voltar ao painel ({sessao.origem.nome})
+          </button>
+        </div>
+      )}
+
       {temLoja && (
         <Link
           href="/venda"

@@ -294,6 +294,30 @@ export default function Empresas() {
     setNovaSenha("");
   }
 
+  async function entrarComo(usuarioId: number, nome: string) {
+    if (
+      !confirm(
+        `Entrar como ${nome}? Você vai usar o sistema no lugar dele até clicar em "Voltar ao painel".`
+      )
+    ) {
+      return;
+    }
+    setErro(false);
+    try {
+      const r = await fetch("/api/admin/impersonar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ usuarioId }),
+      });
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível entrar.");
+      window.location.href = dados.destino ?? "/";
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível entrar.");
+    }
+  }
+
   async function salvarSenha(usuarioId: number) {
     setSalvandoSenha(true);
     setErro(false);
@@ -726,6 +750,14 @@ export default function Empresas() {
                               <button className="botao mini" onClick={() => abrirAlterarSenha(u.id)}>
                                 Alterar senha
                               </button>
+                              {u.papel !== "super_admin" && u.ativo && (
+                                <button
+                                  className="botao mini destaque"
+                                  onClick={() => entrarComo(u.id, u.nome)}
+                                >
+                                  Entrar como
+                                </button>
+                              )}
                             </span>
                           )}
                         </li>

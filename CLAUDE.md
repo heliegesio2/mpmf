@@ -65,6 +65,16 @@ bundle, so it must never be imported from `auth.ts` or anything the middleware p
 `middleware.ts` gates every route except `/login`, `/cadastro`, and `/api/*` (each API route checks its
 own session — see below) and `_next`/static assets. `/admin/*` additionally requires `papel === "super_admin"`.
 
+**"Entrar como" (impersonation)** — `/admin/empresas` has an *Entrar como* button per store user.
+`POST /api/admin/impersonar {usuarioId}` (`exigirSuperAdmin`) mints a session token *for that user* with
+an extra signed `origem: {usuarioId, nome}` claim (the super admin's real identity — can't be forged, the
+token is HMAC-signed) and swaps the `sessao` cookie. The super admin then uses the store exactly as that
+user (blocked from `/admin/*` like any non-admin). `MenuLateral` shows a `.faixa-impersonar` banner while
+`sessao.origem` is set; its button calls `POST /api/admin/parar-impersonar`, which authorises off the
+`origem` claim (not `exigirSuperAdmin`, since the current session is the impersonated user), re-checks
+that origem user is still an active super admin, and mints a clean super-admin token. `Sessao.origem` in
+`auth.ts`; `/api/auth/sessao` echoes it.
+
 **Social login (Google/Facebook)** is hand-rolled Authorization Code, no library — `src/lib/oauth.ts`
 (`PROVEDORES` config, `urlAutorizacao`, `trocarCodigo`) + routes `src/app/api/auth/oauth/[provedor]`
 (start, sets a `oauth_state` cookie) and `.../callback`. The callback: identity match on

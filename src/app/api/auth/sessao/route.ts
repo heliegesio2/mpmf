@@ -13,6 +13,7 @@ export async function GET() {
       nome: sessao.nome,
       papel: sessao.papel,
       empresaNome: sessao.empresaNome,
+      origem: sessao.origem ?? null,
     },
   });
 }

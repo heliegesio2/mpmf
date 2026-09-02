@@ -717,6 +717,35 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .botao.neutro { background: var(--verde-linha); color: var(--creme); }
 .botao.mini { padding: 8px 13px; font-size: 13px; background: var(--verde-linha); color: var(--creme); }
 .botao.mini.perigo { background: transparent; color: var(--tomate); border: 1px solid var(--tomate); }
+.botao.mini.destaque { background: transparent; color: var(--ambar); border: 1px solid var(--ambar); }
+
+/* faixa "entrar como" — só aparece quando um super admin assumiu outra sessão */
+.faixa-impersonar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 84px 10px 16px;
+  background: var(--ambar);
+  color: #14261c;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+}
+.faixa-impersonar strong { font-weight: 800; }
+.faixa-impersonar button {
+  border: 1px solid #14261c;
+  background: transparent;
+  color: #14261c;
+  font: inherit;
+  font-weight: 700;
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.faixa-impersonar button:hover { background: rgba(20, 38, 28, 0.12); }
+.faixa-impersonar button:focus-visible { outline: 2px solid #14261c; outline-offset: 2px; }
 
 .campo.simples { border-width: 1px; }
 .campo.simples input { font-size: 17px; padding: 15px 18px; }

@@ -15,6 +15,12 @@ export type Sessao = {
   papel: Papel;
   empresaId: number | null;
   empresaNome: string | null;
+  /**
+   * Preenchido só quando um super admin usou "entrar como" para assumir a
+   * sessão deste usuário. Guarda quem ele é de verdade, para poder voltar.
+   * O token é assinado (HMAC), então este campo não pode ser forjado.
+   */
+  origem?: { usuarioId: number; nome: string };
   /** Expiração em segundos desde 1970. */
   exp: number;
 };
