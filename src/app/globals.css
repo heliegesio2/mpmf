@@ -468,6 +468,62 @@ html[data-fonte="grande"] { zoom: 1.5; }
   color: var(--tomate);
 }
 
+/* chip de estoque no card de produto — parece botão, abre a edição rápida ao tocar */
+.botao-estoque {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  border: 1px solid var(--verde-linha);
+  background: var(--verde-linha);
+  color: var(--creme);
+  cursor: pointer;
+}
+.botao-estoque:hover { border-color: var(--creme-fraco); }
+.botao-estoque:focus-visible { outline: 2px solid var(--creme); outline-offset: 2px; }
+.botao-estoque[data-critico="true"] {
+  background: var(--ambar);
+  border-color: var(--ambar);
+  color: #14261c;
+}
+.editar-estoque {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: 6px;
+}
+.editar-estoque input {
+  width: 76px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--ambar);
+  background: var(--verde-fundo);
+  color: var(--creme);
+  font: inherit;
+  font-weight: 700;
+}
+.editar-estoque input:focus { outline: none; border-color: var(--creme); }
+
+/* coluna direita do item no comprovante da venda: preço + estoque restante */
+.lista .col-direita {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex: none;
+}
+.lista .estoque-restante {
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--tomate);
+  white-space: nowrap;
+}
+
 /* ---- nota do cliente (verde / amarelo / vermelho) ---- */
 .nota-cliente {
   flex: none;

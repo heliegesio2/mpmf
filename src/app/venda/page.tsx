@@ -106,9 +106,12 @@ export default function Venda() {
   const destino = useRef<"itens" | "recebido" | "novoPreco">("itens");
   // cópia da venda no momento de fechar, pro comprovante — o carrinho em si
   // é esvaziado assim que a venda fecha (comportamento de carrinho de verdade).
-  const [finalizada, setFinalizada] = useState<{ itens: Item[]; partes: PartePagamento[] } | null>(
-    null
-  );
+  const [finalizada, setFinalizada] = useState<{
+    itens: Item[];
+    partes: PartePagamento[];
+    /** Estoque de cada produto DEPOIS da baixa da venda (id -> quantidade). */
+    estoques: Record<number, number>;
+  } | null>(null);
 
   const itensVenda = fechada && finalizada ? finalizada.itens : itens;
   const partesVenda = fechada && finalizada ? finalizada.partes : partes;
@@ -568,21 +571,24 @@ export default function Venda() {
       }
       // dá baixa no estoque — a venda já foi cobrada, então uma falha aqui
       // não desfaz a venda (o lojista reconta o estoque depois pela foto)
+      let estoques: Record<number, number> = {};
       try {
-        await fetch("/api/venda/baixar-estoque", {
+        const r = await fetch("/api/venda/baixar-estoque", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             itens: itens.map((i) => ({ id: i.produto.id, quantidade: i.quantidade })),
           }),
         });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok && d?.estoques) estoques = d.estoques;
       } catch (e) {
         console.error("Não foi possível baixar o estoque da venda:", e);
       }
 
       reconhecimento.current?.abort();
       setOuvindo(false);
-      setFinalizada({ itens: [...itens], partes: [...partes] });
+      setFinalizada({ itens: [...itens], partes: [...partes], estoques });
       limparCarrinho();
       setFechada(true);
     } catch (e) {
@@ -610,21 +616,31 @@ export default function Venda() {
         </section>
 
         <ul className="lista">
-          {itensVenda.map((i) => (
-            <li key={i.chave}>
-              <FotoProduto id={i.produto.id} />
-              <span className="rotulo-item">
-                {i.produto.nome}
-                <span className="sub">
-                  {formatarQuantidade(i.quantidade, i.produto.tipo_venda)} × R${" "}
-                  {moeda.format(Number(i.produto.preco))}
+          {itensVenda.map((i) => {
+            const estoque = finalizada?.estoques[i.produto.id];
+            return (
+              <li key={i.chave}>
+                <FotoProduto id={i.produto.id} />
+                <span className="rotulo-item">
+                  {i.produto.nome}
+                  <span className="sub">
+                    {formatarQuantidade(i.quantidade, i.produto.tipo_venda)} × R${" "}
+                    {moeda.format(Number(i.produto.preco))}
+                  </span>
                 </span>
-              </span>
-              <span className="preco">
-                R$ {moeda.format(Number(i.produto.preco) * i.quantidade)}
-              </span>
-            </li>
-          ))}
+                <span className="col-direita">
+                  <span className="preco">
+                    R$ {moeda.format(Number(i.produto.preco) * i.quantidade)}
+                  </span>
+                  {estoque !== undefined && (
+                    <span className="estoque-restante">
+                      {formatarQuantidade(estoque, i.produto.tipo_venda)} em estoque
+                    </span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
         </ul>
 
         {partesVenda.length > 0 && (

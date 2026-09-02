@@ -297,15 +297,19 @@ export async function atualizarEstoqueProduto(
 export async function baixarEstoqueVenda(
   empresaId: number,
   itens: { id: number; quantidade: number }[]
-): Promise<void> {
+): Promise<Record<number, number>> {
+  const restante: Record<number, number> = {};
   for (const it of itens) {
     if (!Number.isInteger(it.id) || !(it.quantidade > 0)) continue;
-    await pool.query(
+    const { rows } = await pool.query<{ id: number; estoque: string }>(
       `UPDATE produto SET estoque = GREATEST(0, estoque - $3), alterado_em = now()
-        WHERE id = $1 AND empresa_id = $2`,
+        WHERE id = $1 AND empresa_id = $2
+        RETURNING id, estoque`,
       [it.id, empresaId, it.quantidade]
     );
+    if (rows[0]) restante[Number(rows[0].id)] = Number(rows[0].estoque);
   }
+  return restante;
 }
 
 /** Data URL da foto do produto, ou null. Fora de CAMPOS por ser pesada. */

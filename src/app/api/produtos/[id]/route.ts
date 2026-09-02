@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { atualizarProduto, excluirProduto, produtoPorId } from "@/lib/db";
+import {
+  atualizarEstoqueProduto,
+  atualizarProduto,
+  excluirProduto,
+  produtoPorId,
+} from "@/lib/db";
 import { validar } from "@/lib/validacao";
 import { exigirEmpresa } from "@/lib/sessao";
 
@@ -46,6 +51,37 @@ export async function PUT(request: Request, { params }: Ctx) {
     const detalhe = erro instanceof Error ? erro.message : String(erro);
     return NextResponse.json(
       { erro: "Não foi possível salvar a alteração.", detalhe },
+      { status: 500 }
+    );
+  }
+}
+
+/** PATCH /api/produtos/:id { estoque } -> só ajusta a quantidade em estoque (edição rápida no card). */
+export async function PATCH(request: Request, { params }: Ctx) {
+  const { empresaId, erro: negado } = await exigirEmpresa();
+  if (negado) return negado;
+
+  const id = Number((await params).id);
+  if (!Number.isInteger(id)) {
+    return NextResponse.json({ erro: "Produto inválido." }, { status: 400 });
+  }
+
+  try {
+    const { estoque } = await request.json();
+    // texto ou número — troca vírgula por ponto, sem mexer nos pontos
+    const n = Number(String(estoque ?? "").trim().replace(",", "."));
+    if (!Number.isFinite(n) || n < 0) {
+      return NextResponse.json({ erro: "Informe uma quantidade válida." }, { status: 400 });
+    }
+
+    const item = await atualizarEstoqueProduto(empresaId, id, n);
+    if (!item) return NextResponse.json({ erro: "Produto não encontrado." }, { status: 404 });
+    return NextResponse.json({ item });
+  } catch (erro) {
+    console.error("Falha ao ajustar estoque:", erro);
+    const detalhe = erro instanceof Error ? erro.message : String(erro);
+    return NextResponse.json(
+      { erro: "Não foi possível salvar a quantidade.", detalhe },
       { status: 500 }
     );
   }

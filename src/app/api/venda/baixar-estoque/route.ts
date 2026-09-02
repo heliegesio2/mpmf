@@ -25,8 +25,8 @@ export async function POST(request: Request) {
       })
       .filter((i: { id: number; quantidade: number }) => Number.isInteger(i.id) && i.quantidade > 0);
 
-    await baixarEstoqueVenda(empresaId, itens);
-    return NextResponse.json({ ok: true, baixados: itens.length });
+    const estoques = await baixarEstoqueVenda(empresaId, itens);
+    return NextResponse.json({ ok: true, baixados: itens.length, estoques });
   } catch (e) {
     console.error("Falha ao baixar estoque da venda:", e);
     return NextResponse.json({ erro: "Não foi possível dar baixa no estoque." }, { status: 500 });

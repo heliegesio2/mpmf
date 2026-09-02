@@ -196,8 +196,10 @@ photo) — expect the margin display on Produtos to show 100% until someone corr
 ### Produtos screens
 
 `/produtos` is **list-only**: the grid (`.grade-produtos` / `.card-produto` cards — photo, price,
-cost/margin, and an `.estoque-cel` badge that turns red via `data-critico` when
-`estoque <= estoque_minimo ?? 3`), a name filter, and three actions: **+ Novo produto** (→
+cost/margin, and a `.botao-estoque` chip — button-styled, **solid amber when
+`estoque <= estoque_minimo ?? 3`**; tapping it swaps in an inline `.editar-estoque` field →
+`PATCH /api/produtos/:id {estoque}` → `atualizarEstoqueProduto` → reload), a name filter, and
+three actions: **+ Novo produto** (→
 `/produtos/novo`), **📷 Novo produto por foto** (compresses the photo → stashes it in
 `sessionStorage["mpmf.novoProdutoFoto"]` → `/produtos/novo`), and **📦 Atualizar estoque por foto** (→
 `/produtos/estoque-foto`, a different flow that only bumps `estoque`).
@@ -253,9 +255,12 @@ of a blank "não foi possível salvar".
 
 Still **no sales ledger** — a split sale persists nothing except its `fiado` parts and the
 **stock deduction**: `fechar()` POSTs the cart to `POST /api/venda/baixar-estoque`
-(`baixarEstoqueVenda` in `db.ts` — one `UPDATE … SET estoque = GREATEST(0, estoque - qtd)` per
-line, never negative). It runs after the fiado inserts and is **non-blocking** — a failure is
-logged but the paid sale still completes (the shopkeeper re-counts via the shelf photo).
+(`baixarEstoqueVenda` in `db.ts` — one `UPDATE … SET estoque = GREATEST(0, estoque - qtd)
+RETURNING id, estoque` per line, never negative). It runs after the fiado inserts and is
+**non-blocking** — a failure is logged but the paid sale still completes (the shopkeeper
+re-counts via the shelf photo). The route returns `estoques` (`{id: novoEstoque}`), which
+`fechar()` stores in `finalizada`; the completion receipt shows each item's remaining stock
+on the right in red (`.col-direita` / `.estoque-restante`).
 
 **Stock field gotcha:** the DB returns `numeric` as `"3.000"`. `FormularioProduto` must load
 `estoque`/`estoque_minimo` as `String(Number(p.estoque))` and send `estoque` back as **raw text**

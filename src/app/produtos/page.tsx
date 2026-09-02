@@ -36,6 +36,12 @@ function estoqueCritico(p: Produto): boolean {
   return Number.isFinite(est) && est <= limite;
 }
 
+/** "3.000" (numeric do banco) -> "3"; "1.5" -> "1,5". */
+function fmtEstoque(v: string | number): string {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toLocaleString("pt-BR", { maximumFractionDigits: 3 }) : String(v);
+}
+
 const moeda = new Intl.NumberFormat("pt-BR", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -51,6 +57,10 @@ export default function Produtos() {
   const [lendoFoto, setLendoFoto] = useState(false);
   const [fotoDoCard, setFotoDoCard] = useState<number | null>(null);
   const fotoInput = useRef<HTMLInputElement>(null);
+  // edição rápida do estoque direto no card
+  const [editEstoque, setEditEstoque] = useState<number | null>(null);
+  const [valEstoque, setValEstoque] = useState("");
+  const [salvandoEstoque, setSalvandoEstoque] = useState(false);
 
   const { ouvir, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -142,6 +152,35 @@ export default function Produtos() {
       setAviso(e instanceof Error ? e.message : "Não consegui usar essa foto.");
     } finally {
       setFotoDoCard(null);
+    }
+  }
+
+  function abrirEstoque(p: Produto) {
+    setEditEstoque(p.id);
+    setValEstoque(fmtEstoque(p.estoque));
+    setAviso("");
+    setErro(false);
+  }
+
+  async function salvarEstoque(p: Produto) {
+    setSalvandoEstoque(true);
+    setErro(false);
+    try {
+      const r = await fetch(`/api/produtos/${p.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estoque: valEstoque }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
+      setEditEstoque(null);
+      setAviso(`Estoque de ${p.nome} atualizado.`);
+      await carregar(filtro);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSalvandoEstoque(false);
     }
   }
 
@@ -277,9 +316,49 @@ export default function Produtos() {
                     </span>
                   </div>
 
-                  <span className="estoque-cel" data-critico={critico}>
-                    {p.estoque} em estoque{critico ? " · repor" : ""}
-                  </span>
+                  {editEstoque === p.id ? (
+                    <span className="editar-estoque">
+                      <input
+                        value={valEstoque}
+                        onChange={(e) => setValEstoque(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") salvarEstoque(p);
+                          if (e.key === "Escape") setEditEstoque(null);
+                        }}
+                        inputMode="decimal"
+                        aria-label={`Estoque de ${p.nome}`}
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        className="botao mini"
+                        onClick={() => salvarEstoque(p)}
+                        disabled={salvandoEstoque}
+                      >
+                        {salvandoEstoque ? "…" : "OK"}
+                      </button>
+                      <button
+                        type="button"
+                        className="botao mini perigo"
+                        onClick={() => setEditEstoque(null)}
+                        disabled={salvandoEstoque}
+                        aria-label="Cancelar"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="botao-estoque"
+                      data-critico={critico}
+                      onClick={() => abrirEstoque(p)}
+                      title="Tocar para mudar a quantidade em estoque"
+                    >
+                      Estoque: {fmtEstoque(p.estoque)}
+                      {critico ? " · repor" : ""}
+                    </button>
+                  )}
                 </div>
 
                 <div className="card-produto-acoes">
