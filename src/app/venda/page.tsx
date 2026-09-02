@@ -700,7 +700,17 @@ export default function Venda() {
                   <span className="rotulo-item">
                     {p.nome}
                     <span className="sub">
-                      {[p.categoria, formatarQuantidade(escolha.quantidade, p.tipo_venda)]
+                      {[
+                        p.categoria,
+                        escolha.valorReais && Number(p.preco) > 0
+                          ? `R$ ${escolha.valorReais.toFixed(2).replace(".", ",")} ≈ ${formatarQuantidade(
+                              p.tipo_venda === "quilo"
+                                ? Number((escolha.valorReais / Number(p.preco)).toFixed(3))
+                                : Math.max(1, Math.round(escolha.valorReais / Number(p.preco))),
+                              p.tipo_venda
+                            )}`
+                          : formatarQuantidade(escolha.quantidade, p.tipo_venda),
+                      ]
                         .filter(Boolean)
                         .join(" · ")}
                     </span>
