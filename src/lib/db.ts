@@ -289,6 +289,25 @@ export async function atualizarEstoqueProduto(
   return rows[0] ?? null;
 }
 
+/**
+ * Da baixa no estoque dos itens vendidos ao fechar uma venda.
+ * `GREATEST(0, ...)` para nao deixar o estoque negativo. Uma query por item
+ * (poucos itens por venda; o pooler da Neon nao gosta de multi-statement).
+ */
+export async function baixarEstoqueVenda(
+  empresaId: number,
+  itens: { id: number; quantidade: number }[]
+): Promise<void> {
+  for (const it of itens) {
+    if (!Number.isInteger(it.id) || !(it.quantidade > 0)) continue;
+    await pool.query(
+      `UPDATE produto SET estoque = GREATEST(0, estoque - $3), alterado_em = now()
+        WHERE id = $1 AND empresa_id = $2`,
+      [it.id, empresaId, it.quantidade]
+    );
+  }
+}
+
 /** Data URL da foto do produto, ou null. Fora de CAMPOS por ser pesada. */
 export async function fotoProduto(empresaId: number, id: number): Promise<string | null> {
   await garantirSchema();

@@ -251,7 +251,17 @@ of a blank "não foi possível salvar".
   "quitar tudo". `criarFiado` re-checks `cliente.empresa_id` in the INSERT so a session can't post to
   another store's client.
 
-Still **no sales ledger** — a split sale persists nothing except its `fiado` parts.
+Still **no sales ledger** — a split sale persists nothing except its `fiado` parts and the
+**stock deduction**: `fechar()` POSTs the cart to `POST /api/venda/baixar-estoque`
+(`baixarEstoqueVenda` in `db.ts` — one `UPDATE … SET estoque = GREATEST(0, estoque - qtd)` per
+line, never negative). It runs after the fiado inserts and is **non-blocking** — a failure is
+logged but the paid sale still completes (the shopkeeper re-counts via the shelf photo).
+
+**Stock field gotcha:** the DB returns `numeric` as `"3.000"`. `FormularioProduto` must load
+`estoque`/`estoque_minimo` as `String(Number(p.estoque))` and send `estoque` back as **raw text**
+(the server's `validar` does `Number(str.replace(",","."))`). Never run `estoque` through
+`moedaParaNumero` — it strips the dot as a thousands separator (`"3.000"` → `3000`), which
+compounded on every edit.
 
 ### Contact block + copy button + voice filter (shared list widgets)
 

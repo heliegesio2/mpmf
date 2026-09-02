@@ -151,7 +151,9 @@ export default function FormularioProduto({ id }: { id?: number }) {
             precoCompra: paraMoeda(p.preco_compra),
             preco: paraMoeda(p.preco),
             precoEmbalagem: p.preco_embalagem ? paraMoeda(p.preco_embalagem) : "",
-            estoque: p.estoque,
+            // o banco devolve numeric como "3.000" — mostra "3" (e evita que o
+            // ponto vire separador de milhar num próximo salvamento)
+            estoque: p.estoque != null ? String(Number(p.estoque)) : "",
             estoqueMinimo: p.estoque_minimo ? String(Number(p.estoque_minimo)) : "",
             estoqueMinimoEmbalagem: p.estoque_minimo_embalagem || "unidade",
           });
@@ -209,7 +211,10 @@ export default function FormularioProduto({ id }: { id?: number }) {
         ...form,
         preco: num(form.preco),
         precoCompra: num(form.precoCompra || "0"),
-        estoque: num(form.estoque),
+        // estoque/estoqueMinimo vão como texto — o `validar` no servidor troca
+        // vírgula por ponto sem mexer nos pontos. NÃO usar moedaParaNumero aqui:
+        // ela apaga o ponto ("3.000" viraria 3000).
+        estoque: form.estoque.trim(),
         ...(fotoNova !== null ? { foto: fotoNova } : {}),
       };
       const r = await fetch(editando ? `/api/produtos/${id}` : "/api/produtos", {
