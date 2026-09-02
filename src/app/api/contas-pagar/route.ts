@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { listarContasPagar, criarContaPagar, CATEGORIAS_CONTA_PAGAR } from "@/lib/db";
+import { listarContasPagar, criarContaPagar, categoriasContaPagarUsadas } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
-
-const CATEGORIAS = new Set<string>(CATEGORIAS_CONTA_PAGAR);
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +14,11 @@ export async function GET(request: Request) {
   const s = new URL(request.url).searchParams.get("situacao") ?? "abertas";
   const situacao = (SITUACOES.has(s) ? s : "abertas") as "abertas" | "pagas" | "todas";
   try {
-    return NextResponse.json({ itens: await listarContasPagar(empresaId, situacao) });
+    const [itens, categorias] = await Promise.all([
+      listarContasPagar(empresaId, situacao),
+      categoriasContaPagarUsadas(empresaId),
+    ]);
+    return NextResponse.json({ itens, categorias });
   } catch (e) {
     console.error("Falha ao listar contas a pagar:", e);
     const detalhe = e instanceof Error ? e.message : String(e);
@@ -24,7 +26,7 @@ export async function GET(request: Request) {
   }
 }
 
-/** POST /api/contas-pagar { fornecedorId?, descricao?, valor, vencimento?, foto? } */
+/** POST /api/contas-pagar { fornecedorId?, categoria?, descricao?, valor, vencimento?, foto?, pago? } */
 export async function POST(request: Request) {
   const { empresaId, erro } = await exigirEmpresa();
   if (erro) return erro;
@@ -49,7 +51,8 @@ export async function POST(request: Request) {
         : null;
 
     const descricao = String(c.descricao ?? "").trim() || null;
-    const categoria = CATEGORIAS.has(String(c.categoria)) ? String(c.categoria) : null;
+    // categoria: um valor da lista padrão ou um texto livre (até 40 chars)
+    const categoria = String(c.categoria ?? "").trim().slice(0, 40) || null;
 
     const item = await criarContaPagar(empresaId, {
       fornecedorId,
@@ -58,6 +61,7 @@ export async function POST(request: Request) {
       valor: Math.round(valor * 100) / 100,
       vencimento,
       foto,
+      pago: Boolean(c.pago),
     });
     return NextResponse.json({ item }, { status: 201 });
   } catch (e) {

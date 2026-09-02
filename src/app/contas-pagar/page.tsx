@@ -148,13 +148,17 @@ export default function ContasPagar() {
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
 
+  const [categoriasUsadas, setCategoriasUsadas] = useState<string[]>([]);
+
   // formulário
   const [foto, setFoto] = useState("");
   const [fornecedor, setFornecedor] = useState<FornecedorLite | null>(null);
   const [categoria, setCategoria] = useState("");
+  const [categoriaLivre, setCategoriaLivre] = useState("");
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState("");
+  const [jaPaga, setJaPaga] = useState(false);
   const [lendoFoto, setLendoFoto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   // fornecedor lido da foto e ainda não cadastrado
@@ -169,6 +173,7 @@ export default function ContasPagar() {
       const d = await r.json();
       if (!r.ok) throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — "));
       setItens(d.itens);
+      setCategoriasUsadas(d.categorias ?? []);
       setErro(false);
     } catch (e) {
       setErro(true);
@@ -219,15 +224,20 @@ export default function ContasPagar() {
     }
   }
 
-  const formularioValido = moedaParaNumero(valor) > 0 && Boolean(categoria);
+  // "outros" com texto digitado -> vale o texto; senão o próprio valor do botão
+  const categoriaFinal =
+    categoria === "outros" ? categoriaLivre.trim() || "outros" : categoria;
+  const formularioValido = moedaParaNumero(valor) > 0 && Boolean(categoriaFinal);
 
   function limparForm() {
     setFoto("");
     setFornecedor(null);
     setCategoria("");
+    setCategoriaLivre("");
     setDescricao("");
     setValor("");
     setVencimento("");
+    setJaPaga(false);
     setNomeLido("");
     setDocLido("");
     setCadFornLido(false);
@@ -242,11 +252,12 @@ export default function ContasPagar() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fornecedorId: fornecedor?.id ?? null,
-          categoria,
+          categoria: categoriaFinal,
           descricao,
           valor: moedaParaNumero(valor),
           vencimento: vencimento || null,
           foto: foto || null,
+          pago: jaPaga,
         }),
       });
       const d = await r.json();
@@ -338,7 +349,7 @@ export default function ContasPagar() {
           <div className="rotulo largo">
             Categoria
             <div className="categorias-conta">
-              {CATEGORIAS.map((c) => (
+              {CATEGORIAS.filter((c) => c.valor !== "outros").map((c) => (
                 <button
                   key={c.valor}
                   type="button"
@@ -349,7 +360,36 @@ export default function ContasPagar() {
                   {c.rotulo}
                 </button>
               ))}
+              {categoriasUsadas.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  className="botao pagamento"
+                  data-escolhido={categoria === c}
+                  onClick={() => setCategoria(c)}
+                >
+                  {c}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="botao pagamento"
+                data-escolhido={categoria === "outros"}
+                onClick={() => setCategoria("outros")}
+              >
+                Outros
+              </button>
             </div>
+            {categoria === "outros" && (
+              <input
+                value={categoriaLivre}
+                onChange={(e) => setCategoriaLivre(e.target.value)}
+                placeholder="Digite a categoria (ex.: Gás, Frete, Contador)"
+                maxLength={40}
+                autoComplete="off"
+                style={{ marginTop: 8 }}
+              />
+            )}
           </div>
 
           <SeletorFornecedor valor={fornecedor} aoEscolher={setFornecedor} />
@@ -401,6 +441,11 @@ export default function ContasPagar() {
             Vencimento
             <input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} />
           </label>
+
+          <label className="check-whatsapp" style={{ gridColumn: "1 / -1" }}>
+            <input type="checkbox" checked={jaPaga} onChange={(e) => setJaPaga(e.target.checked)} />
+            Esta conta já está paga
+          </label>
         </div>
 
         <div className="acoes">
@@ -409,7 +454,11 @@ export default function ContasPagar() {
             onClick={salvar}
             disabled={salvando || lendoFoto || !formularioValido}
           >
-            {salvando ? "Salvando…" : "Incluir conta a pagar"}
+            {salvando
+              ? "Salvando…"
+              : jaPaga
+                ? "Incluir conta (já paga)"
+                : "Incluir conta a pagar"}
           </button>
         </div>
 

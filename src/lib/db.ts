@@ -1001,6 +1001,8 @@ export type ContaPagarEntrada = {
   valor: number;
   vencimento: string | null;
   foto: string | null;
+  /** Já entra quitada (checkbox "conta já paga" no cadastro). */
+  pago: boolean;
 };
 
 const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, c.categoria, c.descricao, c.valor,
@@ -1034,12 +1036,13 @@ export async function criarContaPagar(
   await garantirSchema();
   // fornecedor_id (quando vem) é conferido contra a empresa da sessão
   const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO conta_pagar (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, foto)
+    `INSERT INTO conta_pagar (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, foto,
+                              pago, pago_em)
      VALUES ($1,
              (SELECT id FROM fornecedor WHERE id = $2 AND empresa_id = $1),
-             $3, $4, $5, $6, $7)
+             $3, $4, $5, $6, $7, $8, CASE WHEN $8 THEN now() END)
      RETURNING id`,
-    [empresaId, d.fornecedorId, d.categoria, d.descricao, d.valor, d.vencimento, d.foto]
+    [empresaId, d.fornecedorId, d.categoria, d.descricao, d.valor, d.vencimento, d.foto, d.pago]
   );
   const criada = await pool.query<ContaPagar>(
     `SELECT ${CAMPOS_CONTA_PAGAR}
@@ -1075,6 +1078,18 @@ export async function excluirContaPagar(empresaId: number, id: number): Promise<
     empresaId,
   ]);
   return (r.rowCount ?? 0) > 0;
+}
+
+/** Categorias personalizadas já usadas pela empresa (fora da lista padrão). */
+export async function categoriasContaPagarUsadas(empresaId: number): Promise<string[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ categoria: string }>(
+    `SELECT DISTINCT categoria FROM conta_pagar
+      WHERE empresa_id = $1 AND categoria IS NOT NULL AND categoria <> ALL($2::text[])
+      ORDER BY categoria`,
+    [empresaId, CATEGORIAS_CONTA_PAGAR as unknown as string[]]
+  );
+  return rows.map((r) => r.categoria);
 }
 
 export async function fotoContaPagar(empresaId: number, id: number): Promise<string | null> {

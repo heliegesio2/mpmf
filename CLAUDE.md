@@ -235,10 +235,13 @@ Still **no sales ledger** — a split sale persists nothing except its `fiado` p
 Two linked tables. `fornecedor` (nome required; `documento`/`telefone`+`telefone_whatsapp`/`endereco`/
 `observacao` optional — same `<CampoTelefone>` WhatsApp treatment as everything else). `conta_pagar`
 (`fornecedor_id` nullable `ON DELETE SET NULL`, `categoria` (`db/17`), `descricao`, `valor`, `vencimento`
-date, `foto` data-URL text like the others, `pago`/`pago_em`). `categoria` is one of
-`CATEGORIAS_CONTA_PAGAR` in `db.ts` (mercadoria/energia/agua/aluguel/telefone/imposto/salario/boleto/
-outros — pretty labels live in the page); required on the form (button row), validated server-side, and
-the vision extractor guesses it.
+date, `foto` data-URL text like the others, `pago`/`pago_em`). `categoria` is **free text**: the form's
+button row offers `CATEGORIAS_CONTA_PAGAR` from `db.ts` (mercadoria/energia/agua/aluguel/telefone/imposto/
+salario/boleto — pretty labels in the page) plus "Outros" → a free-text box; the server just trims and
+caps it at 40 chars. `categoriasContaPagarUsadas` returns the distinct custom values the store has used
+and the GET list response carries them (`categorias`), so past custom categories come back as extra
+buttons. The vision extractor guesses a standard value. `criarContaPagar` also takes `pago` — the form's
+"esta conta já está paga" checkbox inserts the row already quitada (`pago_em = now()`).
 
 - `/fornecedores` — list + `<FormularioFornecedor>` (shared: also embedded in `/contas-pagar`'s supplier
   picker, and pre-fillable via `inicial={{nome, documento}}` from a scanned bill). `/api/fornecedores`
