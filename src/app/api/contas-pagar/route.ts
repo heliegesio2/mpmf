@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { listarContasPagar, criarContaPagar } from "@/lib/db";
+import { listarContasPagar, criarContaPagar, CATEGORIAS_CONTA_PAGAR } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
+
+const CATEGORIAS = new Set<string>(CATEGORIAS_CONTA_PAGAR);
 
 export const dynamic = "force-dynamic";
 
@@ -47,9 +49,11 @@ export async function POST(request: Request) {
         : null;
 
     const descricao = String(c.descricao ?? "").trim() || null;
+    const categoria = CATEGORIAS.has(String(c.categoria)) ? String(c.categoria) : null;
 
     const item = await criarContaPagar(empresaId, {
       fornecedorId,
+      categoria,
       descricao,
       valor: Math.round(valor * 100) / 100,
       vencimento,

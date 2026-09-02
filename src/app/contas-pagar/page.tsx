@@ -10,6 +10,7 @@ type ContaPagar = {
   id: number;
   fornecedor_id: number | null;
   fornecedor_nome: string | null;
+  categoria: string | null;
   descricao: string | null;
   valor: string;
   vencimento: string | null;
@@ -20,6 +21,19 @@ type ContaPagar = {
 };
 
 type FornecedorLite = { id: number; nome: string };
+
+const CATEGORIAS: { valor: string; rotulo: string }[] = [
+  { valor: "mercadoria", rotulo: "Mercadoria" },
+  { valor: "energia", rotulo: "Luz" },
+  { valor: "agua", rotulo: "Água" },
+  { valor: "aluguel", rotulo: "Aluguel" },
+  { valor: "telefone", rotulo: "Telefone / Internet" },
+  { valor: "imposto", rotulo: "Impostos e taxas" },
+  { valor: "salario", rotulo: "Salários" },
+  { valor: "boleto", rotulo: "Boleto" },
+  { valor: "outros", rotulo: "Outros" },
+];
+const ROTULO_CATEGORIA = Object.fromEntries(CATEGORIAS.map((c) => [c.valor, c.rotulo]));
 
 const FILTROS = [
   { valor: "abertas", rotulo: "Em aberto" },
@@ -137,6 +151,7 @@ export default function ContasPagar() {
   // formulário
   const [foto, setFoto] = useState("");
   const [fornecedor, setFornecedor] = useState<FornecedorLite | null>(null);
+  const [categoria, setCategoria] = useState("");
   const [descricao, setDescricao] = useState("");
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState("");
@@ -185,6 +200,7 @@ export default function ContasPagar() {
       if (dados.valor > 0) setValor(paraMoeda(dados.valor));
       if (dados.vencimento) setVencimento(dados.vencimento);
       if (dados.documento) setDescricao(dados.documento);
+      if (dados.categoria) setCategoria(dados.categoria);
       if (achado) {
         setFornecedor({ id: achado.id, nome: achado.nome });
         setAviso(`Fornecedor reconhecido: ${achado.nome}.`);
@@ -203,11 +219,12 @@ export default function ContasPagar() {
     }
   }
 
-  const formularioValido = moedaParaNumero(valor) > 0;
+  const formularioValido = moedaParaNumero(valor) > 0 && Boolean(categoria);
 
   function limparForm() {
     setFoto("");
     setFornecedor(null);
+    setCategoria("");
     setDescricao("");
     setValor("");
     setVencimento("");
@@ -225,6 +242,7 @@ export default function ContasPagar() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fornecedorId: fornecedor?.id ?? null,
+          categoria,
           descricao,
           valor: moedaParaNumero(valor),
           vencimento: vencimento || null,
@@ -307,7 +325,6 @@ export default function ContasPagar() {
           <div className="rotulo largo">
             <CampoFoto
               rotulo="Foto do boleto / nota"
-              semCaptura
               preview={foto}
               aoEscolher={lerBoleto}
               aoRemover={foto ? () => setFoto("") : undefined}
@@ -316,6 +333,23 @@ export default function ContasPagar() {
                 setAviso(m);
               }}
             />
+          </div>
+
+          <div className="rotulo largo">
+            Categoria
+            <div className="categorias-conta">
+              {CATEGORIAS.map((c) => (
+                <button
+                  key={c.valor}
+                  type="button"
+                  className="botao pagamento"
+                  data-escolhido={categoria === c.valor}
+                  onClick={() => setCategoria(c.valor)}
+                >
+                  {c.rotulo}
+                </button>
+              ))}
+            </div>
           </div>
 
           <SeletorFornecedor valor={fornecedor} aoEscolher={setFornecedor} />
@@ -418,6 +452,7 @@ export default function ContasPagar() {
                   {c.descricao || c.fornecedor_nome || "Conta a pagar"}
                   <span className="sub">
                     {[
+                      c.categoria ? ROTULO_CATEGORIA[c.categoria] ?? c.categoria : null,
                       c.fornecedor_nome && c.descricao ? c.fornecedor_nome : null,
                       c.vencimento ? `vence ${dataFmt.format(new Date(c.vencimento + "T00:00:00"))}` : null,
                       c.pago && c.pago_em ? `pago em ${dataFmt.format(new Date(c.pago_em))}` : p?.texto,

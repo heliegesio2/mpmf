@@ -13,10 +13,23 @@ const MODELO = process.env.ANTHROPIC_MODEL || "claude-opus-5";
 export type DadosContaPagar = {
   fornecedorNome: string;
   fornecedorDocumento: string;
+  categoria: string;
   valor: number;
   vencimento: string;
   documento: string;
 };
+
+const CATEGORIAS = [
+  "mercadoria",
+  "energia",
+  "agua",
+  "aluguel",
+  "telefone",
+  "imposto",
+  "salario",
+  "boleto",
+  "outros",
+];
 
 const SCHEMA = {
   type: "object",
@@ -30,6 +43,15 @@ const SCHEMA = {
     fornecedorDocumento: {
       type: "string",
       description: 'CNPJ ou CPF do beneficiário, só os dígitos. "" se não aparecer.',
+    },
+    categoria: {
+      type: "string",
+      enum: CATEGORIAS,
+      description:
+        'Tipo da conta: "mercadoria" (nota de compra de produtos pra revenda), ' +
+        '"energia" (conta de luz), "agua", "aluguel", "telefone" (telefone/internet), ' +
+        '"imposto" (tributos, taxas, DAS, DARF), "salario", "boleto" (boleto avulso sem ' +
+        'categoria clara), "outros".',
     },
     valor: {
       type: "number",
@@ -45,7 +67,14 @@ const SCHEMA = {
         'Número da nota fiscal / boleto / fatura, se aparecer (ex.: "NF 4471"). "" se não houver.',
     },
   },
-  required: ["fornecedorNome", "fornecedorDocumento", "valor", "vencimento", "documento"],
+  required: [
+    "fornecedorNome",
+    "fornecedorDocumento",
+    "categoria",
+    "valor",
+    "vencimento",
+    "documento",
+  ],
   additionalProperties: false,
 } as const;
 
@@ -89,6 +118,7 @@ export async function lerContaPagarDaFoto(
   return {
     fornecedorNome: (j.fornecedorNome ?? "").trim(),
     fornecedorDocumento: (j.fornecedorDocumento ?? "").replace(/\D/g, ""),
+    categoria: CATEGORIAS.includes(j.categoria ?? "") ? j.categoria! : "",
     valor: Number(j.valor) || 0,
     vencimento: /^\d{4}-\d{2}-\d{2}$/.test(j.vencimento ?? "") ? j.vencimento! : "",
     documento: (j.documento ?? "").trim(),

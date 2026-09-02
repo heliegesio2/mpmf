@@ -107,6 +107,7 @@ const MIGRACOES_IDEMPOTENTES = [
      criado_em timestamptz NOT NULL DEFAULT now()
    )`,
   "CREATE INDEX IF NOT EXISTS idx_conta_pagar_empresa ON conta_pagar (empresa_id, pago, vencimento)",
+  "ALTER TABLE conta_pagar ADD COLUMN IF NOT EXISTS categoria text",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -965,10 +966,25 @@ export async function excluirFornecedor(empresaId: number, id: number): Promise<
   return (r.rowCount ?? 0) > 0;
 }
 
+/** Categorias de conta a pagar — o rótulo bonito fica na tela. */
+export const CATEGORIAS_CONTA_PAGAR = [
+  "mercadoria",
+  "energia",
+  "agua",
+  "aluguel",
+  "telefone",
+  "imposto",
+  "salario",
+  "boleto",
+  "outros",
+] as const;
+export type CategoriaContaPagar = (typeof CATEGORIAS_CONTA_PAGAR)[number];
+
 export type ContaPagar = {
   id: number;
   fornecedor_id: number | null;
   fornecedor_nome: string | null;
+  categoria: string | null;
   descricao: string | null;
   valor: string;
   vencimento: string | null;
@@ -980,13 +996,14 @@ export type ContaPagar = {
 
 export type ContaPagarEntrada = {
   fornecedorId: number | null;
+  categoria: string | null;
   descricao: string | null;
   valor: number;
   vencimento: string | null;
   foto: string | null;
 };
 
-const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, c.descricao, c.valor,
+const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, c.categoria, c.descricao, c.valor,
        to_char(c.vencimento, 'YYYY-MM-DD') AS vencimento, (c.foto IS NOT NULL) AS tem_foto,
        c.pago, c.pago_em, c.criado_em`;
 
@@ -1017,12 +1034,12 @@ export async function criarContaPagar(
   await garantirSchema();
   // fornecedor_id (quando vem) é conferido contra a empresa da sessão
   const { rows } = await pool.query<{ id: number }>(
-    `INSERT INTO conta_pagar (empresa_id, fornecedor_id, descricao, valor, vencimento, foto)
+    `INSERT INTO conta_pagar (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, foto)
      VALUES ($1,
              (SELECT id FROM fornecedor WHERE id = $2 AND empresa_id = $1),
-             $3, $4, $5, $6)
+             $3, $4, $5, $6, $7)
      RETURNING id`,
-    [empresaId, d.fornecedorId, d.descricao, d.valor, d.vencimento, d.foto]
+    [empresaId, d.fornecedorId, d.categoria, d.descricao, d.valor, d.vencimento, d.foto]
   );
   const criada = await pool.query<ContaPagar>(
     `SELECT ${CAMPOS_CONTA_PAGAR}

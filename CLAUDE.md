@@ -230,20 +230,24 @@ of a blank "não foi possível salvar".
 
 Still **no sales ledger** — a split sale persists nothing except its `fiado` parts.
 
-### Fornecedores + contas a pagar (`db/16`)
+### Fornecedores + contas a pagar (`db/16`, `db/17`)
 
 Two linked tables. `fornecedor` (nome required; `documento`/`telefone`+`telefone_whatsapp`/`endereco`/
 `observacao` optional — same `<CampoTelefone>` WhatsApp treatment as everything else). `conta_pagar`
-(`fornecedor_id` nullable `ON DELETE SET NULL`, `descricao`, `valor`, `vencimento` date, `foto` data-URL
-text like the others, `pago`/`pago_em`).
+(`fornecedor_id` nullable `ON DELETE SET NULL`, `categoria` (`db/17`), `descricao`, `valor`, `vencimento`
+date, `foto` data-URL text like the others, `pago`/`pago_em`). `categoria` is one of
+`CATEGORIAS_CONTA_PAGAR` in `db.ts` (mercadoria/energia/agua/aluguel/telefone/imposto/salario/boleto/
+outros — pretty labels live in the page); required on the form (button row), validated server-side, and
+the vision extractor guesses it.
 
 - `/fornecedores` — list + `<FormularioFornecedor>` (shared: also embedded in `/contas-pagar`'s supplier
   picker, and pre-fillable via `inicial={{nome, documento}}` from a scanned bill). `/api/fornecedores`
   (+`?q=` name/CNPJ filter) and `/api/fornecedores/:id`.
-- `/contas-pagar` — the module. "Nova conta a pagar" takes a **photo of the boleto/nota**: `<CampoFoto>`
-  → `POST /api/contas-pagar/ler-foto` → `src/lib/lerContaPagar.ts` (vision, `output_config` JSON schema,
-  same shape as `importarCompra.ts`) pulls `{fornecedorNome, fornecedorDocumento, valor, vencimento,
-  documento}`, and `acharFornecedorParecido` (in `db.ts` — CNPJ-digits exact match, else `pg_trgm`
+- `/contas-pagar` — the module. "Nova conta a pagar" takes a **photo of the boleto/nota** (`<CampoFoto>`
+  default `capture="environment"` — camera on mobile): `POST /api/contas-pagar/ler-foto` →
+  `src/lib/lerContaPagar.ts` (vision, `output_config` JSON schema, same shape as `importarCompra.ts`)
+  pulls `{fornecedorNome, fornecedorDocumento, categoria, valor, vencimento, documento}`, and
+  `acharFornecedorParecido` (in `db.ts` — CNPJ-digits exact match, else `pg_trgm`
   `similarity` on the name) suggests an existing supplier; no match + a name read → inline
   `<FormularioFornecedor>` prefilled. The photo itself is stored on the `conta_pagar` row and served as
   bytes from `/api/contas-pagar/:id/foto` (kept out of the list query — only `tem_foto`). List has

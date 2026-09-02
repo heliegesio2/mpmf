@@ -929,6 +929,20 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
   color: #14261c;
 }
 
+/* seletor de categoria da conta a pagar */
+.categorias-conta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+.categorias-conta .botao.pagamento {
+  flex: 1 1 auto;
+  min-width: 96px;
+  padding: 11px 12px;
+  font-size: 13px;
+}
+
 .botao.grande { width: 100%; padding: 17px 20px; font-size: 17px; }
 
 /* partes do pagamento dividido */
