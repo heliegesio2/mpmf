@@ -11,11 +11,13 @@ export async function GET(request: Request) {
   const { empresaId, erro } = await exigirEmpresa();
   if (erro) return erro;
 
-  const s = new URL(request.url).searchParams.get("situacao") ?? "abertas";
-  const situacao = (SITUACOES.has(s) ? s : "abertas") as "abertas" | "pagas" | "todas";
+  const url = new URL(request.url);
+  const s = url.searchParams.get("situacao") ?? "todas";
+  const situacao = (SITUACOES.has(s) ? s : "todas") as "abertas" | "pagas" | "todas";
+  const fornecedorQ = url.searchParams.get("fornecedor") ?? "";
   try {
     const [itens, categorias] = await Promise.all([
-      listarContasPagar(empresaId, situacao),
+      listarContasPagar(empresaId, situacao, fornecedorQ),
       categoriasContaPagarUsadas(empresaId),
     ]);
     return NextResponse.json({ itens, categorias });

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CampoVoz, SelecaoVoz } from "@/components/CampoVoz";
+import DadosContato from "@/components/DadosContato";
+import FiltroVoz from "@/components/FiltroVoz";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar, opcaoFalada } from "@/lib/voz";
 
@@ -10,7 +12,10 @@ type Empresa = {
   nome: string;
   documento: string | null;
   telefone: string | null;
+  telefone_whatsapp: boolean | null;
   cidade: string | null;
+  endereco: string | null;
+  pix_chave: string | null;
   situacao: "pendente" | "aprovada" | "reprovada";
   motivo: string | null;
   criada_em: string;
@@ -59,6 +64,7 @@ const data = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" });
 export default function Empresas() {
   const [itens, setItens] = useState<Empresa[]>([]);
   const [filtro, setFiltro] = useState("pendente");
+  const [busca, setBusca] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
@@ -224,7 +230,7 @@ export default function Empresas() {
 
       setAviso("Empresa atualizada.");
       setEditandoEmpresaId(null);
-      await carregar(filtro);
+      await carregar(filtro, busca);
     } catch (e) {
       setErro(true);
       setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
@@ -342,10 +348,12 @@ export default function Empresas() {
   }
 
   // ---------- lista ----------
-  const carregar = useCallback(async (situacao: string) => {
+  const carregar = useCallback(async (situacao: string, q = "") => {
     setCarregando(true);
     try {
-      const r = await fetch(`/api/empresas?situacao=${situacao}`);
+      const r = await fetch(
+        `/api/empresas?situacao=${situacao}&q=${encodeURIComponent(q)}`
+      );
       const dados = await r.json();
       if (!r.ok) throw new Error(dados?.erro);
       setItens(dados.itens);
@@ -358,8 +366,9 @@ export default function Empresas() {
   }, []);
 
   useEffect(() => {
-    carregar(filtro);
-  }, [filtro, carregar]);
+    const t = setTimeout(() => carregar(filtro, busca), 250);
+    return () => clearTimeout(t);
+  }, [filtro, busca, carregar]);
 
   async function decidir(
     id: number,
@@ -379,7 +388,7 @@ export default function Empresas() {
       setAviso(situacao === "aprovada" ? "Empresa aprovada." : "Empresa reprovada.");
       setReprovando(null);
       setMotivo("");
-      await carregar(filtro);
+      await carregar(filtro, busca);
     } catch (e) {
       setErro(true);
       setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
@@ -519,6 +528,8 @@ export default function Empresas() {
         ))}
       </div>
 
+      <FiltroVoz valor={busca} aoMudar={setBusca} placeholder="Filtrar pelo nome da empresa" />
+
       {aviso && (
         <p className="dica" data-erro={erro} role="status" aria-live="polite">
           {aviso}
@@ -537,15 +548,19 @@ export default function Empresas() {
                 {e.nome}
                 <span className="sub">
                   {[
-                    e.documento,
-                    e.cidade,
-                    e.telefone,
                     `${e.total_usuarios} usuário(s)`,
                     `desde ${data.format(new Date(e.criada_em))}`,
                   ]
                     .filter(Boolean)
                     .join(" · ")}
                 </span>
+                <DadosContato
+                  documento={e.documento}
+                  telefone={e.telefone}
+                  whatsapp={Boolean(e.telefone_whatsapp)}
+                  local={[e.endereco, e.cidade].filter(Boolean).join(", ") || null}
+                  pixChave={e.pix_chave}
+                />
                 {e.situacao === "reprovada" && e.motivo && (
                   <span className="sub motivo">Motivo: {e.motivo}</span>
                 )}

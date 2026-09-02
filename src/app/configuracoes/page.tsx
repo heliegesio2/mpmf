@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
+import BotaoCopiar from "@/components/BotaoCopiar";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -151,7 +152,14 @@ export default function Configuracoes() {
               (+55…), e-mail ou chave aleatória.
             </p>
             <div className="grade-form">
-              <CampoVoz rotulo="Chave Pix" placeholder="Sua chave" largo {...comum("pixChave")} />
+              <div className="rotulo largo">
+                <CampoVoz rotulo="Chave Pix" placeholder="Sua chave" largo {...comum("pixChave")} />
+                {form.pixChave.trim() && (
+                  <span className="contato-acoes">
+                    <BotaoCopiar texto={form.pixChave.trim()} titulo="Copiar chave Pix" rotulo="Copiar Pix" />
+                  </span>
+                )}
+              </div>
               <CampoVoz
                 rotulo="Nome do recebedor"
                 placeholder="Como aparece pra quem paga"

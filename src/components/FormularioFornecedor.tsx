@@ -13,6 +13,7 @@ type Form = {
   whatsapp: boolean;
   endereco: string;
   observacao: string;
+  pixChave: string;
 };
 
 const VAZIO: Form = {
@@ -22,6 +23,7 @@ const VAZIO: Form = {
   whatsapp: false,
   endereco: "",
   observacao: "",
+  pixChave: "",
 };
 
 type Props = {
@@ -43,8 +45,16 @@ export default function FormularioFornecedor({ aoSalvar, aoCancelar, inicial }: 
     aoFinalizar: (texto) => {
       const campo = campoAtual.current as keyof Form | null;
       if (!campo) return;
-      const cru = campo === "documento" || campo === "telefone";
-      setForm((f) => ({ ...f, [campo]: cru ? texto.replace(/\D/g, "") : capitalizar(texto) }));
+      const soDigitos = campo === "documento" || campo === "telefone";
+      const cru = campo === "pixChave";
+      setForm((f) => ({
+        ...f,
+        [campo]: soDigitos
+          ? texto.replace(/\D/g, "")
+          : cru
+            ? texto.replace(/\s/g, "")
+            : capitalizar(texto),
+      }));
       setErro(false);
     },
     aoErrar: (m) => {
@@ -82,6 +92,7 @@ export default function FormularioFornecedor({ aoSalvar, aoCancelar, inicial }: 
           telefoneWhatsapp: form.whatsapp,
           endereco: form.endereco,
           observacao: form.observacao,
+          pixChave: form.pixChave,
         }),
       });
       const d = await r.json();
@@ -110,6 +121,12 @@ export default function FormularioFornecedor({ aoSalvar, aoCancelar, inicial }: 
           aoMudarWhatsapp={(v) => setForm((f) => ({ ...f, whatsapp: v }))}
         />
         <CampoVoz rotulo="Endereço" placeholder="Rua, número, bairro" largo {...comum("endereco")} />
+        <CampoVoz
+          rotulo="Chave Pix"
+          placeholder="CNPJ, celular, e-mail ou aleatória"
+          largo
+          {...comum("pixChave")}
+        />
         <CampoVoz
           rotulo="Observação"
           placeholder="Dias de entrega, contato, condições…"

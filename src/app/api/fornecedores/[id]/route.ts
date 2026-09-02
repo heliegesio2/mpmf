@@ -45,6 +45,7 @@ export async function PUT(request: Request, { params }: Ctx) {
       telefoneWhatsapp: Boolean(c.telefoneWhatsapp),
       endereco: limpar(c.endereco),
       observacao: limpar(c.observacao),
+      pixChave: limpar(c.pixChave),
     });
     if (!item) return NextResponse.json({ erro: "Fornecedor não encontrado." }, { status: 404 });
     return NextResponse.json({ item });

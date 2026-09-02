@@ -109,6 +109,7 @@ const MIGRACOES_IDEMPOTENTES = [
   "CREATE INDEX IF NOT EXISTS idx_conta_pagar_empresa ON conta_pagar (empresa_id, pago, vencimento)",
   "ALTER TABLE conta_pagar ADD COLUMN IF NOT EXISTS categoria text",
   "ALTER TABLE conta_pagar ADD COLUMN IF NOT EXISTS recorrente boolean NOT NULL DEFAULT false",
+  "ALTER TABLE fornecedor ADD COLUMN IF NOT EXISTS pix_chave text",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -313,20 +314,34 @@ export type Empresa = {
   nome: string;
   documento: string | null;
   telefone: string | null;
+  telefone_whatsapp?: boolean;
   cidade: string | null;
+  endereco?: string | null;
+  pix_chave?: string | null;
   situacao: "pendente" | "aprovada" | "reprovada";
   motivo: string | null;
   criada_em: string;
   total_usuarios?: string;
 };
 
-export async function listarEmpresas(situacao?: string): Promise<Empresa[]> {
-  const filtro = situacao && situacao !== "todas" ? "WHERE e.situacao = $1" : "";
+export async function listarEmpresas(situacao?: string, q = ""): Promise<Empresa[]> {
+  const cond: string[] = [];
+  const params: unknown[] = [];
+  if (situacao && situacao !== "todas") {
+    params.push(situacao);
+    cond.push(`e.situacao = $${params.length}`);
+  }
+  const t = q.trim();
+  if (t) {
+    params.push(t);
+    cond.push(`f_unaccent(lower(e.nome)) LIKE '%' || f_unaccent(lower($${params.length})) || '%'`);
+  }
+  const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
   const { rows } = await pool.query<Empresa>(
     `SELECT e.*, (SELECT COUNT(*) FROM usuario u WHERE u.empresa_id = e.id) AS total_usuarios
-       FROM empresa e ${filtro}
+       FROM empresa e ${where}
       ORDER BY CASE e.situacao WHEN 'pendente' THEN 0 ELSE 1 END, e.criada_em DESC`,
-    filtro ? [situacao] : []
+    params
   );
   return rows;
 }
@@ -853,6 +868,7 @@ export type Fornecedor = {
   telefone_whatsapp: boolean;
   endereco: string | null;
   observacao: string | null;
+  pix_chave: string | null;
   criado_em: string;
 };
 
@@ -863,10 +879,11 @@ export type FornecedorEntrada = {
   telefoneWhatsapp: boolean;
   endereco: string | null;
   observacao: string | null;
+  pixChave: string | null;
 };
 
 const CAMPOS_FORNECEDOR =
-  "id, nome, documento, telefone, telefone_whatsapp, endereco, observacao, criado_em";
+  "id, nome, documento, telefone, telefone_whatsapp, endereco, observacao, pix_chave, criado_em";
 
 export async function listarFornecedores(empresaId: number, q = ""): Promise<Fornecedor[]> {
   await garantirSchema();
@@ -933,10 +950,10 @@ export async function criarFornecedor(
 ): Promise<Fornecedor> {
   await garantirSchema();
   const { rows } = await pool.query<Fornecedor>(
-    `INSERT INTO fornecedor (empresa_id, nome, documento, telefone, telefone_whatsapp, endereco, observacao)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+    `INSERT INTO fornecedor (empresa_id, nome, documento, telefone, telefone_whatsapp, endereco, observacao, pix_chave)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING ${CAMPOS_FORNECEDOR}`,
-    [empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.endereco, d.observacao]
+    [empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.endereco, d.observacao, d.pixChave]
   );
   return rows[0];
 }
@@ -950,10 +967,10 @@ export async function atualizarFornecedor(
   const { rows } = await pool.query<Fornecedor>(
     `UPDATE fornecedor
         SET nome = $3, documento = $4, telefone = $5, telefone_whatsapp = $6,
-            endereco = $7, observacao = $8
+            endereco = $7, observacao = $8, pix_chave = $9
       WHERE id = $1 AND empresa_id = $2
       RETURNING ${CAMPOS_FORNECEDOR}`,
-    [id, empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.endereco, d.observacao]
+    [id, empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.endereco, d.observacao, d.pixChave]
   );
   return rows[0] ?? null;
 }
@@ -985,6 +1002,7 @@ export type ContaPagar = {
   id: number;
   fornecedor_id: number | null;
   fornecedor_nome: string | null;
+  fornecedor_pix: string | null;
   categoria: string | null;
   descricao: string | null;
   valor: string;
@@ -1009,26 +1027,35 @@ export type ContaPagarEntrada = {
   pago: boolean;
 };
 
-const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, c.categoria, c.descricao, c.valor,
+const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, fo.pix_chave AS fornecedor_pix,
+       c.categoria, c.descricao, c.valor,
        to_char(c.vencimento, 'YYYY-MM-DD') AS vencimento, c.recorrente, (c.foto IS NOT NULL) AS tem_foto,
        c.pago, c.pago_em, c.criado_em`;
 
 export async function listarContasPagar(
   empresaId: number,
-  situacao: "abertas" | "pagas" | "todas" = "abertas"
+  situacao: "abertas" | "pagas" | "todas" = "abertas",
+  fornecedorQ = ""
 ): Promise<ContaPagar[]> {
   await garantirSchema();
-  const filtro =
+  const filtroSit =
     situacao === "abertas" ? "AND c.pago = false"
     : situacao === "pagas" ? "AND c.pago = true"
     : "";
+  const t = fornecedorQ.trim();
+  const params: unknown[] = [empresaId];
+  let filtroForn = "";
+  if (t) {
+    params.push(t);
+    filtroForn = `AND f_unaccent(lower(fo.nome)) LIKE '%' || f_unaccent(lower($${params.length})) || '%'`;
+  }
   const { rows } = await pool.query<ContaPagar>(
     `SELECT ${CAMPOS_CONTA_PAGAR}
        FROM conta_pagar c
        LEFT JOIN fornecedor fo ON fo.id = c.fornecedor_id
-      WHERE c.empresa_id = $1 ${filtro}
+      WHERE c.empresa_id = $1 ${filtroSit} ${filtroForn}
       ORDER BY c.pago, c.vencimento DESC NULLS LAST, c.criado_em DESC`,
-    [empresaId]
+    params
   );
   return rows;
 }

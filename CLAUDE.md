@@ -230,10 +230,26 @@ of a blank "não foi possível salvar".
 
 Still **no sales ledger** — a split sale persists nothing except its `fiado` parts.
 
-### Fornecedores + contas a pagar (`db/16`, `db/17`, `db/18`)
+### Contact block + copy button + voice filter (shared list widgets)
+
+- `<DadosContato>` (`src/components/DadosContato.tsx`) — the row of contact chips reused by
+  `/fornecedores`, `/clientes`, `/cascos`, `/admin/empresas`: documento, telefone (📞 + `tel:` link + copy
+  + green WhatsApp shortcut when marked), `local` (📍, opens Google Maps), `pixChave` (⚡ + copy). Replaces
+  the old per-page `.sub` join + inline `IconeZap`.
+- `<BotaoCopiar texto=…>` — clipboard copy with a 1.5s "Copiado!" flip. (Note: `.pix-valor` is already
+  taken by `PainelPix` on `/venda`; the chip uses `.chip-pix-valor`.)
+- `<FiltroVoz valor aoMudar placeholder>` — the standard list-filter input **with a mic** (every textbox
+  in this project has one). Used on `/clientes`, `/fornecedores`, `/contas-pagar` (by fornecedor name),
+  `/admin/empresas` (by name). `/produtos` still has its own inline copy.
+- List filters hit `?q=` / `?fornecedor=` params (`f_unaccent` `LIKE`): `listarEmpresas(situacao, q)`,
+  `listarFornecedores(empresaId, q)`, `listarContasPagar(empresaId, situacao, fornecedorQ)`.
+
+### Fornecedores + contas a pagar (`db/16`–`db/19`)
 
 Two linked tables. `fornecedor` (nome required; `documento`/`telefone`+`telefone_whatsapp`/`endereco`/
-`observacao` optional — same `<CampoTelefone>` WhatsApp treatment as everything else). `conta_pagar`
+`observacao`/`pix_chave` (`db/19` — shown with a copy button on `/fornecedores` and on the conta-a-pagar
+row, to pay the supplier by Pix) optional — same `<CampoTelefone>` WhatsApp treatment as everything
+else). `conta_pagar`
 (`fornecedor_id` nullable `ON DELETE SET NULL`, `categoria` (`db/17`), `descricao`, `valor`, `vencimento`
 date, `foto` data-URL text like the others, `pago`/`pago_em`). `categoria` is **free text**: the form's
 button row offers `CATEGORIAS_CONTA_PAGAR` from `db.ts` (mercadoria/energia/agua/aluguel/telefone/imposto/
@@ -252,9 +268,11 @@ re-paying after a reopen clones again (accepted).
 - `/contas-pagar` — **list-only**, same shape as `/produtos`: `+ Nova conta a pagar` (→
   `/contas-pagar/nova`) and `📷 Nova conta por foto` (compresses the photo → `sessionStorage
   ["mpmf.contaPagarFoto"]` → `/contas-pagar/nova`, which reads the stash and runs the extraction on
-  mount). em-aberto/pagas/todas tabs, per-row "marcar pago"/"reabrir" (`PATCH …/:id {acao}`), overdue
-  rows in `--tomate`. **Ordered by `vencimento DESC NULLS LAST`** (latest due date on top). The
-  `/contas-pagar/nova` form drops a `sessionStorage["mpmf.contaPagarFlash"]` message and routes back.
+  mount). em-aberto/pagas/todas tabs (**default "todas"**) + a `<FiltroVoz>` by fornecedor name, per-row
+  "marcar pago"/"reabrir" (`PATCH …/:id {acao}`), overdue rows in `--tomate`, and a Pix copy chip when
+  the linked fornecedor has a `pix_chave`. **Ordered by `vencimento DESC NULLS LAST`** (latest due date on
+  top). The `/contas-pagar/nova` form drops a `sessionStorage["mpmf.contaPagarFlash"]` message and routes
+  back.
 - The photo of a boleto/nota (`<CampoFoto>` default `capture="environment"` — camera on mobile) → `POST
   /api/contas-pagar/ler-foto` → `src/lib/lerContaPagar.ts` (vision, `output_config` JSON schema, same
   shape as `importarCompra.ts`) pulls `{fornecedorNome, fornecedorDocumento, categoria, valor,

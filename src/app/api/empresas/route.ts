@@ -13,9 +13,11 @@ export async function GET(request: Request) {
   const { erro } = await exigirSuperAdmin();
   if (erro) return erro;
 
-  const situacao = new URL(request.url).searchParams.get("situacao") ?? "todas";
+  const url = new URL(request.url);
+  const situacao = url.searchParams.get("situacao") ?? "todas";
+  const q = url.searchParams.get("q") ?? "";
   try {
-    return NextResponse.json({ itens: await listarEmpresas(situacao) });
+    return NextResponse.json({ itens: await listarEmpresas(situacao, q) });
   } catch (e) {
     console.error("Falha ao listar empresas:", e);
     return NextResponse.json({ erro: "Não foi possível listar." }, { status: 500 });

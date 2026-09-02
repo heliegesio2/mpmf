@@ -43,6 +43,7 @@ export async function POST(request: Request) {
       telefoneWhatsapp: Boolean(c.telefoneWhatsapp),
       endereco: limpar(c.endereco),
       observacao: limpar(c.observacao),
+      pixChave: limpar(c.pixChave),
     });
     return NextResponse.json({ item }, { status: 201 });
   } catch (e) {

@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
+import FiltroVoz from "@/components/FiltroVoz";
+import BotaoCopiar from "@/components/BotaoCopiar";
 import { comprimirParaDataURL } from "@/lib/imagemCliente";
 import { ROTULO_CATEGORIA, prazoVencimento } from "@/lib/contasPagar";
 
@@ -13,6 +15,7 @@ type ContaPagar = {
   fornecedor_nome: string | null;
   categoria: string | null;
   descricao: string | null;
+  fornecedor_pix: string | null;
   valor: string;
   vencimento: string | null;
   recorrente: boolean;
@@ -37,17 +40,20 @@ const dataFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" });
 export default function ContasPagar() {
   const router = useRouter();
   const [itens, setItens] = useState<ContaPagar[]>([]);
-  const [filtro, setFiltro] = useState("abertas");
+  const [filtro, setFiltro] = useState("todas");
+  const [buscaForn, setBuscaForn] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
   const [lendoFoto, setLendoFoto] = useState(false);
   const fotoInput = useRef<HTMLInputElement>(null);
 
-  const carregar = useCallback(async (situacao: string) => {
+  const carregar = useCallback(async (situacao: string, forn = "") => {
     setCarregando(true);
     try {
-      const r = await fetch(`/api/contas-pagar?situacao=${situacao}`);
+      const r = await fetch(
+        `/api/contas-pagar?situacao=${situacao}&fornecedor=${encodeURIComponent(forn)}`
+      );
       const d = await r.json();
       if (!r.ok) throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — "));
       setItens(d.itens);
@@ -61,8 +67,9 @@ export default function ContasPagar() {
   }, []);
 
   useEffect(() => {
-    carregar(filtro);
-  }, [filtro, carregar]);
+    const t = setTimeout(() => carregar(filtro, buscaForn), 250);
+    return () => clearTimeout(t);
+  }, [filtro, buscaForn, carregar]);
 
   // aviso rápido depois de salvar na tela de cadastro
   useEffect(() => {
@@ -118,7 +125,7 @@ export default function ContasPagar() {
         setAviso("Conta quitada.");
       }
       setErro(false);
-      await carregar(filtro);
+      await carregar(filtro, buscaForn);
     } catch {
       setErro(true);
       setAviso("Não foi possível atualizar.");
@@ -132,7 +139,7 @@ export default function ContasPagar() {
       if (!r.ok) throw new Error();
       setAviso("Conta excluída.");
       setErro(false);
-      await carregar(filtro);
+      await carregar(filtro, buscaForn);
     } catch {
       setErro(true);
       setAviso("Não foi possível excluir.");
@@ -195,6 +202,12 @@ export default function ContasPagar() {
         ))}
       </div>
 
+      <FiltroVoz
+        valor={buscaForn}
+        aoMudar={setBuscaForn}
+        placeholder="Filtrar pelo nome do fornecedor"
+      />
+
       {aviso && (
         <p className="dica" data-erro={erro} role="status" aria-live="polite">
           {aviso}
@@ -231,6 +244,18 @@ export default function ContasPagar() {
                       .filter(Boolean)
                       .join(" · ")}
                   </span>
+                  {!c.pago && c.fornecedor_pix && (
+                    <span className="contato-acoes">
+                      <span className="contato-chip contato-chip-pix">
+                        <span className="chip-pix-valor">Pix {c.fornecedor_nome}: {c.fornecedor_pix}</span>
+                        <BotaoCopiar
+                          texto={c.fornecedor_pix}
+                          titulo="Copiar chave Pix do fornecedor"
+                          rotulo="Copiar Pix"
+                        />
+                      </span>
+                    </span>
+                  )}
                 </span>
                 <span className="preco" data-critico={!c.pago && p?.atrasada ? "true" : undefined}>
                   R$ {moeda.format(Number(c.valor))}

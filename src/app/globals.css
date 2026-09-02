@@ -799,6 +799,55 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .zap-link svg { width: 16px; height: 16px; }
 .linha-com-zap { display: inline-flex; align-items: center; gap: 8px; }
 
+/* ---- bloco de contato reaproveitado nas listas ---- */
+.contato-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 6px;
+}
+.contato-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--verde-linha);
+  border-radius: 999px;
+  background: var(--verde-superficie);
+  font-size: 12px;
+  color: var(--creme-fraco);
+  text-decoration: none;
+  max-width: 100%;
+}
+.contato-chip a { color: var(--creme); text-decoration: none; }
+.contato-chip svg { flex: none; opacity: 0.8; }
+.chip-pix-valor {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+.contato-chip-pix { color: var(--ambar); }
+.zap-link-mini { width: 22px; height: 22px; }
+.zap-link-mini svg { width: 13px; height: 13px; }
+
+.botao-copiar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border: 1px solid var(--verde-linha);
+  border-radius: 7px;
+  background: var(--verde-fundo);
+  color: var(--creme-fraco);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.botao-copiar:hover { color: var(--creme); border-color: var(--creme-fraco); }
+.botao-copiar[data-copiado="true"] { color: #25d366; border-color: #25d366; }
+
 /* ============ foto do produto ============ */
 .campo-foto { display: flex; flex-direction: column; gap: 6px; }
 .campo-foto-rotulo {
