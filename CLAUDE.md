@@ -214,10 +214,23 @@ of a blank "não foi possível salvar".
   and a green `wa.me` shortcut once it's marked. Persisted as `empresa.telefone_whatsapp` /
   `casco.telefone_whatsapp` / `cliente.whatsapp`. Lists (`/clientes`, `/cascos`) show a `.zap-link` icon
   linking to `linkWhatsapp()` (`src/lib/whatsapp.ts`, normalizes any BR number to `https://wa.me/55…`).
-- `/clientes` — list + `<FormularioCliente>` (shared: also embedded in the `/venda` fiado picker via a
-  "+ Cadastrar novo cliente" button). `cliente` table. **Photo (`foto`, data URL) and `endereco` are
-  NOT NULL / required**; `cpf`, `telefone`, `whatsapp` bool, `cep`, `nota` (1–10, `db/11`) optional.
-  Photo via `GET /api/clientes/:id/foto`. Rows show `saldo_fiado` (subselect over open `fiado`).
+- `/clientes` — **list-only** (produtos-pattern): `+ Novo cliente` → `/clientes/novo` (renders
+  `<FormularioCliente>`, drops `sessionStorage["mpmf.clienteFlash"]`, routes back). `<FormularioCliente>`
+  is still a shared component — also the `/venda` fiado picker and `<SeletorCliente>`. `cliente` table.
+  **Photo (`foto`, data URL) and `endereco` are NOT NULL / required**; `cpf`, `telefone`, `whatsapp` bool,
+  `cep`, `nota` (1–10, `db/11`) optional. Photo via `GET /api/clientes/:id/foto`. Rows show `saldo_fiado`
+  (subselect over open `fiado`), a `.nota-cliente` badge, and a **left border coloured by `nota`**
+  (`sinalNota`: ≥7 green / 4–6 amber / ≤3 red — `li[data-nota]` + `.nota-cliente[data-sinal]`).
+- `/contas` ("Contas a receber") — filter default **"todas"**; `+ Nova conta a receber` toggles an inline
+  fiado form (`<SeletorCliente>` + valor + descrição → `POST /api/fiado`).
+- `/produtos` cards with no photo: the `📷` placeholder is a clickable `<label>` ("Tirar foto") — camera →
+  `comprimirParaDataURL` → `PUT /api/produtos/:id/foto` (`atualizarFotoProduto`, narrow `UPDATE … SET
+  foto`, doesn't touch the rest of the row) → reload.
+- `<SeletorCliente>` / `<SeletorFornecedor>` — the search-existing-or-cadastrar-novo picker pattern
+  (embed `<FormularioCliente>` / `<FormularioFornecedor>` inline).
+- `/admin/empresas` — filter default **"todas"**; the new/edit forms use `<CampoTelefone>` (persists
+  `empresa.telefone_whatsapp` via `editarEmpresa` / the admin `POST /api/empresas` branch), so the list's
+  `<DadosContato>` WhatsApp shortcut works for admin-managed stores too.
 - **Cross-tenant reputation** — `GET /api/clientes/reputacao?cpf=` (`reputacaoPorCpf`) is the one query
   that deliberately ignores `empresa_id`: it averages `nota` for a CPF across **all** stores so a
   shopkeeper can gauge a new fiado customer. It returns only aggregates (`media`, `avaliacoes`,

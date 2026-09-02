@@ -299,6 +299,20 @@ export async function fotoProduto(empresaId: number, id: number): Promise<string
   return rows[0]?.foto ?? null;
 }
 
+/** Só troca a foto — usado ao tirar a foto direto do card na lista de produtos. */
+export async function atualizarFotoProduto(
+  empresaId: number,
+  id: number,
+  dataUrl: string
+): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "UPDATE produto SET foto = NULLIF($3, ''), alterado_em = now() WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId, dataUrl]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
 export async function excluirProduto(empresaId: number, id: number): Promise<boolean> {
   const r = await pool.query(
     "DELETE FROM produto WHERE id = $1 AND empresa_id = $2",
@@ -363,14 +377,21 @@ export async function decidirEmpresa(
 
 export async function editarEmpresa(
   id: number,
-  dados: { nome: string; documento: string; telefone: string | null; cidade: string | null }
+  dados: {
+    nome: string;
+    documento: string;
+    telefone: string | null;
+    telefoneWhatsapp: boolean;
+    cidade: string | null;
+  }
 ): Promise<Empresa | null> {
+  await garantirSchema();
   const { rows } = await pool.query<Empresa>(
     `UPDATE empresa
-        SET nome = $2, documento = $3, telefone = $4, cidade = $5
+        SET nome = $2, documento = $3, telefone = $4, telefone_whatsapp = $5, cidade = $6
       WHERE id = $1
       RETURNING *`,
-    [id, dados.nome, dados.documento, dados.telefone, dados.cidade]
+    [id, dados.nome, dados.documento, dados.telefone, dados.telefoneWhatsapp, dados.cidade]
   );
   return rows[0] ?? null;
 }

@@ -49,6 +49,7 @@ export default function Produtos() {
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
   const [lendoFoto, setLendoFoto] = useState(false);
+  const [fotoDoCard, setFotoDoCard] = useState<number | null>(null);
   const fotoInput = useRef<HTMLInputElement>(null);
 
   const { ouvir, ouvindoCampo, campoAtual, disponivel } = useVoz({
@@ -118,6 +119,29 @@ export default function Produtos() {
       setLendoFoto(false);
     } finally {
       if (fotoInput.current) fotoInput.current.value = "";
+    }
+  }
+
+  async function fotoDireta(id: number, arquivo: File | undefined) {
+    if (!arquivo) return;
+    setFotoDoCard(id);
+    setErro(false);
+    try {
+      const dataUrl = await comprimirParaDataURL(arquivo);
+      const r = await fetch(`/api/produtos/${id}/foto`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ foto: dataUrl }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
+      setAviso("Foto do produto salva.");
+      await carregar(filtro);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não consegui usar essa foto.");
+    } finally {
+      setFotoDoCard(null);
     }
   }
 
@@ -215,9 +239,20 @@ export default function Produtos() {
                   {p.tem_foto ? (
                     <FotoAmpliavel src={`/api/produtos/${p.id}/foto`} alt={p.nome} />
                   ) : (
-                    <span className="sem-foto" aria-hidden="true">
-                      📷
-                    </span>
+                    <label className="sem-foto" title="Tirar foto do produto">
+                      <span aria-hidden="true">{fotoDoCard === p.id ? "⏳" : "📷"}</span>
+                      <span className="sem-foto-dica">
+                        {fotoDoCard === p.id ? "Salvando…" : "Tirar foto"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        hidden
+                        disabled={fotoDoCard === p.id}
+                        onChange={(e) => fotoDireta(p.id, e.target.files?.[0])}
+                      />
+                    </label>
                   )}
                 </div>
 

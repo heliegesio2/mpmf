@@ -1,10 +1,35 @@
 import { NextResponse } from "next/server";
-import { fotoProduto } from "@/lib/db";
+import { fotoProduto, atualizarFotoProduto } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+/** PUT /api/produtos/:id/foto  { foto: "data:image/jpeg;base64,..." } -> só troca a foto. */
+export async function PUT(request: Request, { params }: Ctx) {
+  const { empresaId, erro } = await exigirEmpresa();
+  if (erro) return erro;
+
+  const id = Number((await params).id);
+  if (!Number.isInteger(id)) {
+    return NextResponse.json({ erro: "Produto inválido." }, { status: 400 });
+  }
+
+  try {
+    const c = (await request.json()) as { foto?: string };
+    const foto = String(c.foto ?? "");
+    if (!foto.startsWith("data:image/")) {
+      return NextResponse.json({ erro: "Foto inválida." }, { status: 400 });
+    }
+    const ok = await atualizarFotoProduto(empresaId, id, foto);
+    if (!ok) return NextResponse.json({ erro: "Produto não encontrado." }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    console.error("Falha ao salvar a foto do produto:", e);
+    return NextResponse.json({ erro: "Não foi possível salvar." }, { status: 500 });
+  }
+}
 
 /**
  * GET /api/produtos/:id/foto -> a imagem do produto (bytes), ou 404.

@@ -423,7 +423,20 @@ html[data-fonte="grande"] { zoom: 1.5; }
   overflow: hidden;
 }
 .card-produto-foto > img { width: 100%; height: 100%; object-fit: cover; }
-.card-produto-foto .sem-foto { font-size: 22px; opacity: 0.4; }
+.card-produto-foto .sem-foto {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  font-size: 20px;
+  color: var(--creme-fraco);
+  cursor: pointer;
+}
+.card-produto-foto .sem-foto:hover { color: var(--creme); background: var(--verde-superficie); }
+.sem-foto-dica { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .card-produto-corpo { grid-area: corpo; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .card-produto-nome { font-size: 15px; font-weight: 700; }
 .card-produto-corpo .sub { font-size: 12px; color: var(--creme-fraco); }
@@ -454,6 +467,33 @@ html[data-fonte="grande"] { zoom: 1.5; }
   border: 1px solid var(--tomate);
   color: var(--tomate);
 }
+
+/* ---- nota do cliente (verde / amarelo / vermelho) ---- */
+.nota-cliente {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1px;
+  min-width: 44px;
+  justify-content: center;
+  padding: 6px 8px;
+  border-radius: 9px;
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 700;
+  font-size: 18px;
+  border: 1px solid var(--verde-linha);
+  color: var(--creme-fraco);
+}
+.nota-cliente small { font-size: 10px; font-weight: 500; opacity: 0.7; }
+.nota-cliente[data-sinal="bom"] { background: rgba(74, 222, 128, 0.16); border-color: #4ade80; color: #4ade80; }
+.nota-cliente[data-sinal="medio"] { background: rgba(255, 197, 61, 0.16); border-color: var(--ambar); color: var(--ambar); }
+.nota-cliente[data-sinal="ruim"] { background: rgba(226, 73, 47, 0.18); border-color: var(--tomate); color: var(--tomate); }
+
+.lista li[data-nota] { border-left: 4px solid var(--verde-linha); }
+.lista li[data-nota="bom"] { border-left-color: #4ade80; }
+.lista li[data-nota="medio"] { border-left-color: var(--ambar); }
+.lista li[data-nota="ruim"] { border-left-color: var(--tomate); }
 .card-produto-acoes { grid-area: acoes; display: flex; gap: 8px; }
 .card-produto-acoes .botao.mini { flex: 1; text-align: center; }
 

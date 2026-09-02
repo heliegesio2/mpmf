@@ -1,6 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import SeletorCliente, { type ClienteLite } from "@/components/SeletorCliente";
+import { CampoVoz } from "@/components/CampoVoz";
+import { useVoz } from "@/lib/useVoz";
+import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
+import { capitalizar, numeroFalado } from "@/lib/voz";
 
 type Fiado = {
   id: number;
@@ -24,10 +29,29 @@ const data = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" });
 
 export default function Contas() {
   const [itens, setItens] = useState<Fiado[]>([]);
-  const [filtro, setFiltro] = useState("abertas");
+  const [filtro, setFiltro] = useState("todas");
   const [carregando, setCarregando] = useState(true);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
+
+  // nova conta a receber
+  const [novaAberta, setNovaAberta] = useState(false);
+  const [cliente, setCliente] = useState<ClienteLite | null>(null);
+  const [valor, setValor] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
+    aoFinalizar: (texto) => {
+      if (campoAtual.current === "valor") {
+        const n = numeroFalado(texto);
+        if (n !== null) setValor(paraMoeda(n));
+      } else if (campoAtual.current === "descricao") {
+        setDescricao(capitalizar(texto));
+      }
+    },
+    aoErrar: () => {},
+  });
 
   const carregar = useCallback(async (situacao: string) => {
     setCarregando(true);
@@ -94,6 +118,42 @@ export default function Contas() {
     }
   }
 
+  async function salvarNova() {
+    if (!cliente || moedaParaNumero(valor) <= 0) {
+      setErro(true);
+      setAviso("Escolha o cliente e informe o valor.");
+      return;
+    }
+    setSalvando(true);
+    setErro(false);
+    try {
+      const r = await fetch("/api/fiado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clienteId: cliente.id,
+          valor: moedaParaNumero(valor),
+          descricao: descricao || null,
+        }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — ") || "Não foi possível salvar.");
+      }
+      setAviso("Conta a receber lançada.");
+      setCliente(null);
+      setValor("");
+      setDescricao("");
+      setNovaAberta(false);
+      await carregar(filtro);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
   const totalAberto = grupos.reduce((s, g) => s + g.aberto, 0);
 
   return (
@@ -107,6 +167,57 @@ export default function Contas() {
           </>
         )}
       </header>
+
+      <div className="acoes">
+        <button
+          type="button"
+          className="botao primario"
+          onClick={() => setNovaAberta((v) => !v)}
+        >
+          {novaAberta ? "Fechar" : "+ Nova conta a receber"}
+        </button>
+      </div>
+
+      {novaAberta && (
+        <section className="cartao">
+          <h2 className="titulo-cartao">Nova conta a receber (fiado)</h2>
+          <div className="grade-form">
+            <SeletorCliente valor={cliente} aoEscolher={setCliente} />
+            <CampoVoz
+              rotulo="Valor"
+              placeholder="0,00"
+              campo="valor"
+              valor={valor}
+              aoMudar={(v) => setValor(mascararMoeda(v))}
+              ouvindo={ouvindoCampo === "valor"}
+              temVoz={disponivel}
+              aoOuvir={ouvir}
+              aoParar={parar}
+            />
+            <CampoVoz
+              rotulo="Descrição"
+              placeholder="Compras da semana, marmita…"
+              largo
+              campo="descricao"
+              valor={descricao}
+              aoMudar={setDescricao}
+              ouvindo={ouvindoCampo === "descricao"}
+              temVoz={disponivel}
+              aoOuvir={ouvir}
+              aoParar={parar}
+            />
+          </div>
+          <div className="acoes">
+            <button
+              className="botao primario"
+              onClick={salvarNova}
+              disabled={salvando || !cliente || moedaParaNumero(valor) <= 0}
+            >
+              {salvando ? "Salvando…" : "Lançar conta a receber"}
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="abas">
         {FILTROS.map((f) => (

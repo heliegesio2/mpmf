@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CampoVoz, SelecaoVoz } from "@/components/CampoVoz";
+import CampoTelefone from "@/components/CampoTelefone";
 import DadosContato from "@/components/DadosContato";
 import FiltroVoz from "@/components/FiltroVoz";
 import { useVoz } from "@/lib/useVoz";
@@ -33,6 +34,7 @@ type NovaEmpresa = {
   nome: string;
   documento: string;
   telefone: string;
+  telefoneWhatsapp: boolean;
   cidade: string;
 };
 
@@ -56,14 +58,20 @@ const PAPEIS = [
   { valor: "operador", rotulo: "Operador" },
 ] as const;
 
-const EMPRESA_VAZIA: NovaEmpresa = { nome: "", documento: "", telefone: "", cidade: "" };
+const EMPRESA_VAZIA: NovaEmpresa = {
+  nome: "",
+  documento: "",
+  telefone: "",
+  telefoneWhatsapp: false,
+  cidade: "",
+};
 const USUARIO_VAZIO: NovoUsuario = { nome: "", email: "", senha: "", papel: "admin" };
 
 const data = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short" });
 
 export default function Empresas() {
   const [itens, setItens] = useState<Empresa[]>([]);
-  const [filtro, setFiltro] = useState("pendente");
+  const [filtro, setFiltro] = useState("todas");
   const [busca, setBusca] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [aviso, setAviso] = useState("");
@@ -146,7 +154,7 @@ export default function Empresas() {
 
   const comumEmpresa = (k: keyof NovaEmpresa) => ({
     campo: k as string,
-    valor: novaEmpresa[k],
+    valor: String(novaEmpresa[k]),
     aoMudar: (v: string) => setNovaEmpresa((f) => ({ ...f, [k]: v })),
     ouvindo: ouvindoCampo === k,
     temVoz: disponivel,
@@ -156,7 +164,7 @@ export default function Empresas() {
 
   const comumEdicao = (k: keyof NovaEmpresa) => ({
     campo: k as string,
-    valor: dadosEdicao[k],
+    valor: String(dadosEdicao[k]),
     aoMudar: (v: string) => setDadosEdicao((f) => ({ ...f, [k]: v })),
     ouvindo: ouvindoCampo === k,
     temVoz: disponivel,
@@ -200,6 +208,7 @@ export default function Empresas() {
       nome: e.nome,
       documento: e.documento ?? "",
       telefone: e.telefone ?? "",
+      telefoneWhatsapp: Boolean(e.telefone_whatsapp),
       cidade: e.cidade ?? "",
     });
     setAviso("");
@@ -421,7 +430,12 @@ export default function Empresas() {
           <div className="grade-form">
             <CampoVoz rotulo="Nome da empresa" placeholder="Mercadinho do Bairro" largo {...comumEmpresa("nome")} />
             <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comumEmpresa("documento")} />
-            <CampoVoz rotulo="Telefone" placeholder="11989902144" numerico {...comumEmpresa("telefone")} />
+            <CampoTelefone
+              rotulo="Telefone"
+              {...comumEmpresa("telefone")}
+              ehWhatsapp={novaEmpresa.telefoneWhatsapp}
+              aoMudarWhatsapp={(v) => setNovaEmpresa((f) => ({ ...f, telefoneWhatsapp: v }))}
+            />
             <CampoVoz rotulo="Cidade" placeholder="São Paulo" {...comumEmpresa("cidade")} />
           </div>
 
@@ -496,7 +510,12 @@ export default function Empresas() {
           <div className="grade-form">
             <CampoVoz rotulo="Nome da empresa" placeholder="Mercadinho do Bairro" largo {...comumEdicao("nome")} />
             <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comumEdicao("documento")} />
-            <CampoVoz rotulo="Telefone" placeholder="11989902144" numerico {...comumEdicao("telefone")} />
+            <CampoTelefone
+              rotulo="Telefone"
+              {...comumEdicao("telefone")}
+              ehWhatsapp={dadosEdicao.telefoneWhatsapp}
+              aoMudarWhatsapp={(v) => setDadosEdicao((f) => ({ ...f, telefoneWhatsapp: v }))}
+            />
             <CampoVoz rotulo="Cidade" placeholder="São Paulo" {...comumEdicao("cidade")} />
           </div>
 

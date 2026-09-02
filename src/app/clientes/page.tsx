@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import FormularioCliente from "@/components/FormularioCliente";
+import Link from "next/link";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
 import DadosContato from "@/components/DadosContato";
 import FiltroVoz from "@/components/FiltroVoz";
@@ -18,7 +18,16 @@ type Cliente = {
   saldo_fiado?: number;
 };
 
+const CHAVE_FLASH = "mpmf.clienteFlash";
 const moeda = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** Verde (bom) / amarelo (médio) / vermelho (ruim) pela nota; sem nota = neutro. */
+function sinalNota(nota: number | null): "bom" | "medio" | "ruim" | undefined {
+  if (nota == null) return undefined;
+  if (nota >= 7) return "bom";
+  if (nota >= 4) return "medio";
+  return "ruim";
+}
 
 export default function Clientes() {
   const [itens, setItens] = useState<Cliente[]>([]);
@@ -47,6 +56,19 @@ export default function Clientes() {
     return () => clearTimeout(t);
   }, [filtro, carregar]);
 
+  useEffect(() => {
+    try {
+      const flash = sessionStorage.getItem(CHAVE_FLASH);
+      if (flash) {
+        sessionStorage.removeItem(CHAVE_FLASH);
+        setAviso(flash);
+        setErro(false);
+      }
+    } catch {
+      /* sem sessionStorage */
+    }
+  }, []);
+
   async function excluir(c: Cliente) {
     if (!confirm(`Excluir "${c.nome}"? Os fiados dele também somem. Essa ação não tem volta.`)) return;
     try {
@@ -68,19 +90,13 @@ export default function Clientes() {
         Clientes <span>•</span> {itens.length} cadastrados
       </header>
 
-      <section className="cartao">
-        <h2 className="titulo-cartao">Novo cliente</h2>
-        <FormularioCliente
-          aoSalvar={() => {
-            setAviso("Cliente cadastrado.");
-            setErro(false);
-            carregar(filtro);
-          }}
-        />
-      </section>
+      <div className="acoes">
+        <Link href="/clientes/novo" className="botao primario">
+          + Novo cliente
+        </Link>
+      </div>
 
       <FiltroVoz valor={filtro} aoMudar={setFiltro} placeholder="Filtrar por nome ou CPF" />
-
 
       {aviso && (
         <p className="dica" data-erro={erro} role="status" aria-live="polite">
@@ -95,11 +111,10 @@ export default function Clientes() {
       ) : (
         <ul className="lista">
           {itens.map((c) => (
-            <li key={c.id}>
+            <li key={c.id} data-nota={sinalNota(c.nota)}>
               <FotoAmpliavel className="miniatura-produto" src={`/api/clientes/${c.id}/foto`} alt={c.nome} />
               <span className="rotulo-item">
                 {c.nome}
-                {c.nota != null && <span className="sub">nota {c.nota}/10</span>}
                 <DadosContato
                   documento={c.cpf}
                   telefone={c.telefone}
@@ -107,11 +122,19 @@ export default function Clientes() {
                   local={c.endereco}
                 />
               </span>
+
+              {c.nota != null && (
+                <span className="nota-cliente" data-sinal={sinalNota(c.nota)} title={`Nota ${c.nota} de 10`}>
+                  {c.nota}<small>/10</small>
+                </span>
+              )}
+
               {c.saldo_fiado ? (
                 <span className="estoque-cel" data-critico="true">
                   deve R$ {moeda.format(c.saldo_fiado)}
                 </span>
               ) : null}
+
               <span className="botoes-linha">
                 <button className="botao mini perigo" onClick={() => excluir(c)}>
                   Excluir

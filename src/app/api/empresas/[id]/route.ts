@@ -65,6 +65,7 @@ export async function PATCH(
       nome,
       documento,
       telefone: c.telefone ?? null,
+      telefoneWhatsapp: Boolean(c.telefoneWhatsapp),
       cidade: c.cidade ?? null,
     });
     if (!item) return NextResponse.json({ erro: "Empresa não encontrada." }, { status: 404 });
