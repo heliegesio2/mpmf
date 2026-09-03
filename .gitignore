@@ -35,3 +35,7 @@ tsconfig.tsbuildinfo
 
 # credenciais OAuth baixadas do Google/Facebook (nunca commitar)
 client_secret_*.json
+
+# certificados self-signed do `next dev --experimental-https`
+certificates/
+certificados/
