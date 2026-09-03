@@ -50,6 +50,8 @@ type PropsTexto = Base & {
   numerico?: boolean;
   /** Campo de dinheiro: aplica a máscara e mostra o R$ ao lado. */
   moeda?: boolean;
+  /** Chamado quando o campo perde o foco (útil pra salvar). */
+  aoSair?: () => void;
 };
 
 export function CampoVoz({
@@ -60,6 +62,7 @@ export function CampoVoz({
   placeholder,
   numerico,
   moeda,
+  aoSair,
   ouvindo,
   temVoz,
   aoOuvir,
@@ -79,6 +82,7 @@ export function CampoVoz({
             if (ouvindo) aoParar?.();
             aoMudar(moeda ? mascararMoeda(e.target.value) : e.target.value);
           }}
+          onBlur={aoSair}
           placeholder={ouvindo ? "Ouvindo…" : placeholder}
           inputMode={moeda || numerico ? "decimal" : "text"}
           autoComplete="off"

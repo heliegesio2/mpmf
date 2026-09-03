@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { EMBALAGENS, TIPOS_VENDA } from "@/lib/tipos";
 import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
+import { numeroFalado } from "@/lib/voz";
+import { useVoz } from "@/lib/useVoz";
+import { CampoVoz } from "@/components/CampoVoz";
 import { comprimirImagem } from "@/lib/imagemCliente";
 import CameraFoto from "@/components/CameraFoto";
 
@@ -76,15 +79,13 @@ export default function ImportarCompra() {
       .catch(() => {});
   }, []);
 
-  function salvarMargem() {
-    const n = margemNum();
+  function aplicarMargem(n: number) {
     setMargem(String(n));
     fetch("/api/importar-compra/margem", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ margem: n }),
     }).catch(() => {});
-    // recalcula o preço de venda de todas as linhas com a nova margem
     setLinhas((ls) =>
       ls.map((l) => ({
         ...l,
@@ -92,6 +93,48 @@ export default function ImportarCompra() {
       }))
     );
   }
+  const salvarMargem = () => aplicarMargem(margemNum());
+
+  const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
+    aoFinalizar: (texto) => {
+      const campo = campoAtual.current;
+      if (!campo) return;
+      if (campo === "margem") {
+        const falado = numeroFalado(texto.replace(/por\s*cento|%/gi, ""));
+        const n = falado === null ? NaN : Number(falado);
+        if (!Number.isFinite(n) || n < 0) {
+          setErro(true);
+          setAviso(`Não entendi "${texto}" como percentual.`);
+          return;
+        }
+        setErro(false);
+        setAviso("");
+        aplicarMargem(n);
+        return;
+      }
+      const m = /^(nome|precoCompra|precoVenda)-(\d+)$/.exec(campo);
+      if (!m) return;
+      const i = Number(m[2]);
+      if (m[1] === "nome") {
+        mudarLinha(i, "nome", texto);
+        return;
+      }
+      const falado = numeroFalado(texto);
+      if (falado === null) {
+        setErro(true);
+        setAviso(`Não entendi "${texto}" como valor. Tente "quatro e cinquenta".`);
+        return;
+      }
+      setErro(false);
+      setAviso("");
+      if (m[1] === "precoCompra") mudarCompra(i, paraMoeda(falado));
+      else mudarLinha(i, "precoVenda", paraMoeda(falado));
+    },
+    aoErrar: (msg) => {
+      setErro(true);
+      setAviso(msg);
+    },
+  });
 
   async function analisar(arquivo: File) {
     setAnalisando(true);
@@ -221,6 +264,13 @@ export default function ImportarCompra() {
   }
 
   const rotuloVenda = `Preço de venda (+${margemNum().toLocaleString("pt-BR")}%)`;
+  const vozProps = (campo: string) => ({
+    campo,
+    ouvindo: ouvindoCampo === campo,
+    temVoz: disponivel,
+    aoOuvir: ouvir,
+    aoParar: parar,
+  });
 
   return (
     <main className="tela">
@@ -232,22 +282,23 @@ export default function ImportarCompra() {
           Quanto você quer ganhar sobre o preço de compra. O preço de venda de cada item vem
           calculado com essa margem — dá pra ajustar item a item depois.
         </p>
-        <label className="rotulo" style={{ maxWidth: 180 }}>
-          Lucro sobre a compra (%)
-          <input
-            value={margem}
-            onChange={(e) => setMargem(e.target.value.replace(/[^\d.,]/g, ""))}
-            onBlur={salvarMargem}
-            inputMode="decimal"
+        <div style={{ maxWidth: 240 }}>
+          <CampoVoz
+            rotulo="Lucro sobre a compra (%)"
+            valor={margem}
+            aoMudar={(v) => setMargem(v.replace(/[^\d.,]/g, ""))}
+            aoSair={salvarMargem}
+            numerico
+            {...vozProps("margem")}
           />
-        </label>
+        </div>
       </section>
 
       <section className="cartao">
         <h2 className="titulo-cartao">Foto do cupom fiscal</h2>
         <p className="ajuda-voz">
-          Tire uma foto do cupom da distribuidora. O sistema lê os itens e sugere o preço de
-          venda com a sua margem — confira antes de salvar.
+          Tire uma foto do cupom da distribuidora ou envie uma que você já tem. O sistema lê os
+          itens e sugere o preço de venda com a sua margem — confira antes de salvar.
         </p>
 
         <CameraFoto
@@ -318,13 +369,13 @@ export default function ImportarCompra() {
 
               {!linha.usarSugestao && (
                 <>
-                  <label className="rotulo largo">
-                    Nome do produto novo
-                    <input
-                      value={linha.nome}
-                      onChange={(e) => mudarLinha(i, "nome", e.target.value)}
-                    />
-                  </label>
+                  <CampoVoz
+                    rotulo="Nome do produto novo"
+                    valor={linha.nome}
+                    aoMudar={(v) => mudarLinha(i, "nome", v)}
+                    largo
+                    {...vozProps(`nome-${i}`)}
+                  />
                   <label className="rotulo">
                     Vendido por
                     <select
@@ -354,23 +405,21 @@ export default function ImportarCompra() {
                 </>
               )}
 
-              <label className="rotulo">
-                Preço de compra
-                <input
-                  value={linha.precoCompra}
-                  onChange={(e) => mudarCompra(i, e.target.value)}
-                  inputMode="decimal"
-                />
-              </label>
+              <CampoVoz
+                rotulo="Preço de compra"
+                valor={linha.precoCompra}
+                aoMudar={(v) => mudarCompra(i, v)}
+                moeda
+                {...vozProps(`precoCompra-${i}`)}
+              />
 
-              <label className="rotulo">
-                {rotuloVenda}
-                <input
-                  value={linha.precoVenda}
-                  onChange={(e) => mudarLinha(i, "precoVenda", mascararMoeda(e.target.value))}
-                  inputMode="decimal"
-                />
-              </label>
+              <CampoVoz
+                rotulo={rotuloVenda}
+                valor={linha.precoVenda}
+                aoMudar={(v) => mudarLinha(i, "precoVenda", v)}
+                moeda
+                {...vozProps(`precoVenda-${i}`)}
+              />
             </div>
           </section>
         );

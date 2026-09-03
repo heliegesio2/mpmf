@@ -1258,6 +1258,40 @@ html[data-fonte="grande"] { zoom: 1.5; }
   color: var(--azul-ink);
 }
 
+.formas-pagamento {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.forma-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.forma-card-rotulo {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-dim);
+}
+.forma-card strong {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.forma-card[data-forma="dinheiro"] { border-left-color: var(--ok); }
+.forma-card[data-forma="pix"] { border-left-color: var(--azul); }
+.forma-card[data-forma="debito"] { border-left-color: #7a5cc0; }
+.forma-card[data-forma="credito"] { border-left-color: var(--ambar); }
+.forma-card[data-forma="fiado"] { border-left-color: var(--perigo); }
+
 .mic-campo {
   flex: none;
   width: 34px;

@@ -69,6 +69,16 @@ export default function Vendas() {
   const total = itens.reduce((s, v) => s + v.total, 0);
   const umDiaSo = de === ate;
 
+  const ORDEM_FORMA = ["dinheiro", "debito", "credito", "pix", "fiado"];
+  const porForma = itens.reduce<Record<string, number>>((acc, v) => {
+    for (const p of v.pagamentos) acc[p.forma] = (acc[p.forma] ?? 0) + p.valor;
+    return acc;
+  }, {});
+  const formasComValor = [
+    ...ORDEM_FORMA,
+    ...Object.keys(porForma).filter((f) => !ORDEM_FORMA.includes(f)),
+  ].filter((f) => (porForma[f] ?? 0) > 0.005);
+
   return (
     <main className="tela">
       <header className="marca">
@@ -103,6 +113,17 @@ export default function Vendas() {
           </span>
           <strong>R$ {moeda.format(total)}</strong>
         </div>
+
+        {formasComValor.length > 0 && (
+          <div className="formas-pagamento">
+            {formasComValor.map((f) => (
+              <div className="forma-card" key={f} data-forma={f}>
+                <span className="forma-card-rotulo">{ROTULO_FORMA[f] ?? f}</span>
+                <strong>R$ {moeda.format(porForma[f])}</strong>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       {erro && (

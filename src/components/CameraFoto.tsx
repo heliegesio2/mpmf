@@ -12,9 +12,9 @@ type Props = {
 };
 
 /**
- * Grade de fotos com um quadradinho "＋" que abre a CÂMERA do aparelho e tira a
- * foto ali mesmo (não abre seletor de arquivo). "ou escolher um arquivo" fica
- * como alternativa embaixo.
+ * Entrada de foto com DUAS opções lado a lado: "📷 tirar foto" (abre a câmera do
+ * aparelho, não o seletor de arquivo) e "🖼️ enviar foto" (escolhe da galeria/
+ * arquivos). Mostra as fotos já escolhidas numa grade, cada uma removível.
  */
 export default function CameraFoto({ fotos, aoMudar, max = 6, aoErro }: Props) {
   const [aberta, setAberta] = useState(false);
@@ -44,11 +44,26 @@ export default function CameraFoto({ fotos, aoMudar, max = 6, aoErro }: Props) {
             </button>
           </span>
         ))}
+
         {!cheio && !aberta && (
-          <button type="button" className="camera-tile camera-add" onClick={() => setAberta(true)}>
-            <span aria-hidden="true">＋</span>
-            <small>tirar foto</small>
-          </button>
+          <>
+            <button
+              type="button"
+              className="camera-tile camera-add"
+              onClick={() => setAberta(true)}
+            >
+              <span aria-hidden="true">📷</span>
+              <small>tirar foto</small>
+            </button>
+            <button
+              type="button"
+              className="camera-tile camera-add"
+              onClick={() => inputRef.current?.click()}
+            >
+              <span aria-hidden="true">🖼️</span>
+              <small>enviar foto</small>
+            </button>
+          </>
         )}
       </div>
 
@@ -65,14 +80,11 @@ export default function CameraFoto({ fotos, aoMudar, max = 6, aoErro }: Props) {
         />
       )}
 
-      <button type="button" className="camera-arquivo" onClick={() => inputRef.current?.click()}>
-        ou escolher um arquivo
-      </button>
       <input
         ref={inputRef}
         type="file"
         accept="image/*"
-        multiple
+        multiple={max > 1}
         hidden
         onChange={(e) => daGaleria(e.target.files)}
       />
