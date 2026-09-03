@@ -116,7 +116,29 @@
   .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--azul);display:inline-block;margin-bottom:2px}
   nav.links{display:flex;gap:26px;font-size:.92rem;color:var(--ink-dim)}
   nav.links a:hover{color:var(--ink)}
-  @media (max-width:760px){nav.links{display:none}}
+  nav.links a.so-mobile{display:none}
+  .mm-botao{display:none}
+  @media (max-width:760px){
+    nav.links{
+      display:none;position:absolute;left:0;right:0;top:64px;
+      flex-direction:column;gap:0;background:var(--surface);
+      border-bottom:1px solid var(--line);box-shadow:0 14px 34px rgba(19,40,64,.14);
+      padding:6px 0;font-size:1rem;
+    }
+    nav.links.aberto{display:flex}
+    nav.links a{padding:13px 22px;border-bottom:1px solid var(--line);color:var(--ink)}
+    nav.links a:last-child{border-bottom:0}
+    nav.links a.so-mobile{display:block;font-weight:700}
+    .mm-botao{
+      display:inline-grid;place-items:center;flex:none;
+      width:40px;height:40px;border:1px solid var(--line-strong);
+      border-radius:10px;background:var(--surface);color:var(--ink);
+      font-size:1.05rem;line-height:1;cursor:pointer;
+    }
+  }
+  @media (max-width:620px){
+    .bar-cta .btn{display:none}
+  }
 
   .btn{
     display:inline-flex;align-items:center;gap:9px;
@@ -504,10 +526,13 @@
       <a href="#rede">Venda parceira</a>
       <a href="#modulos">Módulos</a>
       <a href="#planos">Planos</a>
+      <a class="so-mobile" href="/login">Entrar</a>
+      <a class="so-mobile" href="/cadastro">Cadastre-se</a>
     </nav>
     <div class="bar-cta">
       <a class="btn btn-ghost" href="/login">Entrar</a>
       <a class="btn btn-azul" href="/cadastro">Cadastre-se</a>
+      <button type="button" class="mm-botao" aria-label="Abrir menu" aria-expanded="false">☰</button>
     </div>
   </div>
 </header>
@@ -1142,6 +1167,20 @@
 </footer>
 
 <script>
+/* ---------- menu mobile (barra de cima) ---------- */
+(function(){
+  var b = document.querySelector('.mm-botao');
+  var n = document.querySelector('nav.links');
+  if(!b || !n) return;
+  function fechar(){ n.classList.remove('aberto'); b.textContent = '☰'; b.setAttribute('aria-expanded','false'); }
+  b.addEventListener('click', function(){
+    var aberto = n.classList.toggle('aberto');
+    b.textContent = aberto ? '✕' : '☰';
+    b.setAttribute('aria-expanded', aberto ? 'true' : 'false');
+  });
+  n.addEventListener('click', function(e){ if(e.target.tagName === 'A') fechar(); });
+})();
+
 (function(){
   var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
