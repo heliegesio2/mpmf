@@ -249,6 +249,14 @@ of a blank "não foi possível salvar".
   `pix_nome`, added to `empresa`). Only non-super-admins have the `LOJA` menu, so only they see it.
   `/cadastro` (public store sign-up, `POST /api/empresas`) collects the same `horario` / `pix_chave` /
   `pix_nome` up front so a freshly approved store already has a working Pix QR.
+- **`/cadastro` forks (`db/23`)** — a "Sou uma empresa / Sou fornecedor" toggle at the top (hidden in
+  `?social=1` mode). **Fornecedor** → the fornecedor fields (nome, documento, telefone+WhatsApp, endereço,
+  observação, pix) + **bairros atendidos** (a checkbox grid from `GET /api/bairros?cidade=`) + email/senha
+  → `POST /api/fornecedores/cadastro` (public). Creates a `fornecedor_publico` row (`pendente`, separate
+  from each store's per-empresa `fornecedor` table) + `fornecedor_publico_bairro` links. The `bairro`
+  table (`cidade, uf, nome`) is seeded in `MIGRACOES_IDEMPOTENTES` with the ~110 neighborhoods of
+  **Conselheiro Lafaiete, MG** (the launch city). **No approval screen yet** — the super admin can't
+  review `fornecedor_publico` in the panel; that's the next step.
 - **WhatsApp on every phone field** (`db/14`) — `<CampoTelefone>` (`src/components/CampoTelefone.tsx`)
   replaces a bare phone `CampoVoz` everywhere: phone input + mic + an "Esse número é WhatsApp" checkbox,
   and a green `wa.me` shortcut once it's marked. Persisted as `empresa.telefone_whatsapp` /

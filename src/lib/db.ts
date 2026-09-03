@@ -150,6 +150,146 @@ const MIGRACOES_IDEMPOTENTES = [
      criado_em timestamptz NOT NULL DEFAULT now()
    )`,
   "CREATE INDEX IF NOT EXISTS idx_anotacao_empresa ON anotacao (empresa_id, concluida, data_alerta)",
+  // db/23 — cadastro publico de fornecedor + bairros atendidos (lancamento em Conselheiro Lafaiete)
+  `CREATE TABLE IF NOT EXISTS bairro (
+     id bigserial PRIMARY KEY,
+     cidade text NOT NULL,
+     uf text NOT NULL DEFAULT 'MG',
+     nome text NOT NULL,
+     UNIQUE (cidade, uf, nome)
+   )`,
+  `INSERT INTO bairro (cidade, uf, nome) VALUES
+     ('Conselheiro Lafaiete', 'MG', 'Albertina'),
+     ('Conselheiro Lafaiete', 'MG', 'Albinópolis'),
+     ('Conselheiro Lafaiete', 'MG', 'Almeidas'),
+     ('Conselheiro Lafaiete', 'MG', 'Alvorada'),
+     ('Conselheiro Lafaiete', 'MG', 'Amaro Ribeiro'),
+     ('Conselheiro Lafaiete', 'MG', 'Angélica'),
+     ('Conselheiro Lafaiete', 'MG', 'Arcádia'),
+     ('Conselheiro Lafaiete', 'MG', 'Área Rural'),
+     ('Conselheiro Lafaiete', 'MG', 'Areal'),
+     ('Conselheiro Lafaiete', 'MG', 'Barreira'),
+     ('Conselheiro Lafaiete', 'MG', 'Bela Vista'),
+     ('Conselheiro Lafaiete', 'MG', 'Bellavinha'),
+     ('Conselheiro Lafaiete', 'MG', 'Belvedere'),
+     ('Conselheiro Lafaiete', 'MG', 'Bom Pastor'),
+     ('Conselheiro Lafaiete', 'MG', 'Buarque de Macedo'),
+     ('Conselheiro Lafaiete', 'MG', 'Cachoeira'),
+     ('Conselheiro Lafaiete', 'MG', 'Campo Alegre'),
+     ('Conselheiro Lafaiete', 'MG', 'Carijós'),
+     ('Conselheiro Lafaiete', 'MG', 'Centro'),
+     ('Conselheiro Lafaiete', 'MG', 'Chapada'),
+     ('Conselheiro Lafaiete', 'MG', 'Cidade Jardim'),
+     ('Conselheiro Lafaiete', 'MG', 'Cidade Nova'),
+     ('Conselheiro Lafaiete', 'MG', 'Copacabana'),
+     ('Conselheiro Lafaiete', 'MG', 'Distrito Industrial'),
+     ('Conselheiro Lafaiete', 'MG', 'Expedicionários'),
+     ('Conselheiro Lafaiete', 'MG', 'Fonte Grande'),
+     ('Conselheiro Lafaiete', 'MG', 'Funcionários'),
+     ('Conselheiro Lafaiete', 'MG', 'Gagé'),
+     ('Conselheiro Lafaiete', 'MG', 'Gigante'),
+     ('Conselheiro Lafaiete', 'MG', 'Granja das Hortênsias'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim América'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim Canadá'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim das Flores'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim do Sol'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim dos Cristais'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim Eldorado'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim Europa'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim Inconfidentes'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim Monte Verde'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim São Geraldo'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim Vila Rica'),
+     ('Conselheiro Lafaiete', 'MG', 'Jardim Vitória'),
+     ('Conselheiro Lafaiete', 'MG', 'JK'),
+     ('Conselheiro Lafaiete', 'MG', 'Lima Dias'),
+     ('Conselheiro Lafaiete', 'MG', 'Lourdes'),
+     ('Conselheiro Lafaiete', 'MG', 'Manoel Corrêa'),
+     ('Conselheiro Lafaiete', 'MG', 'Manoel de Paula'),
+     ('Conselheiro Lafaiete', 'MG', 'Moinhos'),
+     ('Conselheiro Lafaiete', 'MG', 'Monte Cristo'),
+     ('Conselheiro Lafaiete', 'MG', 'Morada do Sol'),
+     ('Conselheiro Lafaiete', 'MG', 'Morro da Mina'),
+     ('Conselheiro Lafaiete', 'MG', 'Museu'),
+     ('Conselheiro Lafaiete', 'MG', 'Nossa Senhora da Guia'),
+     ('Conselheiro Lafaiete', 'MG', 'Novo Horizonte'),
+     ('Conselheiro Lafaiete', 'MG', 'Oscar Corrêa'),
+     ('Conselheiro Lafaiete', 'MG', 'Ouro Verde'),
+     ('Conselheiro Lafaiete', 'MG', 'Parque Bandeirantes'),
+     ('Conselheiro Lafaiete', 'MG', 'Parque Cidade'),
+     ('Conselheiro Lafaiete', 'MG', 'Parque das Acácias'),
+     ('Conselheiro Lafaiete', 'MG', 'Parque Dom Bosco'),
+     ('Conselheiro Lafaiete', 'MG', 'Parque dos Ferroviários'),
+     ('Conselheiro Lafaiete', 'MG', 'Parque Montreal'),
+     ('Conselheiro Lafaiete', 'MG', 'Parque Recanto da Hípica'),
+     ('Conselheiro Lafaiete', 'MG', 'Paulo VI'),
+     ('Conselheiro Lafaiete', 'MG', 'Progresso'),
+     ('Conselheiro Lafaiete', 'MG', 'Queluz'),
+     ('Conselheiro Lafaiete', 'MG', 'Quinta das Flores'),
+     ('Conselheiro Lafaiete', 'MG', 'Quintas do Imperador'),
+     ('Conselheiro Lafaiete', 'MG', 'Quintas do Sol'),
+     ('Conselheiro Lafaiete', 'MG', 'Rancho Novo'),
+     ('Conselheiro Lafaiete', 'MG', 'Real de Queluz'),
+     ('Conselheiro Lafaiete', 'MG', 'Recanto dos Colibris'),
+     ('Conselheiro Lafaiete', 'MG', 'Rezende'),
+     ('Conselheiro Lafaiete', 'MG', 'Rochedo'),
+     ('Conselheiro Lafaiete', 'MG', 'Rosário'),
+     ('Conselheiro Lafaiete', 'MG', 'Sagrada Família'),
+     ('Conselheiro Lafaiete', 'MG', 'Sagrado Coração de Jesus'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Clara'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Cruz'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Efigênia'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Fé'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Luzia'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Maria'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Matilde'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Rosa'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Tereza'),
+     ('Conselheiro Lafaiete', 'MG', 'Santa Terezinha'),
+     ('Conselheiro Lafaiete', 'MG', 'Santo Agostinho'),
+     ('Conselheiro Lafaiete', 'MG', 'Santo Antônio'),
+     ('Conselheiro Lafaiete', 'MG', 'São Benedito'),
+     ('Conselheiro Lafaiete', 'MG', 'São Dimas'),
+     ('Conselheiro Lafaiete', 'MG', 'São Gonçalo do Brandão'),
+     ('Conselheiro Lafaiete', 'MG', 'São João'),
+     ('Conselheiro Lafaiete', 'MG', 'São Jorge'),
+     ('Conselheiro Lafaiete', 'MG', 'São José'),
+     ('Conselheiro Lafaiete', 'MG', 'São Judas Tadeu'),
+     ('Conselheiro Lafaiete', 'MG', 'São Lucas'),
+     ('Conselheiro Lafaiete', 'MG', 'São Marcos'),
+     ('Conselheiro Lafaiete', 'MG', 'São Sebastião'),
+     ('Conselheiro Lafaiete', 'MG', 'São Vicente de Paula'),
+     ('Conselheiro Lafaiete', 'MG', 'Satélite'),
+     ('Conselheiro Lafaiete', 'MG', 'Siderúrgico'),
+     ('Conselheiro Lafaiete', 'MG', 'Sion'),
+     ('Conselheiro Lafaiete', 'MG', 'Tamareiras'),
+     ('Conselheiro Lafaiete', 'MG', 'Tiradentes'),
+     ('Conselheiro Lafaiete', 'MG', 'Topázio'),
+     ('Conselheiro Lafaiete', 'MG', 'Triângulo'),
+     ('Conselheiro Lafaiete', 'MG', 'União'),
+     ('Conselheiro Lafaiete', 'MG', 'Vila das Andorinhas'),
+     ('Conselheiro Lafaiete', 'MG', 'Vila Veneza')
+   ON CONFLICT (cidade, uf, nome) DO NOTHING`,
+  `CREATE TABLE IF NOT EXISTS fornecedor_publico (
+     id bigserial PRIMARY KEY,
+     nome text NOT NULL,
+     documento text,
+     telefone text,
+     telefone_whatsapp boolean NOT NULL DEFAULT false,
+     endereco text,
+     observacao text,
+     pix_chave text,
+     email text NOT NULL UNIQUE,
+     senha_hash text,
+     cidade text NOT NULL,
+     situacao text NOT NULL DEFAULT 'pendente',
+     criado_em timestamptz NOT NULL DEFAULT now()
+   )`,
+  `CREATE TABLE IF NOT EXISTS fornecedor_publico_bairro (
+     fornecedor_publico_id bigint NOT NULL REFERENCES fornecedor_publico(id) ON DELETE CASCADE,
+     bairro_id bigint NOT NULL REFERENCES bairro(id) ON DELETE CASCADE,
+     PRIMARY KEY (fornecedor_publico_id, bairro_id)
+   )`,
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1691,4 +1831,99 @@ export async function resumoCascos(empresaId: number): Promise<ResumoCascos> {
     quantidadeTotal: total.rows[0].quantidade_total,
     maisAntigos: antigos.rows,
   };
+}
+
+// ---------- cadastro publico de fornecedor + bairros (db/23) ----------
+
+export type Bairro = { id: number; nome: string };
+
+export async function listarBairros(cidade: string): Promise<Bairro[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<Bairro>(
+    `SELECT id, nome FROM bairro WHERE lower(cidade) = lower($1) ORDER BY nome`,
+    [cidade.trim()]
+  );
+  return rows;
+}
+
+export async function cidadesComBairro(): Promise<string[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ cidade: string }>(
+    "SELECT DISTINCT cidade FROM bairro ORDER BY cidade"
+  );
+  return rows.map((r) => r.cidade);
+}
+
+export type FornecedorPublicoEntrada = {
+  nome: string;
+  documento?: string | null;
+  telefone?: string | null;
+  telefoneWhatsapp?: boolean;
+  endereco?: string | null;
+  observacao?: string | null;
+  pixChave?: string | null;
+  email: string;
+  senhaHash: string;
+  cidade: string;
+  bairroIds: number[];
+};
+
+/**
+ * Cadastro público de um fornecedor (nasce `pendente`, o super admin aprova).
+ * Separado do `fornecedor` de cada loja: aqui é o fornecedor se cadastrando na
+ * plataforma e dizendo os bairros que atende.
+ */
+export async function criarFornecedorPublico(d: FornecedorPublicoEntrada): Promise<number> {
+  await garantirSchema();
+  const cliente = await pool.connect();
+  try {
+    await cliente.query("BEGIN");
+
+    const jaUsuario = await cliente.query("SELECT 1 FROM usuario WHERE lower(email) = lower($1)", [d.email]);
+    const jaFornecedor = await cliente.query(
+      "SELECT 1 FROM fornecedor_publico WHERE lower(email) = lower($1)",
+      [d.email]
+    );
+    if (jaUsuario.rowCount || jaFornecedor.rowCount) {
+      await cliente.query("ROLLBACK");
+      throw Object.assign(new Error("Este e-mail já está cadastrado."), { code: "EMAIL_DUP" });
+    }
+
+    const { rows } = await cliente.query<{ id: number }>(
+      `INSERT INTO fornecedor_publico
+         (nome, documento, telefone, telefone_whatsapp, endereco, observacao, pix_chave, email, senha_hash, cidade)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+      [
+        d.nome,
+        d.documento?.replace(/\D/g, "") || null,
+        d.telefone || null,
+        Boolean(d.telefoneWhatsapp),
+        d.endereco || null,
+        d.observacao || null,
+        d.pixChave || null,
+        d.email.trim(),
+        d.senhaHash,
+        d.cidade.trim(),
+      ]
+    );
+    const id = rows[0].id;
+
+    const ids = Array.from(new Set(d.bairroIds.filter((n) => Number.isInteger(n))));
+    for (const bairroId of ids) {
+      await cliente.query(
+        `INSERT INTO fornecedor_publico_bairro (fornecedor_publico_id, bairro_id)
+         SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM bairro WHERE id = $2)
+         ON CONFLICT DO NOTHING`,
+        [id, bairroId]
+      );
+    }
+
+    await cliente.query("COMMIT");
+    return id;
+  } catch (e) {
+    await cliente.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    cliente.release();
+  }
 }

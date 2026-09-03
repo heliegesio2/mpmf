@@ -10,6 +10,8 @@ import CampoTelefone from "@/components/CampoTelefone";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
+type Tipo = "empresa" | "fornecedor";
+
 type Form = {
   nome: string;
   documento: string;
@@ -17,6 +19,8 @@ type Form = {
   telefoneWhatsapp: boolean;
   cidade: string;
   horario: string;
+  endereco: string;
+  observacao: string;
   pixChave: string;
   pixNome: string;
   responsavel: string;
@@ -31,6 +35,8 @@ const VAZIO: Form = {
   telefoneWhatsapp: false,
   cidade: "",
   horario: "",
+  endereco: "",
+  observacao: "",
   pixChave: "",
   pixNome: "",
   responsavel: "",
@@ -38,16 +44,24 @@ const VAZIO: Form = {
   senha: "",
 };
 
+const CIDADE_PADRAO = "Conselheiro Lafaiete";
+type Bairro = { id: number; nome: string };
+
 type Social = { email: string; nome: string; provedor: "google" | "facebook" } | null;
 
 function Conteudo() {
   const modoSocial = useSearchParams().get("social") === "1";
-  const [form, setForm] = useState<Form>(VAZIO);
+  const [tipo, setTipo] = useState<Tipo>("empresa");
+  const [form, setForm] = useState<Form>({ ...VAZIO, cidade: "" });
   const [social, setSocial] = useState<Social>(null);
   const [carregandoSocial, setCarregandoSocial] = useState(modoSocial);
   const [erro, setErro] = useState("");
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
+
+  // bairros (só no cadastro de fornecedor)
+  const [bairros, setBairros] = useState<Bairro[]>([]);
+  const [bairrosSel, setBairrosSel] = useState<Set<number>>(new Set());
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -82,6 +96,14 @@ function Conteudo() {
     })();
   }, [modoSocial]);
 
+  useEffect(() => {
+    if (tipo !== "fornecedor" || bairros.length > 0) return;
+    fetch(`/api/bairros?cidade=${encodeURIComponent(CIDADE_PADRAO)}`)
+      .then((r) => r.json())
+      .then((d) => setBairros(d.itens ?? []))
+      .catch(() => setBairros([]));
+  }, [tipo, bairros.length]);
+
   const comum = (k: keyof Form) => ({
     campo: k as string,
     valor: String(form[k]),
@@ -97,10 +119,44 @@ function Conteudo() {
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => setForm({ ...form, [k]: e.target.value }),
   });
 
+  function alternarBairro(id: number) {
+    setBairrosSel((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+    setErro("");
+  }
+
   async function enviar() {
     setEnviando(true);
     setErro("");
     try {
+      if (tipo === "fornecedor") {
+        const r = await fetch("/api/fornecedores/cadastro", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nome: form.nome,
+            documento: form.documento,
+            telefone: form.telefone,
+            telefoneWhatsapp: form.telefoneWhatsapp,
+            endereco: form.endereco,
+            observacao: form.observacao,
+            pixChave: form.pixChave,
+            email: form.email,
+            senha: form.senha,
+            cidade: form.cidade || CIDADE_PADRAO,
+            bairroIds: [...bairrosSel],
+          }),
+        });
+        const dados = await r.json();
+        if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível cadastrar.");
+        setEnviado(true);
+        return;
+      }
+
       const r = await fetch("/api/empresas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -122,8 +178,11 @@ function Conteudo() {
         <section className="cartao-login">
           <h1 className="titulo-cartao">Cadastro enviado</h1>
           <p className="pix-status">
-            Sua empresa entrou na fila de aprovação. Assim que for liberada, você poderá entrar
-            {social ? ` com o ${social.provedor === "google" ? "Google" : "Facebook"}.` : " com o e-mail e a senha que acabou de cadastrar."}
+            {tipo === "fornecedor"
+              ? "Seu cadastro de fornecedor entrou na fila de aprovação. Assim que for liberado, você poderá entrar com o e-mail e a senha que acabou de cadastrar."
+              : social
+                ? `Sua empresa entrou na fila de aprovação. Assim que for liberada, você poderá entrar com o ${social.provedor === "google" ? "Google" : "Facebook"}.`
+                : "Sua empresa entrou na fila de aprovação. Assim que for liberada, você poderá entrar com o e-mail e a senha que acabou de cadastrar."}
           </p>
           <Link className="botao primario grande" href="/login">
             Voltar para o login
@@ -148,11 +207,44 @@ function Conteudo() {
     );
   }
 
+  const ehFornecedor = tipo === "fornecedor";
+
   return (
     <main className="tela-login">
       <section className="cartao-login largo">
         <Logo className="grande logo-login" />
-        <h1 className="titulo-cartao">Cadastrar empresa</h1>
+        <h1 className="titulo-cartao">
+          {ehFornecedor ? "Cadastrar fornecedor" : "Cadastrar empresa"}
+        </h1>
+
+        {!social && (
+          <div className="tipo-cadastro">
+            <button
+              type="button"
+              className="tipo-opcao"
+              data-ativo={tipo === "empresa"}
+              onClick={() => { setTipo("empresa"); setErro(""); }}
+            >
+              <span className="tipo-check" aria-hidden="true" />
+              <span>
+                <strong>Sou uma empresa</strong>
+                <small>Mercadinho / loja que vai usar o PDV</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="tipo-opcao"
+              data-ativo={tipo === "fornecedor"}
+              onClick={() => { setTipo("fornecedor"); setErro(""); }}
+            >
+              <span className="tipo-check" aria-hidden="true" />
+              <span>
+                <strong>Sou fornecedor</strong>
+                <small>Abasteço as lojas — informo os bairros que atendo</small>
+              </span>
+            </button>
+          </div>
+        )}
 
         {social && (
           <p className="dica">
@@ -168,7 +260,12 @@ function Conteudo() {
         </p>
 
         <div className="grade-form">
-          <CampoVoz rotulo="Nome da empresa" placeholder="Mercadinho do Bairro" largo {...comum("nome")} />
+          <CampoVoz
+            rotulo={ehFornecedor ? "Nome / razão social" : "Nome da empresa"}
+            placeholder={ehFornecedor ? "Distribuidora do Zé" : "Mercadinho do Bairro"}
+            largo
+            {...comum("nome")}
+          />
           <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comum("documento")} />
           <CampoTelefone
             rotulo="Telefone"
@@ -176,22 +273,65 @@ function Conteudo() {
             ehWhatsapp={form.telefoneWhatsapp}
             aoMudarWhatsapp={(v) => setForm((f) => ({ ...f, telefoneWhatsapp: v }))}
           />
-          <CampoVoz rotulo="Cidade" placeholder="São Paulo" largo {...comum("cidade")} />
-          <CampoVoz
-            rotulo="Horário de funcionamento"
-            placeholder="Seg a sáb, 7h às 20h"
-            largo
-            {...comum("horario")}
-          />
-          <CampoVoz rotulo="Chave Pix" placeholder="CPF/CNPJ, celular, e-mail ou aleatória" largo {...comum("pixChave")} />
-          <CampoVoz rotulo="Nome do recebedor no Pix" placeholder="Como aparece pra quem paga" largo {...comum("pixNome")} />
-          <CampoVoz rotulo="Responsável" placeholder="Seu nome" largo {...comum("responsavel")} />
+
+          {ehFornecedor ? (
+            <>
+              <CampoVoz rotulo="Endereço" placeholder="Rua, número, bairro" largo {...comum("endereco")} />
+              <CampoVoz rotulo="Cidade que atende" placeholder={CIDADE_PADRAO} largo {...comum("cidade")} />
+              <CampoVoz
+                rotulo="Chave Pix (opcional)"
+                placeholder="CPF/CNPJ, celular, e-mail ou aleatória"
+                largo
+                {...comum("pixChave")}
+              />
+              <CampoVoz
+                rotulo="Observação (opcional)"
+                placeholder="Dias de entrega, pedido mínimo…"
+                largo
+                {...comum("observacao")}
+              />
+
+              <div className="rotulo largo">
+                <span className="campo-foto-rotulo">Bairros que você atende</span>
+                {bairros.length === 0 ? (
+                  <p className="dica">Carregando bairros de {form.cidade || CIDADE_PADRAO}…</p>
+                ) : (
+                  <div className="bairros-grade">
+                    {bairros.map((b) => (
+                      <label key={b.id} className="bairro-opcao" data-ativo={bairrosSel.has(b.id)}>
+                        <input
+                          type="checkbox"
+                          checked={bairrosSel.has(b.id)}
+                          onChange={() => alternarBairro(b.id)}
+                        />
+                        {b.nome}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <p className="dica">{bairrosSel.size} bairro(s) selecionado(s)</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <CampoVoz rotulo="Cidade" placeholder="São Paulo" largo {...comum("cidade")} />
+              <CampoVoz
+                rotulo="Horário de funcionamento"
+                placeholder="Seg a sáb, 7h às 20h"
+                largo
+                {...comum("horario")}
+              />
+              <CampoVoz rotulo="Chave Pix" placeholder="CPF/CNPJ, celular, e-mail ou aleatória" largo {...comum("pixChave")} />
+              <CampoVoz rotulo="Nome do recebedor no Pix" placeholder="Como aparece pra quem paga" largo {...comum("pixNome")} />
+              <CampoVoz rotulo="Responsável" placeholder="Seu nome" largo {...comum("responsavel")} />
+            </>
+          )}
 
           {!social && (
             <>
               <label className="rotulo">
                 E-mail de acesso
-                <input {...campo("email")} type="email" placeholder="voce@empresa.com" />
+                <input {...campo("email")} type="email" placeholder="voce@exemplo.com" />
               </label>
 
               <label className="rotulo">
@@ -208,7 +348,7 @@ function Conteudo() {
           {enviando ? "Enviando…" : "Enviar cadastro"}
         </button>
 
-        {!social && <BotoesSociais rotulo="Cadastrar" />}
+        {!social && !ehFornecedor && <BotoesSociais rotulo="Cadastrar" />}
 
         <p className="rodape-login">
           Já tem conta? <Link href="/login">Entrar</Link>

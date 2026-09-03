@@ -1649,6 +1649,78 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 }
 .cartao-login .ajuda-voz { margin: -4px 0 12px; }
 
+/* cadastro: escolher empresa x fornecedor */
+.tipo-cadastro {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 4px 0 16px;
+}
+.tipo-opcao {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 2px solid var(--verde-linha);
+  background: var(--verde-fundo);
+  color: var(--creme);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.tipo-opcao[data-ativo="true"] {
+  border-color: var(--ambar);
+  background: rgba(255, 197, 61, 0.08);
+}
+.tipo-opcao strong { display: block; font-size: 15px; }
+.tipo-opcao small { color: var(--creme-fraco); font-size: 12px; }
+.tipo-check {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  border-radius: 999px;
+  border: 2px solid var(--creme-fraco);
+}
+.tipo-opcao[data-ativo="true"] .tipo-check {
+  border-color: var(--ambar);
+  background: var(--ambar);
+  box-shadow: inset 0 0 0 3px var(--verde-fundo);
+}
+@media (max-width: 560px) {
+  .tipo-cadastro { grid-template-columns: 1fr; }
+}
+
+/* cadastro de fornecedor: bairros atendidos */
+.bairros-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 10px;
+  margin-top: 6px;
+  border: 1px solid var(--verde-linha);
+  border-radius: 10px;
+  background: var(--verde-fundo);
+}
+.bairro-opcao {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  border-radius: 7px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.bairro-opcao[data-ativo="true"] {
+  background: rgba(255, 197, 61, 0.14);
+  color: var(--ambar);
+  font-weight: 700;
+}
+.bairro-opcao input { width: 16px; height: 16px; flex: none; }
+
 .rodape-login { margin: 0; font-size: 14px; color: var(--creme-fraco); text-align: center; }
 .rodape-login a { color: var(--ambar); }
 
