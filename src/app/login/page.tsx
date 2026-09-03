@@ -15,17 +15,21 @@ const ERROS_OAUTH: Record<string, string> = {
   "falha-no-provedor": "O Google/Facebook não respondeu. Tente de novo.",
 };
 
+type Aba = "empresa" | "fornecedor";
+
 function Formulario() {
   const router = useRouter();
   const params = useSearchParams();
   const de = params.get("de");
   const erroUrl = params.get("erro");
+  const [aba, setAba] = useState<Aba>("empresa");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState(
     erroUrl ? ERROS_OAUTH[erroUrl] ?? decodeURIComponent(erroUrl) : ""
   );
   const [entrando, setEntrando] = useState(false);
+  const ehFornecedor = aba === "fornecedor";
 
   async function entrar() {
     setEntrando(true);
@@ -54,6 +58,34 @@ function Formulario() {
 
         <h1 className="titulo-cartao">Entrar</h1>
 
+        <div className="abas-cadastro" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={aba === "empresa"}
+            className="aba-cadastro"
+            data-ativo={aba === "empresa"}
+            onClick={() => { setAba("empresa"); setErro(""); }}
+          >
+            Empresa
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={aba === "fornecedor"}
+            className="aba-cadastro"
+            data-ativo={aba === "fornecedor"}
+            onClick={() => { setAba("fornecedor"); setErro(""); }}
+          >
+            Fornecedor
+          </button>
+        </div>
+        <p className="dica">
+          {ehFornecedor
+            ? "Entre com o e-mail e a senha do seu cadastro de fornecedor."
+            : "Entre com o e-mail e a senha da sua loja."}
+        </p>
+
         <label className="rotulo largo">
           E-mail
           <input
@@ -62,7 +94,7 @@ function Formulario() {
             onChange={(e) => setEmail(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && entrar()}
             autoComplete="username"
-            placeholder="voce@empresa.com"
+            placeholder={ehFornecedor ? "voce@fornecedor.com" : "voce@empresa.com"}
           />
         </label>
 
@@ -84,10 +116,14 @@ function Formulario() {
           {entrando ? "Entrando…" : "Entrar"}
         </button>
 
-        <BotoesSociais rotulo="Entrar" />
+        {!ehFornecedor && <BotoesSociais rotulo="Entrar" />}
 
         <p className="rodape-login">
-          Ainda não tem conta? <Link href="/cadastro">Cadastre sua empresa</Link>
+          {ehFornecedor ? (
+            <>Ainda não é cadastrado? <Link href="/cadastro?tipo=fornecedor">Cadastre-se como fornecedor</Link></>
+          ) : (
+            <>Ainda não tem conta? <Link href="/cadastro">Cadastre sua empresa</Link></>
+          )}
         </p>
       </section>
     </main>
