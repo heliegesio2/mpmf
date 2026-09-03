@@ -154,14 +154,19 @@ export default function Diretorio() {
 
                   <span className="botoes-linha">
                     {f.tem_catalogo && f.slug && (
-                      <a
-                        className="botao mini"
-                        href={`/p/${f.slug}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Ver catálogo
-                      </a>
+                      <>
+                        <Link className="botao mini" href={`/pedido/${f.slug}`}>
+                          Solicitar produto
+                        </Link>
+                        <a
+                          className="botao mini"
+                          href={`/p/${f.slug}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Ver catálogo
+                        </a>
+                      </>
                     )}
                     {importados.has(f.id) ? (
                       <span className="selo" data-situacao="aprovada">

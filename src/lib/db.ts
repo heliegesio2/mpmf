@@ -3,6 +3,12 @@ import {
   CATEGORIAS_FORNECEDOR_PRODUTO,
   type FornecedorProdutoEntrada,
 } from "@/lib/fornecedorProduto";
+import {
+  precoAplicavel,
+  proximoStatusValido,
+  type StatusPedido,
+  type UnidadePedido,
+} from "@/lib/pedido";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -334,6 +340,32 @@ const MIGRACOES_IDEMPOTENTES = [
   "CREATE INDEX IF NOT EXISTS ix_notificacao_usuario ON notificacao (usuario_id, lida, criado_em DESC) WHERE usuario_id IS NOT NULL",
   "CREATE INDEX IF NOT EXISTS ix_notificacao_fornecedor ON notificacao (fornecedor_publico_id, lida, criado_em DESC) WHERE fornecedor_publico_id IS NOT NULL",
   "CREATE UNIQUE INDEX IF NOT EXISTS ux_notificacao_chave ON notificacao (coalesce(usuario_id, 0), coalesce(fornecedor_publico_id, 0), chave) WHERE chave IS NOT NULL",
+  // db/28 — pedidos da loja pro fornecedor
+  `CREATE TABLE IF NOT EXISTS pedido (
+     id                    bigserial PRIMARY KEY,
+     empresa_id            bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     fornecedor_publico_id bigint NOT NULL REFERENCES fornecedor_publico(id) ON DELETE CASCADE,
+     criado_por_usuario_id bigint REFERENCES usuario(id) ON DELETE SET NULL,
+     status                text NOT NULL DEFAULT 'novo',
+     observacao            text,
+     motivo                text,
+     total                 numeric(10,2) NOT NULL DEFAULT 0,
+     criado_em             timestamptz NOT NULL DEFAULT now(),
+     atualizado_em         timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS ix_pedido_forn ON pedido (fornecedor_publico_id, criado_em DESC)",
+  "CREATE INDEX IF NOT EXISTS ix_pedido_empresa ON pedido (empresa_id, criado_em DESC)",
+  `CREATE TABLE IF NOT EXISTS pedido_item (
+     id                    bigserial PRIMARY KEY,
+     pedido_id             bigint NOT NULL REFERENCES pedido(id) ON DELETE CASCADE,
+     fornecedor_produto_id bigint REFERENCES fornecedor_produto(id) ON DELETE SET NULL,
+     nome                  text NOT NULL,
+     unidade               text NOT NULL DEFAULT 'un',
+     qtd                   integer NOT NULL,
+     preco_unit            numeric(10,2) NOT NULL,
+     subtotal              numeric(10,2) NOT NULL
+   )`,
+  "CREATE INDEX IF NOT EXISTS ix_pedido_item_pedido ON pedido_item (pedido_id)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -2645,4 +2677,230 @@ export async function sincronizarAvisosDeAnotacoes(
      ON CONFLICT (coalesce(usuario_id, 0), coalesce(fornecedor_publico_id, 0), chave) WHERE chave IS NOT NULL DO NOTHING`,
     [usuarioId, empresaId]
   );
+}
+
+// ---------- pedidos (db/28) ----------
+
+export type PedidoItem = {
+  id: number;
+  fornecedor_produto_id: number | null;
+  nome: string;
+  unidade: UnidadePedido;
+  qtd: number;
+  preco_unit: number;
+  subtotal: number;
+};
+
+export type PedidoLista = {
+  id: number;
+  status: StatusPedido;
+  observacao: string | null;
+  motivo: string | null;
+  total: number;
+  criado_em: string;
+  atualizado_em: string;
+  itens: PedidoItem[];
+  /** lado do fornecedor */
+  empresa_nome?: string;
+  empresa_cidade?: string | null;
+  empresa_telefone?: string | null;
+  empresa_whatsapp?: boolean;
+  /** lado da loja */
+  fornecedor_nome?: string;
+  fornecedor_slug?: string | null;
+  fornecedor_telefone?: string | null;
+  fornecedor_whatsapp?: boolean;
+};
+
+const ITENS_JSON = `COALESCE((
+    SELECT json_agg(json_build_object(
+      'id', i.id, 'fornecedor_produto_id', i.fornecedor_produto_id, 'nome', i.nome,
+      'unidade', i.unidade, 'qtd', i.qtd,
+      'preco_unit', i.preco_unit::float8, 'subtotal', i.subtotal::float8) ORDER BY i.id)
+    FROM pedido_item i WHERE i.pedido_id = p.id), '[]'::json) AS itens`;
+
+export async function criarPedido(
+  empresaId: number,
+  usuarioId: number,
+  fornecedorPublicoId: number,
+  d: {
+    observacao?: string | null;
+    itens: { fornecedorProdutoId: number; unidade: UnidadePedido; qtd: number }[];
+  }
+): Promise<{ id: number; total: number; nItens: number }> {
+  await garantirSchema();
+  const fp = await pool.query<{ situacao: string }>(
+    "SELECT situacao FROM fornecedor_publico WHERE id = $1",
+    [fornecedorPublicoId]
+  );
+  if (!fp.rows[0] || fp.rows[0].situacao !== "aprovado") {
+    throw Object.assign(new Error("Fornecedor indisponível."), { code: "FORN_INDISP" });
+  }
+
+  const cliente = await pool.connect();
+  try {
+    await cliente.query("BEGIN");
+    const ins = await cliente.query<{ id: number }>(
+      `INSERT INTO pedido (empresa_id, fornecedor_publico_id, criado_por_usuario_id, observacao)
+       VALUES ($1, $2, $3, $4) RETURNING id`,
+      [empresaId, fornecedorPublicoId, usuarioId || null, d.observacao?.trim() || null]
+    );
+    const pedidoId = ins.rows[0].id;
+
+    let total = 0;
+    let nItens = 0;
+    for (const it of d.itens ?? []) {
+      const qtd = Math.round(Number(it.qtd));
+      if (!Number.isInteger(qtd) || qtd <= 0) continue;
+      const unidade: UnidadePedido = it.unidade === "caixa" ? "caixa" : "un";
+      const prod = await cliente.query(
+        `SELECT nome, preco_unidade::float8 AS preco_unidade, preco_desconto::float8 AS preco_desconto,
+                desconto_qtd_min, preco_caixa::float8 AS preco_caixa
+           FROM fornecedor_produto
+          WHERE id = $1 AND fornecedor_publico_id = $2 FOR SHARE`,
+        [Number(it.fornecedorProdutoId), fornecedorPublicoId]
+      );
+      const p = prod.rows[0];
+      if (!p) continue;
+      const preco = precoAplicavel(p, unidade, qtd);
+      if (preco == null) continue;
+      const subtotal = Math.round(preco * qtd * 100) / 100;
+      total += subtotal;
+      nItens += 1;
+      await cliente.query(
+        `INSERT INTO pedido_item (pedido_id, fornecedor_produto_id, nome, unidade, qtd, preco_unit, subtotal)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [pedidoId, Number(it.fornecedorProdutoId), p.nome, unidade, qtd, preco, subtotal]
+      );
+    }
+    if (nItens === 0) {
+      await cliente.query("ROLLBACK");
+      throw Object.assign(new Error("Escolha ao menos um produto."), { code: "SEM_ITEM" });
+    }
+    total = Math.round(total * 100) / 100;
+    await cliente.query("UPDATE pedido SET total = $2 WHERE id = $1", [pedidoId, total]);
+    await cliente.query("COMMIT");
+    return { id: pedidoId, total, nItens };
+  } catch (e) {
+    await cliente.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    cliente.release();
+  }
+}
+
+export async function listarPedidosDoFornecedor(
+  fornecedorId: number,
+  situacao?: string
+): Promise<PedidoLista[]> {
+  await garantirSchema();
+  const params: unknown[] = [fornecedorId];
+  let filtro = "";
+  if (situacao && ["novo", "visto", "atendido", "cancelado"].includes(situacao)) {
+    params.push(situacao);
+    filtro = `AND p.status = $${params.length}`;
+  }
+  const { rows } = await pool.query<PedidoLista>(
+    `SELECT p.id, p.status, p.observacao, p.motivo, p.total::float8 AS total,
+            p.criado_em, p.atualizado_em,
+            e.nome AS empresa_nome, e.cidade AS empresa_cidade,
+            e.telefone AS empresa_telefone, e.telefone_whatsapp AS empresa_whatsapp,
+            ${ITENS_JSON}
+       FROM pedido p JOIN empresa e ON e.id = p.empresa_id
+      WHERE p.fornecedor_publico_id = $1 ${filtro}
+      ORDER BY p.criado_em DESC`,
+    params
+  );
+  return rows;
+}
+
+export async function listarPedidosDaLoja(empresaId: number): Promise<PedidoLista[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<PedidoLista>(
+    `SELECT p.id, p.status, p.observacao, p.motivo, p.total::float8 AS total,
+            p.criado_em, p.atualizado_em,
+            fp.nome AS fornecedor_nome, fp.slug AS fornecedor_slug,
+            fp.telefone AS fornecedor_telefone, fp.telefone_whatsapp AS fornecedor_whatsapp,
+            ${ITENS_JSON}
+       FROM pedido p JOIN fornecedor_publico fp ON fp.id = p.fornecedor_publico_id
+      WHERE p.empresa_id = $1
+      ORDER BY p.criado_em DESC`,
+    [empresaId]
+  );
+  return rows;
+}
+
+type EscopoPedido = { fornecedorId: number } | { empresaId: number };
+
+function condPedido(escopo: EscopoPedido): { where: string; valor: number } {
+  return "fornecedorId" in escopo
+    ? { where: "fornecedor_publico_id", valor: escopo.fornecedorId }
+    : { where: "empresa_id", valor: escopo.empresaId };
+}
+
+export async function pedidoDetalhe(id: number, escopo: EscopoPedido): Promise<PedidoLista | null> {
+  await garantirSchema();
+  const c = condPedido(escopo);
+  const { rows } = await pool.query<PedidoLista>(
+    `SELECT p.id, p.status, p.observacao, p.motivo, p.total::float8 AS total,
+            p.criado_em, p.atualizado_em,
+            e.nome AS empresa_nome, e.cidade AS empresa_cidade,
+            e.telefone AS empresa_telefone, e.telefone_whatsapp AS empresa_whatsapp,
+            fp.nome AS fornecedor_nome, fp.slug AS fornecedor_slug,
+            fp.telefone AS fornecedor_telefone, fp.telefone_whatsapp AS fornecedor_whatsapp,
+            ${ITENS_JSON}
+       FROM pedido p
+       JOIN empresa e ON e.id = p.empresa_id
+       JOIN fornecedor_publico fp ON fp.id = p.fornecedor_publico_id
+      WHERE p.id = $1 AND p.${c.where} = $2`,
+    [id, c.valor]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * Muda o status de um pedido. Valida a transição (proximoStatusValido) e o dono.
+ * Devolve o pedido atualizado + os dois lados, pra quem chamou notificar o outro.
+ */
+export async function mudarStatusPedido(
+  id: number,
+  escopo: EscopoPedido,
+  acao: "visto" | "atender" | "cancelar",
+  motivo?: string | null
+): Promise<
+  | {
+      pedido: { id: number; status: StatusPedido; total: number };
+      empresaId: number;
+      fornecedorId: number;
+      quem: "fornecedor" | "loja";
+    }
+  | { erro: "nao-encontrado" | "transicao-invalida" }
+> {
+  await garantirSchema();
+  const c = condPedido(escopo);
+  const atualQ = await pool.query<{ status: StatusPedido; empresa_id: number; fornecedor_publico_id: number }>(
+    `SELECT status, empresa_id, fornecedor_publico_id FROM pedido WHERE id = $1 AND ${c.where} = $2`,
+    [id, c.valor]
+  );
+  const linha = atualQ.rows[0];
+  if (!linha) return { erro: "nao-encontrado" };
+
+  const quem: "fornecedor" | "loja" = "fornecedorId" in escopo ? "fornecedor" : "loja";
+  const novo = proximoStatusValido(linha.status, acao, quem);
+  if (!novo) return { erro: "transicao-invalida" };
+
+  const upd = await pool.query<{ id: number; status: StatusPedido; total: number }>(
+    `UPDATE pedido
+        SET status = $2, motivo = CASE WHEN $2 = 'cancelado' THEN $3 ELSE motivo END,
+            atualizado_em = now()
+      WHERE id = $1
+      RETURNING id, status, total::float8 AS total`,
+    [id, novo, (motivo ?? "").trim() || null]
+  );
+  return {
+    pedido: upd.rows[0],
+    empresaId: linha.empresa_id,
+    fornecedorId: linha.fornecedor_publico_id,
+    quem,
+  };
 }

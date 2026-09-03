@@ -547,9 +547,26 @@ anotação** per user (`chave = anotacao:<id>:<usuario_id>`), run at the top of 
 read + follows `link`, "marcar todas como lidas"); in the loja menu as "🔔 Avisos" and in
 `GRUPO_FORNECEDOR`; `middleware.ts` lets `papel === "fornecedor"` reach it (`compartilhada`). `MenuLateral`
 polls `/api/notificacoes?resumo=1` per path and shows `.conta-badge` (red count on the account photo) +
-the menu `.menu-alerta`. Push/e-mail is **not** part of this — it's in-app only, per user. Next leva:
-**pedidos** (`pedido`/`pedido_item` `db/28`, `/pedido/<slug>` for the store, `/fornecedor/pedidos`) will
-call `notificar()` on each event.
+the menu `.menu-alerta`; the `.conta-badge` is a **button** that opens the `.avisos-menu` dropdown
+(Facebook-style: last 8 from `GET /api/notificacoes`, tap one → mark read + follow `link`, "marcar todas",
+"Ver todos" → `/notificacoes`). Push/e-mail is **not** part of this — it's in-app only, per user.
+
+**Pedidos loja→fornecedor (`db/28`)** — `pedido` (`empresa_id`, `fornecedor_publico_id`,
+`criado_por_usuario_id`, `status` novo|visto|atendido|cancelado, `observacao`, `motivo`, `total`) +
+`pedido_item` (snapshot `nome`/`unidade` un|caixa/`qtd`/`preco_unit`/`subtotal`). `src/lib/pedido.ts`
+(pure): `precoAplicavel(produto, unidade, qtd)` (un → `preco_desconto` se `qtd >= desconto_qtd_min`,
+senão `preco_unidade`; caixa → `preco_caixa`), `proximoStatusValido(atual, acao, quem)`, `quando(iso)`
+(rótulo relativo, reusado no dropdown e na tela de avisos). `db.ts` pedidos group: `criarPedido`
+(transação, `FOR SHARE` no `fornecedor_produto`, congela preço/nome), `listarPedidosDoFornecedor`
+(`ORDER BY criado_em DESC`, `json_agg` itens + join `empresa`), `listarPedidosDaLoja`, `pedidoDetalhe(id,
+escopo)` (escopo `{fornecedorId}` **ou** `{empresaId}` — dono sempre no `WHERE`), `mudarStatusPedido`.
+**Loja**: `/diretorio` ganha "Solicitar produto" → **`/pedido/[slug]`** (catálogo do fornecedor com qtd
+un/caixa por produto + observação → `POST /api/pedidos` → notifica o fornecedor); **`/pedidos`**
+(list-only, mais novo primeiro, cancela enquanto `novo`) no menu Cadastros. Rotas loja (`exigirEmpresa`):
+`GET/POST /api/pedidos`, `GET/PATCH /api/pedidos/[id]`, `GET /api/pedidos/catalogo/[slug]`.
+**Fornecedor**: **`/fornecedor/pedidos`** (abas novos/atendidos/todos, marca visto/atendido/cancelado c/
+motivo → notifica a loja via `notificarUsuariosDaEmpresa`) no `GRUPO_FORNECEDOR`. Rotas
+(`exigirFornecedor`): `GET /api/fornecedor/pedidos?situacao=`, `GET/PATCH /api/fornecedor/pedidos/[id]`.
 
 `GET/PUT /api/auth/perfil` — PUT takes `{nome, foto?}` (`foto` tri-state: key absent = keep, `""` = clear,
 data URL = replace, same convention as `atualizarProduto`) and re-mints the session cookie so the new name

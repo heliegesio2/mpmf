@@ -6,6 +6,18 @@ import { useEffect, useState } from "react";
 import AjusteFonte from "@/components/AjusteFonte";
 import Logo from "@/components/Logo";
 import { esquecerCarrinho, useCarrinho } from "@/lib/carrinho";
+import { quando } from "@/lib/pedido";
+
+type Aviso = {
+  id: number;
+  tipo: string;
+  titulo: string;
+  corpo: string | null;
+  link: string | null;
+  lida: boolean;
+  criado_em: string;
+};
+const ICONE_AVISO: Record<string, string> = { anotacao: "📝", pedido: "📦", cadastro: "🏢", sistema: "🔔" };
 
 type Sessao = {
   nome: string;
@@ -65,6 +77,7 @@ const GRUPOS_LOJA: GrupoMenu[] = [
       { href: "/clientes", rotulo: "Clientes", descricao: "Cadastro com foto, para fiado" },
       { href: "/fornecedores", rotulo: "Fornecedores", descricao: "Cadastro de quem te abastece" },
       { href: "/diretorio", rotulo: "Buscar fornecedores", descricao: "Fornecedores da região no diretório" },
+      { href: "/pedidos", rotulo: "Meus pedidos", descricao: "Pedidos enviados aos fornecedores" },
       { href: "/cascos", rotulo: "Empréstimos", descricao: "Item retirado por um cliente" },
     ],
   },
@@ -90,6 +103,7 @@ const GRUPO_FORNECEDOR: GrupoMenu = {
   itens: [
     { href: "/fornecedor", rotulo: "Meu cadastro", descricao: "Dados e bairros que você atende" },
     { href: "/fornecedor/produtos", rotulo: "Meus produtos", descricao: "Catálogo e portfólio" },
+    { href: "/fornecedor/pedidos", rotulo: "Meus pedidos", descricao: "Pedidos recebidos das lojas" },
     { href: "/notificacoes", rotulo: "Avisos", descricao: "Novidades e lembretes" },
   ],
 };
@@ -119,6 +133,8 @@ export default function MenuLateral() {
   const [sessao, setSessao] = useState<Sessao | null>(null);
   const [alertasAnotacoes, setAlertasAnotacoes] = useState(0);
   const [avisosNaoLidos, setAvisosNaoLidos] = useState(0);
+  const [avisosAberto, setAvisosAberto] = useState(false);
+  const [avisosLista, setAvisosLista] = useState<Aviso[]>([]);
   const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(
     () => new Set(["balcao", grupoDoCaminho(caminho)].filter(Boolean) as string[])
   );
@@ -127,10 +143,46 @@ export default function MenuLateral() {
   useEffect(() => {
     setAberto(false);
     setContaAberta(false);
+    setAvisosAberto(false);
     // abre o grupo que contém a tela atual (sem fechar os outros)
     const id = grupoDoCaminho(caminho);
     if (id) setGruposAbertos((s) => (s.has(id) ? s : new Set(s).add(id)));
   }, [caminho]);
+
+  async function abrirAvisos() {
+    const abrindo = !avisosAberto;
+    setAvisosAberto(abrindo);
+    setContaAberta(false);
+    if (abrindo) {
+      try {
+        const d = await fetch("/api/notificacoes").then((r) => r.json());
+        setAvisosLista((d.itens ?? []).slice(0, 8));
+        setAvisosNaoLidos(Number(d.naoLidas) || 0);
+      } catch {
+        /* deixa a lista como está */
+      }
+    }
+  }
+
+  async function abrirAviso(a: Aviso) {
+    if (!a.lida) {
+      setAvisosLista((xs) => xs.map((x) => (x.id === a.id ? { ...x, lida: true } : x)));
+      setAvisosNaoLidos((n) => Math.max(0, n - 1));
+      fetch(`/api/notificacoes/${a.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lida: true }),
+      }).catch(() => {});
+    }
+    setAvisosAberto(false);
+    if (a.link) router.push(a.link);
+  }
+
+  async function marcarTodosAvisos() {
+    setAvisosLista((xs) => xs.map((x) => ({ ...x, lida: true })));
+    setAvisosNaoLidos(0);
+    await fetch("/api/notificacoes/marcar-todas", { method: "POST" }).catch(() => {});
+  }
 
   useEffect(() => {
     fetch("/api/auth/sessao")
@@ -262,13 +314,58 @@ export default function MenuLateral() {
         )}
       </button>
       {avisosNaoLidos > 0 && (
-        <Link
-          href="/notificacoes"
+        <button
+          type="button"
           className="conta-badge"
+          onClick={abrirAvisos}
           aria-label={`${avisosNaoLidos} aviso(s) não lido(s)`}
+          aria-expanded={avisosAberto}
         >
           {avisosNaoLidos > 9 ? "9+" : avisosNaoLidos}
-        </Link>
+        </button>
+      )}
+
+      {avisosAberto && (
+        <>
+          <div className="fundo-conta" onClick={() => setAvisosAberto(false)} />
+          <div className="avisos-menu" role="menu">
+            <div className="avisos-menu-cabeca">
+              <strong>Novidades</strong>
+              {avisosNaoLidos > 0 && (
+                <button type="button" onClick={marcarTodosAvisos}>
+                  Marcar todas lidas
+                </button>
+              )}
+            </div>
+            {avisosLista.length === 0 ? (
+              <p className="avisos-menu-vazio">Nenhum aviso.</p>
+            ) : (
+              <ul className="avisos-menu-lista">
+                {avisosLista.map((a) => (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      className="avisos-menu-item"
+                      data-lida={a.lida}
+                      onClick={() => abrirAviso(a)}
+                    >
+                      <span className="avisos-menu-icone" aria-hidden="true">
+                        {ICONE_AVISO[a.tipo] ?? "🔔"}
+                      </span>
+                      <span className="avisos-menu-texto">
+                        <span className="avisos-menu-titulo">{a.titulo}</span>
+                        <span className="avisos-menu-quando">{quando(a.criado_em)}</span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Link href="/notificacoes" className="avisos-menu-rodape" onClick={() => setAvisosAberto(false)}>
+              Ver todos os avisos
+            </Link>
+          </div>
+        </>
       )}
 
       {contaAberta && (

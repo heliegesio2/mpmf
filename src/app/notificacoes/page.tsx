@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { quando } from "@/lib/pedido";
 
 type Aviso = {
   id: number;
@@ -19,27 +20,6 @@ const ICONE: Record<string, string> = {
   cadastro: "🏢",
   sistema: "🔔",
 };
-
-/** "agora", "há 20 min", "hoje 14:32", "ontem", "3 set", "3 set 2025" */
-function quando(iso: string): string {
-  const d = new Date(iso);
-  const agora = new Date();
-  const min = Math.round((agora.getTime() - d.getTime()) / 60000);
-  if (min < 1) return "agora";
-  if (min < 60) return `há ${min} min`;
-
-  const dia = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diff = Math.round((dia(agora) - dia(d)) / 86400000);
-  const hora = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-  if (diff === 0) return `hoje ${hora}`;
-  if (diff === 1) return `ontem ${hora}`;
-  const data = d.toLocaleDateString("pt-BR", {
-    day: "numeric",
-    month: "short",
-    ...(d.getFullYear() !== agora.getFullYear() ? { year: "numeric" } : {}),
-  });
-  return data;
-}
 
 export default function Notificacoes() {
   const router = useRouter();
