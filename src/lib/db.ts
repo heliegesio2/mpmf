@@ -2326,6 +2326,20 @@ export async function excluirProdutoFornecedor(fornecedorId: number, id: number)
   return (r.rowCount ?? 0) > 0;
 }
 
+/** Troca só a foto de um produto (add rápido pela lista). */
+export async function atualizarFotoProdutoFornecedor(
+  fornecedorId: number,
+  id: number,
+  foto: string
+): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "UPDATE fornecedor_produto SET foto = NULLIF($3, '') WHERE id = $1 AND fornecedor_publico_id = $2",
+    [id, fornecedorId, foto]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
 export async function fotoProdutoFornecedor(fornecedorId: number, id: number): Promise<string | null> {
   await garantirSchema();
   const { rows } = await pool.query<{ foto: string | null }>(

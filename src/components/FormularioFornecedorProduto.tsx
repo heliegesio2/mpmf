@@ -226,6 +226,7 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
           <div className="rotulo largo">
             <CampoFoto
               rotulo="Foto do produto"
+              semCaptura
               preview={previewFoto}
               aoEscolher={aoEscolherFoto}
               aoRemover={

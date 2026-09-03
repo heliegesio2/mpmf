@@ -111,7 +111,7 @@ export default function CampoFoto({
       ) : (
         <label htmlFor={id} className="campo-foto-vazio" data-ocupado={ocupado}>
           <span aria-hidden="true">📷</span>
-          {ocupado ? "Abrindo…" : "Tirar foto"}
+          {ocupado ? "Abrindo…" : semCaptura ? "Tirar ou enviar foto" : "Tirar foto"}
         </label>
       )}
 

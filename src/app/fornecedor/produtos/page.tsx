@@ -5,6 +5,7 @@ import Link from "next/link";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
 import BotaoCopiar from "@/components/BotaoCopiar";
 import { linhasDePreco } from "@/lib/fornecedorProduto";
+import { comprimirParaDataURL } from "@/lib/imagemCliente";
 
 type Produto = {
   id: number;
@@ -37,6 +38,7 @@ export default function ProdutosFornecedor() {
   const [temPdf, setTemPdf] = useState(false);
   const [enviandoPdf, setEnviandoPdf] = useState(false);
   const pdfInput = useRef<HTMLInputElement>(null);
+  const [fotoDoCard, setFotoDoCard] = useState<number | null>(null);
 
   const carregar = useCallback(async () => {
     try {
@@ -91,6 +93,29 @@ export default function ProdutosFornecedor() {
     } catch {
       setErro(true);
       setAviso("Não foi possível remover.");
+    }
+  }
+
+  async function fotoDireta(id: number, arquivo: File | undefined) {
+    if (!arquivo) return;
+    setFotoDoCard(id);
+    setErro(false);
+    try {
+      const dataUrl = await comprimirParaDataURL(arquivo);
+      const r = await fetch(`/api/fornecedor/produtos/${id}/foto`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ foto: dataUrl }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
+      setAviso("Foto do produto salva.");
+      await carregar();
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não consegui usar essa foto.");
+    } finally {
+      setFotoDoCard(null);
     }
   }
 
@@ -149,6 +174,16 @@ export default function ProdutosFornecedor() {
         <Link href="/fornecedor/produtos/novo" className="botao primario">
           + Novo produto
         </Link>
+        {slug && (
+          <a
+            className="botao neutro"
+            href={`/p/${slug}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            👁 Ver portfólio
+          </a>
+        )}
         <button
           type="button"
           className="botao neutro"
@@ -248,9 +283,19 @@ export default function ProdutosFornecedor() {
                 {p.tem_foto ? (
                   <FotoAmpliavel src={`/api/fornecedor/produtos/${p.id}/foto`} alt={p.nome} />
                 ) : (
-                  <span className="sem-foto" aria-hidden="true">
-                    📦
-                  </span>
+                  <label className="sem-foto" title="Tirar ou enviar uma foto">
+                    <span aria-hidden="true">{fotoDoCard === p.id ? "⏳" : "📷"}</span>
+                    <span className="sem-foto-dica">
+                      {fotoDoCard === p.id ? "Salvando…" : "Adicionar foto"}
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      disabled={fotoDoCard === p.id}
+                      onChange={(e) => fotoDireta(p.id, e.target.files?.[0])}
+                    />
+                  </label>
                 )}
               </div>
               <div className="card-produto-corpo">
