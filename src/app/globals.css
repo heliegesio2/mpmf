@@ -1133,6 +1133,28 @@ html[data-fonte="grande"] { zoom: 1.5; }
   width: 20px;
   height: 20px;
 }
+.anotacao-foto {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  background: var(--surface-2);
+}
+.anotacao-foto img { width: 100%; height: 100%; object-fit: cover; }
+.anotacao-foto-add {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--ink-dim);
+}
+.anotacao-foto-add:hover { color: var(--azul); }
 .anotacao-texto {
   display: block;
   white-space: pre-wrap;

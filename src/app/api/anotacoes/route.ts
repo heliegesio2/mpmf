@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   }
 }
 
-/** POST /api/anotacoes { texto, dataAlerta? } */
+/** POST /api/anotacoes { texto, dataAlerta?, foto? } */
 export async function POST(request: Request) {
   const { empresaId, erro } = await exigirEmpresa();
   if (erro) return erro;
@@ -33,8 +33,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ erro: "Escreva a anotação." }, { status: 400 });
     }
     const dataAlerta = typeof c.dataAlerta === "string" && DIA.test(c.dataAlerta) ? c.dataAlerta : null;
+    const foto = typeof c.foto === "string" && c.foto.startsWith("data:image/") ? c.foto : undefined;
 
-    const item = await criarAnotacao(empresaId, texto.slice(0, 2000), dataAlerta);
+    const item = await criarAnotacao(empresaId, texto.slice(0, 2000), dataAlerta, foto);
     return NextResponse.json({ item }, { status: 201 });
   } catch (e) {
     console.error("Falha ao criar anotação:", e);

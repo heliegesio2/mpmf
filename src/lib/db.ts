@@ -366,6 +366,8 @@ const MIGRACOES_IDEMPOTENTES = [
      subtotal              numeric(10,2) NOT NULL
    )`,
   "CREATE INDEX IF NOT EXISTS ix_pedido_item_pedido ON pedido_item (pedido_id)",
+  // db/29 — foto na anotação
+  "ALTER TABLE anotacao ADD COLUMN IF NOT EXISTS foto text",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1112,9 +1114,11 @@ export type Anotacao = {
   data_alerta: string | null;
   concluida: boolean;
   criado_em: string;
+  tem_foto: boolean;
 };
 
-const CAMPOS_ANOTACAO = "id, texto, data_alerta::text AS data_alerta, concluida, criado_em";
+const CAMPOS_ANOTACAO =
+  "id, texto, data_alerta::text AS data_alerta, concluida, criado_em, (foto IS NOT NULL AND foto <> '') AS tem_foto";
 
 export async function listarAnotacoes(empresaId: number, situacao?: string): Promise<Anotacao[]> {
   await garantirSchema();
@@ -1137,16 +1141,39 @@ export async function listarAnotacoes(empresaId: number, situacao?: string): Pro
 export async function criarAnotacao(
   empresaId: number,
   texto: string,
-  dataAlerta: string | null
+  dataAlerta: string | null,
+  foto?: string
 ): Promise<Anotacao> {
   await garantirSchema();
   const { rows } = await pool.query<Anotacao>(
-    `INSERT INTO anotacao (empresa_id, texto, data_alerta)
-     VALUES ($1, $2, $3::date)
+    `INSERT INTO anotacao (empresa_id, texto, data_alerta, foto)
+     VALUES ($1, $2, $3::date, NULLIF($4, ''))
      RETURNING ${CAMPOS_ANOTACAO}`,
-    [empresaId, texto, dataAlerta || null]
+    [empresaId, texto, dataAlerta || null, foto ?? ""]
   );
   return rows[0];
+}
+
+export async function fotoAnotacao(empresaId: number, id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ foto: string | null }>(
+    "SELECT foto FROM anotacao WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return rows[0]?.foto || null;
+}
+
+export async function atualizarFotoAnotacao(
+  empresaId: number,
+  id: number,
+  foto: string
+): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "UPDATE anotacao SET foto = NULLIF($3, '') WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId, foto]
+  );
+  return (r.rowCount ?? 0) > 0;
 }
 
 /** Alterna concluida, ou (com `texto`/`dataAlerta`) edita o conteúdo. */

@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import CampoFoto from "@/components/CampoFoto";
+import FotoAmpliavel from "@/components/FotoAmpliavel";
+import { comprimirParaDataURL } from "@/lib/imagemCliente";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -10,6 +13,7 @@ type Anotacao = {
   data_alerta: string | null;
   concluida: boolean;
   criado_em: string;
+  tem_foto: boolean;
 };
 
 const FILTROS = [
@@ -36,6 +40,8 @@ export default function Anotacoes() {
   const [carregando, setCarregando] = useState(true);
   const [texto, setTexto] = useState("");
   const [dataAlerta, setDataAlerta] = useState("");
+  const [foto, setFoto] = useState("");
+  const [fotoDoCard, setFotoDoCard] = useState<number | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
@@ -80,13 +86,18 @@ export default function Anotacoes() {
       const r = await fetch("/api/anotacoes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ texto: texto.trim(), dataAlerta: dataAlerta || undefined }),
+        body: JSON.stringify({
+          texto: texto.trim(),
+          dataAlerta: dataAlerta || undefined,
+          foto: foto || undefined,
+        }),
       });
       const dados = await r.json();
       if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
       setAviso("Anotação salva.");
       setTexto("");
       setDataAlerta("");
+      setFoto("");
       setFiltro("abertas");
       await carregar("abertas");
     } catch (e) {
@@ -124,6 +135,27 @@ export default function Anotacoes() {
     } catch {
       setErro(true);
       setAviso("Não foi possível salvar.");
+    }
+  }
+
+  async function fotoDireta(a: Anotacao, arquivo: File | undefined) {
+    if (!arquivo) return;
+    setFotoDoCard(a.id);
+    setErro(false);
+    try {
+      const dataUrl = await comprimirParaDataURL(arquivo);
+      const r = await fetch(`/api/anotacoes/${a.id}/foto`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ foto: dataUrl }),
+      });
+      if (!r.ok) throw new Error();
+      await carregar(filtro);
+    } catch {
+      setErro(true);
+      setAviso("Não consegui usar essa foto.");
+    } finally {
+      setFotoDoCard(null);
     }
   }
 
@@ -183,6 +215,19 @@ export default function Anotacoes() {
               />
             </span>
           </label>
+          <div className="rotulo">
+            <CampoFoto
+              rotulo="Foto (opcional)"
+              semCaptura
+              preview={foto}
+              aoEscolher={setFoto}
+              aoRemover={foto ? () => setFoto("") : undefined}
+              aoErro={(m) => {
+                setErro(true);
+                setAviso(m);
+              }}
+            />
+          </div>
         </div>
 
         <div className="acoes">
@@ -231,6 +276,23 @@ export default function Anotacoes() {
                     aria-label="Concluir"
                   />
                 </label>
+
+                <span className="anotacao-foto">
+                  {a.tem_foto ? (
+                    <FotoAmpliavel src={`/api/anotacoes/${a.id}/foto`} alt="" />
+                  ) : (
+                    <label className="anotacao-foto-add" title="Tirar ou enviar uma foto">
+                      {fotoDoCard === a.id ? "⏳" : "📷"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        disabled={fotoDoCard === a.id}
+                        onChange={(e) => fotoDireta(a, e.target.files?.[0])}
+                      />
+                    </label>
+                  )}
+                </span>
 
                 <span className="rotulo-item">
                   <span className="anotacao-texto">{a.texto}</span>
