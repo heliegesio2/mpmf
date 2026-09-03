@@ -50,6 +50,7 @@ export default function Cascos() {
   const [itens, setItens] = useState<Casco[]>([]);
   const [filtro, setFiltro] = useState("emprestados");
   const [carregando, setCarregando] = useState(true);
+  const [criando, setCriando] = useState(false);
   const [form, setForm] = useState<NovoCasco>(VAZIO);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
@@ -141,6 +142,7 @@ export default function Cascos() {
 
       setAviso("Empréstimo registrado.");
       setForm(VAZIO);
+      setCriando(false);
       await carregar(filtro);
     } catch (e) {
       setErro(true);
@@ -181,10 +183,18 @@ export default function Cascos() {
 
   return (
     <main className="tela">
-      <header className="marca">
-        Empréstimos <span>•</span> {itens.length} na lista
-      </header>
+      <div className="cabecalho-tela">
+        <header className="marca">
+          Empréstimos <span>•</span> {itens.length} na lista
+        </header>
+        {!criando && (
+          <button className="botao mini" onClick={() => { setCriando(true); setForm(VAZIO); setAviso(""); setErro(false); }}>
+            + Novo empréstimo
+          </button>
+        )}
+      </div>
 
+      {criando && (
       <section className="cartao">
         <h2 className="titulo-cartao">Novo empréstimo</h2>
 
@@ -211,12 +221,22 @@ export default function Cascos() {
           <button className="botao primario" onClick={salvar} disabled={salvando || !formularioValido}>
             {salvando ? "Salvando…" : "Registrar empréstimo"}
           </button>
+          <button className="botao neutro" onClick={() => setCriando(false)} disabled={salvando}>
+            Cancelar
+          </button>
         </div>
 
         <p className="dica" data-erro={erro} role="status" aria-live="polite">
           {aviso}
         </p>
       </section>
+      )}
+
+      {!criando && aviso && (
+        <p className="dica" data-erro={erro} role="status" aria-live="polite">
+          {aviso}
+        </p>
+      )}
 
       <div className="abas">
         {FILTROS.map((f) => (
