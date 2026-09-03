@@ -202,6 +202,21 @@ voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen. The new
 `compra × 1.38` (`MARGEM_VENDA = 0.38`, same rule as "Importar compra"), still editable; the confirm route
 requires both and passes `precoCompra` to `criarProduto`.
 
+### Catálogo por vídeo de supermercado (`/produtos/comercios-grandes`)
+
+Módulo "Comércios grandes": o lojista sobe um **vídeo** gravado andando pelos corredores de um
+supermercado com as **etiquetas de preço à mostra**. **Só visão, sem áudio/transcrição** — o preço sai
+da etiqueta na prateleira. `src/lib/quadrosDeVideo.ts` extrai quadros **no navegador** (sem ffmpeg:
+`<video>` escondido + `currentTime` de 2 em 2 s + `canvas`, ~1100px, teto 70 quadros). A tela mostra o
+**passo a passo** (`.passos`: Importando → Extraindo quadros (X/Y) → Lendo os produtos (lote X/Y) →
+Pronto) e vai **preenchendo a lista de produtos ao vivo** conforme cada lote volta. Lotes de 4 quadros →
+`POST /api/produtos/comercios-grandes` (`src/lib/lerMercadoVideo.ts`, vision, `output_config`,
+`ANTHROPIC_MODEL || claude-opus-5`) → `[{nome, preco|null, quadro, jaCadastrado}]`; `buscarProduto`
+marca os que já existem. Dedup por nome normalizado (o quadro `quadro` do lote vira a foto do produto).
+Revisão: nome / preço de venda (da etiqueta) / preço de compra opcional / incluir → `POST
+.../comercios-grandes/confirmar` → `criarProduto` (estoque 0, `unidade`/`tipo_venda` = unidade, foto
+comprimida). Custo: ~alguns centavos de visão Opus por vídeo. Sem `ANTHROPIC_API_KEY` → 500 amigável.
+
 ### Stock-by-video (`/produtos/estoque-video`)
 
 The shopkeeper **records** (in-app camera, not a file pick) a short video walking the shelf and

@@ -57,6 +57,7 @@ const GRUPOS_LOJA: GrupoMenu[] = [
     itens: [
       { href: "/produtos", rotulo: "Produtos", descricao: "Incluir, alterar, excluir" },
       { href: "/compras/importar", rotulo: "Importar compra", descricao: "Foto do cupom vira preço" },
+      { href: "/produtos/comercios-grandes", rotulo: "Comércios grandes", descricao: "Vídeo de supermercado vira catálogo" },
     ],
   },
   {
