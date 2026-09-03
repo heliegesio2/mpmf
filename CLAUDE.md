@@ -166,20 +166,37 @@ needs more tolerance than typo-correction does.
 
 ### Purchase-receipt import (`/compras/importar`)
 
-`src/lib/importarCompra.ts` sends a photo of a supplier's purchase receipt (NFC-e) to Claude
+`src/lib/importarCompra.ts` (`extrairCupom`) sends a photo of a supplier's purchase receipt (NFC-e) to Claude
 (`@anthropic-ai/sdk`, model `ANTHROPIC_MODEL` env var or `claude-opus-5` default) as a vision request
-constrained with `output_config.format` (structured outputs) so the response is guaranteed-parseable JSON
-line items — no free-text parsing. The prompt explicitly tells the model to cross-check smudged/creased
-digits against `quantidade × valorUnitario ≈ valorTotal`, which in practice resolves illegible printed
-numbers correctly. `POST /api/importar-compra` (multipart) runs the extraction and, per item, calls the
+constrained with `output_config.format` (structured outputs) so the response is guaranteed-parseable JSON —
+no free-text parsing. It returns `{ nota: {chaveAcesso, numero, emitente}, itens: [...] }`. The prompt
+explicitly tells the model to cross-check smudged/creased digits against `quantidade × valorUnitario ≈
+valorTotal`, which in practice resolves illegible printed numbers correctly, and to read the 44-digit
+chave de acesso. `POST /api/importar-compra` (multipart) runs the extraction and, per item, calls the
 existing `buscarProduto` (the same fuzzy-match SQL function the voice search uses) to suggest a matching
 catalog product above a similarity threshold — nothing is written to the database at this step. The client
-reviews/edits every line (matched-product toggle, editable prices) before `POST /api/importar-compra/confirmar`
-applies it: matched items go through `atualizarProduto` (preserving all fields except price), unmatched ones
-create a new product via `criarProduto`. Sale price is always purchase price × 1.38, rounded to cents; stock
-(`estoque`) is deliberately left untouched by this flow. The upload photo is downscaled/re-encoded to JPEG
-client-side (`compras/importar/page.tsx`, canvas, max 1800px long edge) before it's sent — both to stay under
-serverless request-body limits and to control vision token cost.
+reviews/edits every line (matched-product toggle, editable **preço de compra + preço de venda**) before
+`POST /api/importar-compra/confirmar` applies it: matched items go through `atualizarProduto` (preserving
+all fields except price), unmatched ones create a new product via `criarProduto`. Stock (`estoque`) is
+deliberately left untouched by this flow. The **photo capture is `<CameraFoto max={1}>`** (real camera, not
+a file picker) and analysis fires automatically once a photo is added.
+
+**Margem de lucro** — `empresa.margem_padrao` (`db/30`, numeric, default 38) is the store's target profit
+% over purchase price. `GET/PUT /api/importar-compra/margem` (`margemPadraoEmpresa` /
+`definirMargemPadraoEmpresa`). The screen shows it as an editable field up top; the read route uses it for
+the suggested sale price (`compra × (1 + margem/100)`), and changing the field recomputes every line's
+sale price client-side and saves the new default. `db/09`'s old hardcoded `× 1.38` is gone here (the
+shelf-photo / video flows still use their own `MARGEM_VENDA = 0.38`).
+
+**Nota repetida** — `compra_nota` (`db/30`: `empresa_id`, `chave`, `hash_imagem` sha256 of the uploaded
+bytes, `numero`, `emitente`, `itens`). `POST /api/importar-compra` computes the image hash and calls
+`notaCompraExistente(empresaId, hash, chave)` — **first by hash before spending a vision call** (identical
+re-upload), then by the extracted chave de acesso (re-photographed note). A hit returns `{ jaProcessada:
+true, aviso }` and the UI shows a "Nota repetida" card instead of line items. The note is recorded only at
+`POST /api/importar-compra/confirmar` (after the products are actually written), which also re-checks and
+409s on a repeat. The client round-trips `nota: {hashImagem, chave, numero, emitente}` from read to confirm.
+The upload photo is downscaled/re-encoded to JPEG client-side (`comprimirImagem`, max 1800px long edge)
+before it's sent — both to stay under serverless request-body limits and to control vision token cost.
 
 The client-side JPEG compression (`src/lib/imagemCliente.ts`, `comprimirImagem`) is shared with the shelf-photo
 stock update below — don't duplicate it per screen.

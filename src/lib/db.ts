@@ -368,6 +368,21 @@ const MIGRACOES_IDEMPOTENTES = [
   "CREATE INDEX IF NOT EXISTS ix_pedido_item_pedido ON pedido_item (pedido_id)",
   // db/29 — foto na anotação
   "ALTER TABLE anotacao ADD COLUMN IF NOT EXISTS foto text",
+  // db/30 — importar compra: margem padrão da loja + notas já processadas
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS margem_padrao numeric(6,2) NOT NULL DEFAULT 38",
+  `CREATE TABLE IF NOT EXISTS compra_nota (
+     id          bigserial PRIMARY KEY,
+     empresa_id  bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     chave       text,
+     hash_imagem text NOT NULL,
+     numero      text,
+     emitente    text,
+     itens       integer NOT NULL DEFAULT 0,
+     criado_em   timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE UNIQUE INDEX IF NOT EXISTS ux_compra_nota_hash ON compra_nota (empresa_id, hash_imagem)",
+  "CREATE INDEX IF NOT EXISTS ix_compra_nota_chave ON compra_nota (empresa_id, chave) WHERE chave IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS ix_compra_nota_empresa ON compra_nota (empresa_id, criado_em DESC)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -855,6 +870,81 @@ export async function salvarConfigEmpresa(
     ]
   );
   return rows[0] ?? null;
+}
+
+// ---------- importar compra (margem de lucro + notas já processadas) ----------
+
+const MARGEM_PADRAO = 38;
+
+/** Percentual de lucro que a loja quer sobre o preço de compra (default 38%). */
+export async function margemPadraoEmpresa(empresaId: number): Promise<number> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ margem_padrao: string }>(
+    "SELECT margem_padrao FROM empresa WHERE id = $1",
+    [empresaId]
+  );
+  const v = Number(rows[0]?.margem_padrao);
+  return Number.isFinite(v) && v >= 0 ? v : MARGEM_PADRAO;
+}
+
+export async function definirMargemPadraoEmpresa(
+  empresaId: number,
+  margem: number
+): Promise<number> {
+  await garantirSchema();
+  const m =
+    Number.isFinite(margem) && margem >= 0 && margem <= 1000
+      ? Math.round(margem * 100) / 100
+      : MARGEM_PADRAO;
+  await pool.query("UPDATE empresa SET margem_padrao = $2 WHERE id = $1", [empresaId, m]);
+  return m;
+}
+
+export type NotaCompra = {
+  id: number;
+  chave: string | null;
+  numero: string | null;
+  emitente: string | null;
+  itens: number;
+  criado_em: string;
+};
+
+/** Nota de compra já processada — casa pela imagem (hash) OU pela chave de acesso. */
+export async function notaCompraExistente(
+  empresaId: number,
+  hashImagem: string,
+  chave: string | null
+): Promise<NotaCompra | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<NotaCompra>(
+    `SELECT id, chave, numero, emitente, itens, criado_em
+       FROM compra_nota
+      WHERE empresa_id = $1
+        AND (hash_imagem = $2 OR ($3::text IS NOT NULL AND chave = $3::text))
+      ORDER BY criado_em DESC
+      LIMIT 1`,
+    [empresaId, hashImagem, chave]
+  );
+  return rows[0] ?? null;
+}
+
+export async function registrarNotaCompra(
+  empresaId: number,
+  d: {
+    hashImagem: string;
+    chave: string | null;
+    numero: string | null;
+    emitente: string | null;
+    itens: number;
+  }
+): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    `INSERT INTO compra_nota (empresa_id, hash_imagem, chave, numero, emitente, itens)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (empresa_id, hash_imagem) DO NOTHING`,
+    [empresaId, d.hashImagem, d.chave, d.numero, d.emitente, d.itens]
+  );
 }
 
 export type UsuarioResumo = {

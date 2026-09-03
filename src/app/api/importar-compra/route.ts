@@ -1,23 +1,43 @@
 import { NextResponse } from "next/server";
-import { buscarProduto } from "@/lib/db";
+import { createHash } from "node:crypto";
+import { buscarProduto, margemPadraoEmpresa, notaCompraExistente } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
-import { extrairItensDoCupom } from "@/lib/importarCompra";
+import { extrairCupom } from "@/lib/importarCompra";
 
 export const dynamic = "force-dynamic";
 
-const MARGEM_VENDA = 0.38;
 const LIMIAR_SUGESTAO = 0.5;
 
 const TIPOS_MIDIA = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-function calcularPrecoVenda(precoCompra: number): number {
-  return Math.round(precoCompra * (1 + MARGEM_VENDA) * 100) / 100;
+function precoVendaComMargem(precoCompra: number, margemPct: number): number {
+  return Math.round(precoCompra * (1 + margemPct / 100) * 100) / 100;
+}
+
+/** So os digitos; chave de acesso valida tem 44. */
+function normalizarChave(bruta: string | null): string | null {
+  const so = String(bruta ?? "").replace(/\D/g, "");
+  return so.length === 44 ? so : null;
+}
+
+function respostaJaProcessada(nota: { criado_em: string; numero: string | null; emitente: string | null }) {
+  const quando = new Date(nota.criado_em).toLocaleDateString("pt-BR");
+  const alvo = [nota.emitente, nota.numero && `nº ${nota.numero}`].filter(Boolean).join(" · ");
+  return NextResponse.json({
+    jaProcessada: true,
+    quando,
+    numero: nota.numero,
+    emitente: nota.emitente,
+    aviso: `Essa nota já foi processada em ${quando}${alvo ? ` (${alvo})` : ""}.`,
+  });
 }
 
 /**
  * POST /api/importar-compra (multipart, campo "foto")
  * Le a foto do cupom, extrai os itens e sugere o produto correspondente ja
  * cadastrado (por nome). Nao grava nada — so devolve a lista pra conferencia.
+ * Se a mesma nota (mesma imagem ou mesma chave de acesso) ja foi processada,
+ * devolve { jaProcessada: true } sem reprocessar.
  */
 export async function POST(request: Request) {
   const { empresaId, erro: negado } = await exigirEmpresa();
@@ -34,9 +54,27 @@ export async function POST(request: Request) {
     }
 
     const bytes = Buffer.from(await foto.arrayBuffer());
-    const base64 = bytes.toString("base64");
+    const hashImagem = createHash("sha256").update(bytes).digest("hex");
 
-    const itensExtraidos = await extrairItensDoCupom(base64, foto.type as "image/jpeg" | "image/png" | "image/webp");
+    // 1) mesma imagem já processada? corta antes de gastar visão.
+    const porImagem = await notaCompraExistente(empresaId, hashImagem, null);
+    if (porImagem) return respostaJaProcessada(porImagem);
+
+    const base64 = bytes.toString("base64");
+    const { nota, itens: itensExtraidos } = await extrairCupom(
+      base64,
+      foto.type as "image/jpeg" | "image/png" | "image/webp"
+    );
+
+    const chave = normalizarChave(nota.chaveAcesso);
+
+    // 2) mesma chave de acesso já processada? (nota refotografada)
+    if (chave) {
+      const porChave = await notaCompraExistente(empresaId, hashImagem, chave);
+      if (porChave) return respostaJaProcessada(porChave);
+    }
+
+    const margem = await margemPadraoEmpresa(empresaId);
 
     const itens = await Promise.all(
       itensExtraidos.map(async (item) => {
@@ -52,13 +90,22 @@ export async function POST(request: Request) {
           quantidade: item.quantidade,
           unidade: item.unidade,
           precoCompra: item.valorUnitario,
-          precoVendaSugerido: calcularPrecoVenda(item.valorUnitario),
+          precoVendaSugerido: precoVendaComMargem(item.valorUnitario, margem),
           produtoSugerido: sugestao,
         };
       })
     );
 
-    return NextResponse.json({ itens });
+    return NextResponse.json({
+      itens,
+      margem,
+      nota: {
+        hashImagem,
+        chave,
+        numero: nota.numero,
+        emitente: nota.emitente,
+      },
+    });
   } catch (erro) {
     console.error("Falha ao importar cupom:", erro);
     return NextResponse.json(
