@@ -270,9 +270,14 @@ export default function MenuLateral() {
                 </Link>
               )}
               {ehFornecedor && (
-                <Link href="/fornecedor" role="menuitem" data-ativo={caminho === "/fornecedor"}>
-                  Meu cadastro
-                </Link>
+                <>
+                  <Link href="/fornecedor" role="menuitem" data-ativo={caminho === "/fornecedor"}>
+                    Meu cadastro
+                  </Link>
+                  <Link href="/fornecedor/senha" role="menuitem" data-ativo={caminho === "/fornecedor/senha"}>
+                    Trocar senha
+                  </Link>
+                </>
               )}
               {!ehFornecedor && (
                 <>

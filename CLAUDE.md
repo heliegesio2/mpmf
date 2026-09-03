@@ -270,6 +270,9 @@ of a blank "não foi possível salvar".
   `exigirFornecedor()` in `sessao.ts`. `MenuLateral` renders a slim `GRUPO_FORNECEDOR` for them.
   **`/fornecedor`** — the supplier's own screen: status badge + editable profile (data + bairros
   multi-select) → `GET/PUT /api/fornecedor` (`fornecedorPublicoDetalhe` / `atualizarFornecedorPublico`).
+  **`/fornecedor/senha`** — trocar senha (`PUT /api/fornecedor/senha {atual, nova}` →
+  `conferirSenha` on `fornecedorPublicoSenhaHash` then `alterarSenhaFornecedorPublico`); linked from the
+  account menu (fornecedores don't get `/perfil` or `/senha`).
 - **`/diretorio` (store side)** — `empresa` gained `bairro` (`db/25`, editable in `/configuracoes`
   alongside `cidade`). `GET /api/diretorio?bairro=` (`exigirEmpresa`) → `listarDiretorioFornecedores`
   (approved `fornecedor_publico` in `empresa.cidade`, optionally serving a bairro), defaulting the filter

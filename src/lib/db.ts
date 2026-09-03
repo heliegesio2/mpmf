@@ -2033,6 +2033,22 @@ export async function fornecedorPublicoPorEmail(email: string): Promise<Forneced
   return rows[0] ?? null;
 }
 
+/** Só o hash de senha do fornecedor (pra conferir na troca de senha). */
+export async function fornecedorPublicoSenhaHash(id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ senha_hash: string | null }>(
+    "SELECT senha_hash FROM fornecedor_publico WHERE id = $1",
+    [id]
+  );
+  return rows[0]?.senha_hash ?? null;
+}
+
+export async function alterarSenhaFornecedorPublico(id: number, senhaHash: string): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query("UPDATE fornecedor_publico SET senha_hash = $2 WHERE id = $1", [id, senhaHash]);
+  return (r.rowCount ?? 0) > 0;
+}
+
 /** Dados completos do fornecedor logado + bairros que atende + bairros da cidade. */
 export async function fornecedorPublicoDetalhe(id: number): Promise<
   | (FornecedorPublico & { bairroIds: number[]; bairrosCidade: Bairro[] })
