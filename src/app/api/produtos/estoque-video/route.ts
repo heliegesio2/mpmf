@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buscarProduto } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
-import { lerPrecosDoVideo, transcricaoConfigurada } from "@/lib/lerPrecoVideo";
+import { lerEstoqueDoVideo, transcricaoConfigurada } from "@/lib/lerEstoqueVideo";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,10 +10,10 @@ const LIMIAR_SUGESTAO = 0.5;
 const MAX_BYTES = 4.4 * 1024 * 1024;
 
 /**
- * POST /api/produtos/preco-video  (multipart, campo "audio" = WAV extraído do vídeo)
+ * POST /api/produtos/estoque-video  (multipart, campo "audio" = WAV extraído do vídeo)
  *
- * Transcreve a fala, tira dela a lista de { nome, preço } e casa cada nome com
- * o catálogo. Não grava nada — devolve pra conferência na tela.
+ * Transcreve a fala, tira dela a lista de { nome, quantidade, preço } e casa
+ * cada nome com o catálogo. Não grava nada — devolve pra conferência na tela.
  */
 export async function POST(request: Request) {
   const { empresaId, erro: negado } = await exigirEmpresa();
@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         erro:
-          "A leitura de preço por vídeo ainda não está configurada nesta loja (falta a chave de transcrição de áudio).",
+          "O estoque por vídeo ainda não está configurado nesta loja (falta a chave de transcrição de áudio).",
       },
       { status: 503 }
     );
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { transcricao, itens: detectados } = await lerPrecosDoVideo(audio);
+    const { transcricao, itens: detectados } = await lerEstoqueDoVideo(audio);
     if (detectados.length === 0) {
       return NextResponse.json({ transcricao, itens: [] });
     }
@@ -56,6 +56,7 @@ export async function POST(request: Request) {
             ? {
                 id: melhor.id,
                 nome: melhor.nome,
+                estoqueAtual: Number(melhor.estoque),
                 precoAtual: Number(melhor.preco),
                 tipoVenda: melhor.tipo_venda,
                 score: melhor.score,
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
             : null;
         return {
           nomeDetectado: item.nome,
+          quantidadeDetectada: item.quantidade,
           precoDetectado: item.preco,
           generico: item.generico,
           segundos: item.segundos,
@@ -73,11 +75,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ transcricao, itens });
   } catch (erro) {
-    console.error("Falha ao ler preço por vídeo:", erro);
+    console.error("Falha ao ler estoque por vídeo:", erro);
     const detalhe = erro instanceof Error ? erro.message : String(erro);
-    return NextResponse.json(
-      { erro: "Não foi possível ler o vídeo.", detalhe },
-      { status: 500 }
-    );
+    return NextResponse.json({ erro: "Não foi possível ler o vídeo.", detalhe }, { status: 500 });
   }
 }

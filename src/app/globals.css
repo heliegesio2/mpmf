@@ -937,7 +937,43 @@ html[data-fonte="grande"] { zoom: 1.5; }
 /* input de data: usa o seletor nativo, mas no tema escuro */
 .entrada input[type="date"] { color-scheme: dark; }
 
-/* ============ preço por vídeo ============ */
+/* ============ estoque por vídeo ============ */
+.gravador-video {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.gravador-tela {
+  display: none;
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #000;
+  border: 1px solid var(--verde-linha);
+}
+.gravador-tela[data-ativo="true"] {
+  display: block;
+}
+.gravador-tela video {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  object-fit: contain;
+  background: #000;
+}
+.gravador-tempo {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(226, 73, 47, 0.92);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
 .transcricao-video {
   margin-top: 10px;
   font-size: 13px;

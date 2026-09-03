@@ -45,7 +45,7 @@ function wavDeAudioBuffer(buffer: AudioBuffer): Blob {
 }
 
 export async function extrairAudioWav(
-  arquivo: File
+  arquivo: Blob
 ): Promise<{ blob: Blob; segundos: number; cortado: boolean }> {
   const Ctx =
     (window as typeof window & { webkitAudioContext?: typeof AudioContext }).AudioContext ||

@@ -193,28 +193,32 @@ voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen; the con
 line with no price rather than defaulting it. Created products get `preco_compra = 0` (unknown from a shelf
 photo) — expect the margin display on Produtos to show 100% until someone corrects it from a real invoice.
 
-### Price-by-video (`/produtos/preco-video`)
+### Stock-by-video (`/produtos/estoque-video`)
 
-The shopkeeper films a short video **narrating** "product name, price" for each item ("Batata Mix, R$ 10.
-Paçoquinha, 50 centavos..."). Audio-first, not vision:
-- Client (`src/lib/audioCliente.ts`) decodes the video's audio track in the browser (`decodeAudioData` +
-  `OfflineAudioContext`), downsamples to **16 kHz mono 16-bit WAV**, capped at 140 s (≈4.3 MB, under the
-  serverless body limit) — no ffmpeg, no uploading the video.
-- `POST /api/produtos/preco-video` → `src/lib/lerPrecoVideo.ts`: (1) `transcreverAudio` posts the WAV to a
-  Whisper endpoint — **OpenAI-compatible**, `TRANSCRICAO_URL` (default Groq `whisper-large-v3-turbo`) +
-  `TRANSCRICAO_API_KEY`; `verbose_json` for segment timestamps. Unset key → the route 503s with a "not
-  configured" message (feature degrades, doesn't crash). (2) `interpretarTranscricao` — Claude
-  (`ANTHROPIC_MODEL_VIDEO`, default `claude-sonnet-5` — text only, no Opus needed) turns the timestamped
-  transcript into `[{nome, preco, generico, segundos}]`. **`generico: true`** when the name was garbled and
-  Claude had to guess ("Cigarro (marca não identificada)"). `buscarProduto` matches each name to the catalog.
-- The client then grabs a **video frame per item** (`src/lib/videoCliente.ts`, `<video>`+`<canvas>` seek to
-  `segundos + 1`) → becomes the product photo. Editable/removable per row via `<CampoFoto>`.
-- `POST /api/produtos/preco-video/confirmar`: matched → `atualizarPrecoProduto` (narrow `UPDATE … SET preco`,
-  like `atualizarEstoqueProduto`) + `atualizarFotoProduto`; unmatched → `criarProduto` (estoque 0,
-  preco_compra 0, with the frame as `foto`).
+The shopkeeper **records** (in-app camera, not a file pick) a short video walking the shelf and
+**narrating** "name, quantity" per item ("Batata Mix, 12 pacotes"), optionally with a price too
+("…, R$ 10"). Audio-first, not vision:
+- `<GravadorVideo>` (`src/components/GravadorVideo.tsx`) — `getUserMedia({video:{facingMode:"environment"},
+  audio:true})` + `MediaRecorder`, live preview, Gravar/Parar, auto-stops at `MAX_SEGUNDOS` (140). While
+  recording it grabs a **canvas frame every 1.5 s** (`{t, dataUrl}`), so no seeking a webm blob later.
+- Client (`src/lib/audioCliente.ts`) decodes the recorded blob's audio (`decodeAudioData` +
+  `OfflineAudioContext`) → **16 kHz mono 16-bit WAV**, capped at 140 s (≈4.3 MB, under the serverless body
+  limit). The video itself is never uploaded.
+- `POST /api/produtos/estoque-video` → `src/lib/lerEstoqueVideo.ts`: (1) `transcreverAudio` posts the WAV to
+  a Whisper endpoint — **OpenAI-compatible**, `TRANSCRICAO_URL` (default Groq `whisper-large-v3-turbo`) +
+  `TRANSCRICAO_API_KEY`; `verbose_json` for segment timestamps. Unset key → route 503s with a "not
+  configured" message. (2) `interpretarTranscricao` — Claude (`ANTHROPIC_MODEL_VIDEO`, default
+  `claude-sonnet-5`, text only) → `[{nome, quantidade|null, preco|null, generico, segundos}]`. It splits the
+  spoken numbers: "R$/reais/centavos/a dúzia" → price, a bare count/"pacotes"/"dúzia"(=12) → quantity.
+  **`generico: true`** when the name was garbled and Claude guessed. `buscarProduto` matches to the catalog.
+- The client picks the recorded frame nearest `segundos + 1` as the product photo (editable per row via
+  `<CampoFoto>`).
+- `POST /api/produtos/estoque-video/confirmar`: matched → `atualizarEstoqueProduto` and/or
+  `atualizarPrecoProduto` (whichever the row carries) + `atualizarFotoProduto`; unmatched → `criarProduto`
+  (preco_compra 0, estoque from the count, frame as `foto`; a price is required in the review).
 - **Cost** (per minute of video, per run): Groq transcription ≈ US$0.0007/min + Claude Sonnet on the
-  ~200-token transcript ≈ US$0.007/min → **≈ US$0.008/min**. Swap to Haiku (`ANTHROPIC_MODEL_VIDEO`) to
-  roughly halve the Claude part.
+  ~200-token transcript ≈ US$0.007/min → **≈ US$0.008/min** (~R$0.04). Haiku (`ANTHROPIC_MODEL_VIDEO`)
+  roughly halves the Claude part.
 
 ### Produtos screens
 
@@ -225,8 +229,8 @@ cost/margin, and a `.botao-estoque` chip — button-styled, **solid amber when
 four actions: **+ Novo produto** (→
 `/produtos/novo`), **📷 Novo produto por foto** (compresses the photo → stashes it in
 `sessionStorage["mpmf.novoProdutoFoto"]` → `/produtos/novo`), **📦 Atualizar estoque por foto** (→
-`/produtos/estoque-foto`, a different flow that only bumps `estoque`), and **🎥 Atualizar preço por vídeo**
-(→ `/produtos/preco-video`, narrated video → price + photo, see above).
+`/produtos/estoque-foto`, a different flow that only bumps `estoque`), and **🎥 Atualizar estoque por vídeo**
+(→ `/produtos/estoque-video`, recorded narrated video → estoque + optional price + photo, see above).
 
 The add/edit **form is its own screen** — `src/components/FormularioProduto.tsx`, rendered by
 `/produtos/novo` (create) and `/produtos/editar/[id]` (edit, fetches via `GET /api/produtos/:id`). On

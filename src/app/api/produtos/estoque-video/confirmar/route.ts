@@ -1,15 +1,22 @@
 import { NextResponse } from "next/server";
-import { atualizarFotoProduto, atualizarPrecoProduto, criarProduto } from "@/lib/db";
+import {
+  atualizarEstoqueProduto,
+  atualizarFotoProduto,
+  atualizarPrecoProduto,
+  criarProduto,
+} from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
 
 type ItemConfirmado = {
-  // produto já cadastrado: atualiza só o preço
+  // produto já cadastrado: atualiza estoque e/ou preço (o que vier)
   produtoId?: number;
+  novoEstoque?: number;
   novoPreco?: number;
-  // produto novo: cria com o preço falado no vídeo (estoque 0, preço de compra 0)
+  // produto novo:
   nome?: string;
+  estoque?: number;
   preco?: number;
   tipoVenda?: string;
   unidade?: string;
@@ -17,16 +24,17 @@ type ItemConfirmado = {
   foto?: string;
 };
 
-const precoValido = (v: unknown): v is number =>
+const num0 = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v) && v >= 0;
+const numPos = (v: unknown): v is number =>
   typeof v === "number" && Number.isFinite(v) && v > 0;
-
 const fotoValida = (v: unknown): v is string =>
   typeof v === "string" && /^data:image\/(jpe?g|png|webp);base64,/.test(v) && v.length < 3_000_000;
 
 /**
- * POST /api/produtos/preco-video/confirmar { itens: ItemConfirmado[] }
- * Com "produtoId": troca só o preço de venda. Sem: cria produto novo
- * (estoque 0, preço de compra 0 — ajustáveis depois em Produtos).
+ * POST /api/produtos/estoque-video/confirmar { itens: ItemConfirmado[] }
+ * Com "produtoId": atualiza o estoque e/ou o preço (o que for enviado) + foto.
+ * Sem: cria produto novo (preço de compra 0).
  */
 export async function POST(request: Request) {
   const { empresaId, erro: negado } = await exigirEmpresa();
@@ -42,20 +50,23 @@ export async function POST(request: Request) {
     const resultados = [];
     for (const item of itens) {
       if (item.produtoId) {
-        if (!precoValido(item.novoPreco)) {
-          return NextResponse.json({ erro: "Item com preço inválido." }, { status: 400 });
+        let atual = null;
+        if (num0(item.novoEstoque)) {
+          atual = await atualizarEstoqueProduto(empresaId, item.produtoId, item.novoEstoque);
         }
-        const atualizado = await atualizarPrecoProduto(empresaId, item.produtoId, item.novoPreco);
-        if (!atualizado) {
-          return NextResponse.json(
-            { erro: `Produto ${item.produtoId} não encontrado.` },
-            { status: 404 }
-          );
+        if (numPos(item.novoPreco)) {
+          atual = await atualizarPrecoProduto(empresaId, item.produtoId, item.novoPreco);
         }
         if (fotoValida(item.foto)) {
           await atualizarFotoProduto(empresaId, item.produtoId, item.foto).catch(() => {});
         }
-        resultados.push(atualizado);
+        if (!atual) {
+          return NextResponse.json(
+            { erro: `Nada pra atualizar (ou produto ${item.produtoId} não encontrado).` },
+            { status: 400 }
+          );
+        }
+        resultados.push(atual);
         continue;
       }
 
@@ -63,7 +74,7 @@ export async function POST(request: Request) {
       if (nome.length < 2) {
         return NextResponse.json({ erro: "Produto novo sem nome válido." }, { status: 400 });
       }
-      if (!precoValido(item.preco)) {
+      if (!numPos(item.preco)) {
         return NextResponse.json({ erro: `Informe um preço válido para "${nome}".` }, { status: 400 });
       }
 
@@ -73,7 +84,7 @@ export async function POST(request: Request) {
         tipoVenda: item.tipoVenda || "unidade",
         preco: item.preco,
         precoCompra: 0,
-        estoque: 0,
+        estoque: num0(item.estoque) ? item.estoque : 0,
         ...(fotoValida(item.foto) ? { foto: item.foto } : {}),
       });
       resultados.push(criado);
@@ -81,7 +92,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ itens: resultados });
   } catch (erro) {
-    console.error("Falha ao confirmar preço por vídeo:", erro);
+    console.error("Falha ao confirmar estoque por vídeo:", erro);
     return NextResponse.json({ erro: "Não foi possível salvar." }, { status: 500 });
   }
 }
