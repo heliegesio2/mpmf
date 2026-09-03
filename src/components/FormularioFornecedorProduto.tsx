@@ -226,7 +226,7 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
           <div className="rotulo largo">
             <CampoFoto
               rotulo="Foto do produto"
-              semCaptura
+              camera
               alta
               urlIdentificar="/api/fornecedor/produtos/identificar-foto"
               aoIdentificarNome={(n) => {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import CameraFoto from "@/components/CameraFoto";
 import { comprimirImagem } from "@/lib/imagemCliente";
 import { useCarrinho, type ProdutoCarrinho } from "@/lib/carrinho";
 import { formatarMoeda } from "@/lib/moeda";
@@ -27,7 +28,6 @@ const moeda = (v: number) => "R$ " + formatarMoeda(Math.round(v * 100));
 export default function VendaPorFoto() {
   const router = useRouter();
   const { setItens: setCarrinho } = useCarrinho();
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const [fotos, setFotos] = useState<File[]>([]);
   const [analisando, setAnalisando] = useState(false);
@@ -37,12 +37,6 @@ export default function VendaPorFoto() {
   const [trocando, setTrocando] = useState<number | null>(null);
   const [buscaTermo, setBuscaTermo] = useState("");
   const [buscaResult, setBuscaResult] = useState<Prod[]>([]);
-
-  function adicionarFotos(fl: FileList | null) {
-    if (!fl) return;
-    setFotos((f) => [...f, ...Array.from(fl)].slice(0, 6));
-    if (inputRef.current) inputRef.current.value = "";
-  }
 
   async function analisar() {
     if (fotos.length === 0) return;
@@ -160,42 +154,20 @@ export default function VendaPorFoto() {
           seu catálogo e monta o carrinho.
         </p>
 
-        <div className="venda-foto-thumbs">
-          {fotos.map((f, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={i} src={URL.createObjectURL(f)} alt="" />
-          ))}
-        </div>
+        <CameraFoto fotos={fotos} aoMudar={setFotos} max={6} aoErro={(m) => { setErro(true); setAviso(m); }} />
 
-        <div className="acoes">
-          <button type="button" className="botao neutro" onClick={() => inputRef.current?.click()}>
-            {fotos.length === 0 ? "📷 Tirar / escolher foto" : "+ Outra foto"}
-          </button>
-          {fotos.length > 0 && (
-            <button
-              type="button"
-              className="botao primario"
-              onClick={analisar}
-              disabled={analisando}
-            >
+        {fotos.length > 0 && (
+          <div className="acoes">
+            <button type="button" className="botao primario" onClick={analisar} disabled={analisando}>
               {analisando ? "Lendo…" : "Ler produtos"}
             </button>
-          )}
-          {fotos.length > 0 && !analisando && (
-            <button type="button" className="botao mini perigo" onClick={() => setFotos([])}>
-              Limpar
-            </button>
-          )}
-        </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          multiple
-          hidden
-          onChange={(e) => adicionarFotos(e.target.files)}
-        />
+            {!analisando && (
+              <button type="button" className="botao mini perigo" onClick={() => setFotos([])}>
+                Limpar
+              </button>
+            )}
+          </div>
+        )}
 
         {aviso && (
           <p className="dica" data-erro={erro} role="status" aria-live="polite">

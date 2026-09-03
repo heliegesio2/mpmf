@@ -238,7 +238,7 @@ export default function Anotacoes() {
           <div className="rotulo">
             <CampoFoto
               rotulo="Foto (opcional)"
-              semCaptura
+              camera
               preview={foto}
               aoEscolher={setFoto}
               aoRemover={foto ? () => setFoto("") : undefined}
