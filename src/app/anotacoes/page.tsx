@@ -150,6 +150,26 @@ export default function Anotacoes() {
         body: JSON.stringify({ foto: dataUrl }),
       });
       if (!r.ok) throw new Error();
+
+      // lê a foto e junta o que encontrar ao texto da anotação
+      try {
+        const d = await fetch("/api/anotacoes/interpretar-foto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ foto: dataUrl }),
+        }).then((x) => x.json());
+        const lido = String(d?.nome ?? "").trim();
+        if (lido) {
+          await fetch(`/api/anotacoes/${a.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ texto: a.texto.trim() ? `${a.texto.trim()}\n${lido}` : lido }),
+          });
+        }
+      } catch {
+        /* leitura é um plus */
+      }
+
       await carregar(filtro);
     } catch {
       setErro(true);
@@ -222,11 +242,16 @@ export default function Anotacoes() {
               preview={foto}
               aoEscolher={setFoto}
               aoRemover={foto ? () => setFoto("") : undefined}
+              urlIdentificar="/api/anotacoes/interpretar-foto"
+              aoIdentificarNome={(t) =>
+                setTexto((x) => (x.trim() ? `${x.trim()}\n${t}` : t))
+              }
               aoErro={(m) => {
                 setErro(true);
                 setAviso(m);
               }}
             />
+            <p className="campo-foto-dica">A foto é lida: texto vira anotação, lista vira lista.</p>
           </div>
         </div>
 

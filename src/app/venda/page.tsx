@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { formatarQuantidade, interpretarItem } from "@/lib/falaVenda";
 import { EMBALAGENS, TIPOS_VENDA, sufixo } from "@/lib/tipos";
 import { capitalizar, numeroFalado } from "@/lib/voz";
@@ -716,6 +717,12 @@ export default function Venda() {
             <path d="M5 11a7 7 0 0 0 14 0M12 18v4" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
           </svg>
         </button>
+      </div>
+
+      <div className="acoes">
+        <Link href="/venda/foto" className="botao neutro">
+          📷 Foto do balcão
+        </Link>
       </div>
 
       <p className="dica" data-erro={erro} role="status" aria-live="polite">

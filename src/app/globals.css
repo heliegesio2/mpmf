@@ -2285,6 +2285,55 @@ a.botao { display: block; text-align: center; text-decoration: none; }
   margin-top: 2px;
 }
 
+/* ============ venda por foto ============ */
+.venda-foto-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+.venda-foto-thumbs img {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+.lista-venda-foto { gap: 8px; }
+.venda-foto-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.venda-foto-item[data-sem="true"] { border-style: dashed; background: var(--surface-2); }
+.venda-foto-incluir { flex: none; padding-top: 2px; }
+.venda-foto-incluir input { width: 20px; height: 20px; }
+.venda-foto-corpo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.venda-foto-corpo strong { font-size: 15px; font-weight: 700; }
+.venda-foto-corpo .sub { font-size: 12px; color: var(--ink-dim); }
+.venda-foto-controles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+.venda-foto-troca {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.venda-foto-alts { display: flex; flex-wrap: wrap; gap: 6px; }
+
 /* ============ pedidos ============ */
 .lista-pedidos { gap: 10px; }
 .lista li.pedido {

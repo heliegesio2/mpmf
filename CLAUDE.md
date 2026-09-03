@@ -526,11 +526,26 @@ group's `itens`, not a flat list.
 **Empréstimos (`/cascos`)** — `casco` table gained `item text` (`db/21`, mirrored) = what the customer
 took (engradado, botijão…), now a required field on the form; `criarCasco` and `POST /api/cascos` pass it.
 
-**Anotações (`/anotacoes`, `db/22`)** — `anotacao (texto, data_alerta date null, concluida)`. Create
-(textarea + mic + optional `<input type=date>`), toggle done, edit the alert date inline, delete.
-`GET/POST /api/anotacoes`, `PATCH/DELETE /api/anotacoes/:id`. `anotacoesEmAlerta` counts open notes with
-`data_alerta <= CURRENT_DATE` for the menu badge (`GET /api/anotacoes/alertas`, cheap, fetched by
-`MenuLateral` per path). List sorts overdue → today → future → undated.
+**Anotações (`/anotacoes`, `db/22`)** — `anotacao (texto, data_alerta date null, concluida)` +
+`foto` (`db/29`, data URL, out of `CAMPOS_ANOTACAO` → `tem_foto`; bytes at `GET /api/anotacoes/:id/foto`,
+add/replace at `PUT`). Create (textarea + mic + optional `<input type=date>` + `<CampoFoto>`), toggle
+done, edit the alert date inline, delete. `GET/POST /api/anotacoes`, `PATCH/DELETE /api/anotacoes/:id`.
+`anotacoesEmAlerta` counts open notes with `data_alerta <= CURRENT_DATE` for the menu badge (`GET
+/api/anotacoes/alertas`). List sorts overdue → today → future → undated. **Photo is read** (`src/lib/
+lerFotoAnotacao.ts` → `POST /api/anotacoes/interpretar-foto` → `{nome}`): written text is transcribed, a
+list becomes `- ` lines, a bare product becomes "marca + tipo + peso"; the result is appended to the
+note's `texto` (in the form via `<CampoFoto aoIdentificarNome>` + `urlIdentificar`; on the inline
+add-photo via a `PATCH`).
+
+**Venda por foto (`/venda/foto`)** — a "📷 Foto do balcão" button on `/venda` opens it: the shopkeeper
+photographs the products the customer put on the counter, `src/lib/lerVendaFoto.ts` (vision, mirrors
+`lerEstoqueFoto.ts`, multiple photos in one call) → `[{descricao, quantidade}]`, `POST /api/venda/foto`
+matches each against the catalog with `buscarProduto` (`score >= 0.5` → `principal`, rest →
+`alternativas`). The review list: matched rows have an editable qty (weight products default 1 with a
+"confira o peso" warning) + "trocar" (alternativas or a `/api/produtos?q=` search) + an include checkbox;
+unmatched rows show "não encontrei" and stay out. "Adicionar ao carrinho" merges the checked rows into
+`useCarrinho()` (merge by `produto.id`) and routes to `/venda`. No new product creation in-flow (link
+out to `/produtos/novo`).
 
 **Messageria / avisos (`db/27`)** — `notificacao` targets **exactly one** of `usuario_id` /
 `fornecedor_publico_id` (`tipo`, `titulo`, `corpo`, `link`, `chave` for idempotency, `lida`, `criado_em`).
