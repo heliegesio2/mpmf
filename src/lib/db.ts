@@ -383,6 +383,22 @@ const MIGRACOES_IDEMPOTENTES = [
   "CREATE UNIQUE INDEX IF NOT EXISTS ux_compra_nota_hash ON compra_nota (empresa_id, hash_imagem)",
   "CREATE INDEX IF NOT EXISTS ix_compra_nota_chave ON compra_nota (empresa_id, chave) WHERE chave IS NOT NULL",
   "CREATE INDEX IF NOT EXISTS ix_compra_nota_empresa ON compra_nota (empresa_id, criado_em DESC)",
+  // db/31 — comércios grandes: cotação de preço dos concorrentes
+  `CREATE TABLE IF NOT EXISTS cotacao_concorrente (
+     id              bigserial PRIMARY KEY,
+     empresa_id      bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     estabelecimento text NOT NULL,
+     nome_produto    text NOT NULL,
+     nome_norm       text NOT NULL,
+     preco           numeric(10,2) NOT NULL,
+     produto_id      bigint REFERENCES produto(id) ON DELETE SET NULL,
+     meu_preco       numeric(10,2),
+     fonte           text NOT NULL DEFAULT 'foto',
+     data            date NOT NULL DEFAULT CURRENT_DATE,
+     criado_em       timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE UNIQUE INDEX IF NOT EXISTS ux_cotacao_conc_dia ON cotacao_concorrente (empresa_id, estabelecimento, nome_norm, data)",
+  "CREATE INDEX IF NOT EXISTS ix_cotacao_conc_hist ON cotacao_concorrente (empresa_id, estabelecimento, nome_norm, data DESC)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -945,6 +961,94 @@ export async function registrarNotaCompra(
      ON CONFLICT (empresa_id, hash_imagem) DO NOTHING`,
     [empresaId, d.hashImagem, d.chave, d.numero, d.emitente, d.itens]
   );
+}
+
+// ---------- comércios grandes: cotação de preço dos concorrentes ----------
+
+export function normalizarNomeProduto(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export type LeituraCotacao = { nome: string; preco: number };
+
+export type ResultadoCotacao = {
+  nome: string;
+  preco: number;
+  /** match no meu catálogo (>= limiar), se houver */
+  produtoId: number | null;
+  meuNome: string | null;
+  meuPreco: number | null;
+  /** última leitura registrada deste produto neste estabelecimento, em dia anterior */
+  precoAnterior: number | null;
+  dataAnterior: string | null;
+};
+
+/**
+ * Compara cada preço lido no concorrente com o meu catálogo (`buscarProduto`) e
+ * com a última cotação registrada (de um dia anterior) do mesmo estabelecimento.
+ * Não grava nada.
+ */
+export async function compararCotacoes(
+  empresaId: number,
+  estabelecimento: string,
+  itens: LeituraCotacao[]
+): Promise<ResultadoCotacao[]> {
+  await garantirSchema();
+  const est = estabelecimento.trim();
+  return Promise.all(
+    itens.map(async (it) => {
+      const norm = normalizarNomeProduto(it.nome);
+      const cand = await buscarProduto(empresaId, it.nome, 1);
+      const meu = cand[0] && (cand[0].score ?? 0) >= 0.5 ? cand[0] : null;
+      const { rows } = await pool.query<{ preco: string; data: string }>(
+        `SELECT preco, to_char(data, 'YYYY-MM-DD') AS data
+           FROM cotacao_concorrente
+          WHERE empresa_id = $1 AND estabelecimento = $2 AND nome_norm = $3 AND data < CURRENT_DATE
+          ORDER BY data DESC
+          LIMIT 1`,
+        [empresaId, est, norm]
+      );
+      return {
+        nome: it.nome,
+        preco: it.preco,
+        produtoId: meu ? meu.id : null,
+        meuNome: meu ? meu.nome : null,
+        meuPreco: meu ? Number(meu.preco) : null,
+        precoAnterior: rows[0] ? Number(rows[0].preco) : null,
+        dataAnterior: rows[0]?.data ?? null,
+      };
+    })
+  );
+}
+
+/** Grava as leituras do dia — uma linha por produto/estabelecimento/dia. */
+export async function registrarCotacoes(
+  empresaId: number,
+  estabelecimento: string,
+  fonte: string,
+  itens: ResultadoCotacao[]
+): Promise<number> {
+  await garantirSchema();
+  const est = estabelecimento.trim();
+  const f = ["video", "foto", "pdf"].includes(fonte) ? fonte : "foto";
+  for (const it of itens) {
+    await pool.query(
+      `INSERT INTO cotacao_concorrente
+         (empresa_id, estabelecimento, nome_produto, nome_norm, preco, produto_id, meu_preco, fonte)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT (empresa_id, estabelecimento, nome_norm, data)
+       DO UPDATE SET preco = EXCLUDED.preco, nome_produto = EXCLUDED.nome_produto,
+                     produto_id = EXCLUDED.produto_id, meu_preco = EXCLUDED.meu_preco,
+                     fonte = EXCLUDED.fonte, criado_em = now()`,
+      [empresaId, est, it.nome, normalizarNomeProduto(it.nome), it.preco, it.produtoId, it.meuPreco, f]
+    );
+  }
+  return itens.length;
 }
 
 export type UsuarioResumo = {

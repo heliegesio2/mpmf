@@ -1,34 +1,40 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import FotoAmpliavel from "@/components/FotoAmpliavel";
+import { useMemo, useRef, useState } from "react";
+import { CampoVoz } from "@/components/CampoVoz";
+import { useVoz } from "@/lib/useVoz";
 import { extrairQuadros, type QuadroVideo } from "@/lib/quadrosDeVideo";
-import { comprimirParaDataURL } from "@/lib/imagemCliente";
-import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
+import { paraMoeda } from "@/lib/moeda";
 
-type Estado = "parado" | "importando" | "extraindo" | "processando" | "revisao" | "salvando";
+type Estado = "parado" | "extraindo" | "lendo" | "analisando" | "resultado";
 
-type Produto = {
-  chave: string;
+type Fonte = "video" | "pdf";
+
+type Bruto = { nome: string; preco: number | null };
+
+type Resultado = {
   nome: string;
-  preco: string; // venda (lida da etiqueta)
-  precoCompra: string;
-  foto: string; // data URL
-  jaCadastrado: { id: number; nome: string } | null;
-  incluir: boolean;
+  preco: number;
+  produtoId: number | null;
+  meuNome: string | null;
+  meuPreco: number | null;
+  precoAnterior: number | null;
+  dataAnterior: string | null;
+};
+
+type Analise = {
+  estabelecimento: string;
+  registradoEm: string;
+  resumo: { total: number; comPreco: number };
+  itens: Resultado[];
 };
 
 const LOTE = 4;
-const FLASH = "mpmf.produtoFlash";
 
-function chaveNome(s: string) {
-  return s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+function dataBR(iso: string | null): string {
+  if (!iso) return "";
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
 }
 
 function dataUrlParaFile(dataUrl: string, nome: string): File {
@@ -41,79 +47,71 @@ function dataUrlParaFile(dataUrl: string, nome: string): File {
 }
 
 export default function ComerciosGrandes() {
-  const router = useRouter();
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputVideo = useRef<HTMLInputElement>(null);
+  const inputEncarte = useRef<HTMLInputElement>(null);
 
+  const [estabelecimento, setEstabelecimento] = useState("");
   const [estado, setEstado] = useState<Estado>("parado");
+  const [fonte, setFonte] = useState<Fonte>("video");
   const [quadros, setQuadros] = useState({ feitos: 0, total: 0 });
   const [lotes, setLotes] = useState({ feitos: 0, total: 0 });
-  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [analise, setAnalise] = useState<Analise | null>(null);
   const [erro, setErro] = useState("");
 
-  const passos: { id: Estado; rotulo: () => string }[] = [
-    { id: "importando", rotulo: () => "Importando o arquivo" },
-    {
-      id: "extraindo",
-      rotulo: () => `Extraindo quadros${quadros.total ? ` (${quadros.feitos}/${quadros.total})` : "…"}`,
-    },
-    {
-      id: "processando",
-      rotulo: () =>
-        `Lendo os produtos${lotes.total ? ` (${lotes.feitos}/${lotes.total})` : "…"}`,
-    },
-    { id: "revisao", rotulo: () => `Pronto — ${produtos.length} produto(s)` },
-  ];
-  const ordem: Estado[] = ["importando", "extraindo", "processando", "revisao"];
+  const { ouvir, parar, ouvindoCampo, disponivel } = useVoz({
+    aoFinalizar: (texto) => setEstabelecimento((e) => (e ? `${e} ${texto}` : texto).trim()),
+    aoErrar: (m) => setErro(m),
+  });
+
+  const nomeOk = estabelecimento.trim().length >= 2;
+  const emProcesso = estado !== "parado" && estado !== "resultado";
+
+  const passos = useMemo(() => {
+    if (fonte === "video") {
+      return [
+        { id: "extraindo" as Estado, rotulo: `Extraindo quadros${quadros.total ? ` (${quadros.feitos}/${quadros.total})` : "…"}` },
+        { id: "lendo" as Estado, rotulo: `Lendo os preços${lotes.total ? ` (lote ${lotes.feitos}/${lotes.total})` : "…"}` },
+        { id: "analisando" as Estado, rotulo: "Comparando com os seus preços" },
+      ];
+    }
+    return [
+      { id: "lendo" as Estado, rotulo: "Lendo o encarte" },
+      { id: "analisando" as Estado, rotulo: "Comparando com os seus preços" },
+    ];
+  }, [fonte, quadros, lotes]);
+
+  const ordem: Estado[] = ["extraindo", "lendo", "analisando", "resultado"];
   function statusPasso(id: Estado): "feito" | "agora" | "espera" {
-    if (estado === "parado") return "espera";
-    const iAtual = ordem.indexOf(estado === "salvando" ? "revisao" : estado);
+    if (!emProcesso && estado !== "resultado") return "espera";
+    const iAtual = ordem.indexOf(estado);
     const iPasso = ordem.indexOf(id);
     if (iPasso < iAtual) return "feito";
     if (iPasso === iAtual) return "agora";
     return "espera";
   }
 
-  function mesclar(novos: {
-    nome: string;
-    preco: number | null;
-    foto: string;
-    jaCadastrado: { id: number; nome: string } | null;
-  }[]) {
-    setProdutos((atuais) => {
-      const mapa = new Map(atuais.map((p) => [p.chave, p]));
-      for (const n of novos) {
-        const k = chaveNome(n.nome);
-        if (!k) continue;
-        const existe = mapa.get(k);
-        if (existe) {
-          if (moedaParaNumero(existe.preco) <= 0 && n.preco) {
-            mapa.set(k, { ...existe, preco: paraMoeda(n.preco), foto: existe.foto || n.foto });
-          }
-          continue;
-        }
-        mapa.set(k, {
-          chave: k,
-          nome: n.nome,
-          preco: n.preco ? paraMoeda(n.preco) : "",
-          precoCompra: "",
-          foto: n.foto,
-          jaCadastrado: n.jaCadastrado,
-          incluir: !n.jaCadastrado && Boolean(n.preco),
-        });
-      }
-      return [...mapa.values()];
+  async function analisar(brutos: Bruto[], daFonte: Fonte) {
+    setEstado("analisando");
+    const r = await fetch("/api/produtos/comercios-grandes/analisar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ estabelecimento: estabelecimento.trim(), fonte: daFonte, itens: brutos }),
     });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d?.erro ?? "Não foi possível analisar.");
+    setAnalise(d as Analise);
+    setEstado("resultado");
   }
 
-  async function importar(arquivo: File | undefined) {
-    if (!arquivo) return;
+  async function usarVideo(arquivo: File | undefined) {
+    if (!arquivo || !nomeOk) return;
     setErro("");
-    setProdutos([]);
+    setAnalise(null);
+    setFonte("video");
     setQuadros({ feitos: 0, total: 0 });
     setLotes({ feitos: 0, total: 0 });
-    setEstado("importando");
+    setEstado("extraindo");
     try {
-      setEstado("extraindo");
       const qs: QuadroVideo[] = await extrairQuadros(arquivo, {
         intervalo: 2,
         max: 70,
@@ -121,117 +119,138 @@ export default function ComerciosGrandes() {
       });
       if (qs.length === 0) throw new Error("Não consegui pegar nenhum quadro do vídeo.");
 
-      setEstado("processando");
+      setEstado("lendo");
       const totalLotes = Math.ceil(qs.length / LOTE);
       setLotes({ feitos: 0, total: totalLotes });
-
+      const brutos: Bruto[] = [];
       for (let b = 0; b < totalLotes; b++) {
-        const inicio = b * LOTE;
-        const doLote = qs.slice(inicio, inicio + LOTE);
+        const doLote = qs.slice(b * LOTE, b * LOTE + LOTE);
         const fd = new FormData();
-        doLote.forEach((q, i) => fd.append("fotos", dataUrlParaFile(q.dataUrl, `q${inicio + i}.jpg`)));
+        fd.append("fonte", "video");
+        doLote.forEach((q, i) => fd.append("fotos", dataUrlParaFile(q.dataUrl, `q${b}_${i}.jpg`)));
         try {
-          const r = await fetch("/api/produtos/comercios-grandes", { method: "POST", body: fd });
-          const d = await r.json();
-          if (r.ok && Array.isArray(d.itens)) {
-            mesclar(
-              d.itens.map((it: { nome: string; preco: number | null; quadro: number; jaCadastrado: null | { id: number; nome: string } }) => ({
-                nome: it.nome,
-                preco: it.preco,
-                foto: doLote[Math.min(it.quadro ?? 0, doLote.length - 1)]?.dataUrl ?? "",
-                jaCadastrado: it.jaCadastrado,
-              }))
-            );
-          }
+          const res = await fetch("/api/produtos/comercios-grandes", { method: "POST", body: fd });
+          const d = await res.json();
+          if (res.ok && Array.isArray(d.itens)) brutos.push(...d.itens);
         } catch {
           /* um lote que falha não derruba os outros */
         }
         setLotes({ feitos: b + 1, total: totalLotes });
       }
 
-      setEstado("revisao");
+      await analisar(brutos, "video");
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível processar o vídeo.");
       setEstado("parado");
     } finally {
-      if (inputRef.current) inputRef.current.value = "";
+      if (inputVideo.current) inputVideo.current.value = "";
     }
   }
 
-  function set(chave: string, patch: Partial<Produto>) {
-    setProdutos((ps) => ps.map((p) => (p.chave === chave ? { ...p, ...patch } : p)));
-  }
-
-  async function salvar() {
-    const marcados = produtos.filter((p) => p.incluir && moedaParaNumero(p.preco) > 0);
-    if (marcados.length === 0) {
-      setErro("Marque ao menos um produto com preço pra salvar.");
-      return;
-    }
-    setEstado("salvando");
+  async function usarEncarte(lista: FileList | null) {
+    const arquivos = lista ? Array.from(lista) : [];
+    if (arquivos.length === 0 || !nomeOk) return;
+    const ehPdf = arquivos.some((f) => f.type === "application/pdf");
     setErro("");
+    setAnalise(null);
+    setFonte("pdf");
+    setEstado("lendo");
     try {
-      const itens = await Promise.all(
-        marcados.map(async (p) => ({
-          nome: p.nome.trim(),
-          preco: moedaParaNumero(p.preco),
-          precoCompra: p.precoCompra.trim() ? moedaParaNumero(p.precoCompra) : undefined,
-          foto: p.foto ? await comprimirParaDataURL(dataUrlParaFile(p.foto, "f.jpg")) : undefined,
-        }))
-      );
-      const r = await fetch("/api/produtos/comercios-grandes/confirmar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itens }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — "));
-      try {
-        sessionStorage.setItem(FLASH, `${d.criados} produto(s) incluídos pelo vídeo.`);
-      } catch {
-        /* sem sessionStorage */
+      const fd = new FormData();
+      if (ehPdf) {
+        fd.append("pdf", arquivos.find((f) => f.type === "application/pdf")!);
+      } else {
+        fd.append("fonte", "foto");
+        arquivos.slice(0, 8).forEach((f) => fd.append("fotos", f));
       }
-      router.push("/produtos");
+      const res = await fetch("/api/produtos/comercios-grandes", { method: "POST", body: fd });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d?.erro ?? "Não foi possível ler o encarte.");
+      await analisar(Array.isArray(d.itens) ? d.itens : [], "pdf");
     } catch (e) {
-      setErro(e instanceof Error ? e.message : "Não foi possível salvar.");
-      setEstado("revisao");
+      setErro(e instanceof Error ? e.message : "Não foi possível ler o encarte.");
+      setEstado("parado");
+    } finally {
+      if (inputEncarte.current) inputEncarte.current.value = "";
     }
   }
 
-  const emProcesso = (["importando", "extraindo", "processando", "salvando"] as Estado[]).includes(
-    estado
-  );
+  function recomecar() {
+    setAnalise(null);
+    setErro("");
+    setEstado("parado");
+  }
 
   return (
     <main className="tela">
       <header className="marca">
-        Comércios grandes <span>•</span> catálogo por vídeo
+        Comércios grandes <span>•</span> preços dos concorrentes
       </header>
 
       {estado === "parado" && (
         <section className="cartao">
           <p className="dica">
-            Grave um vídeo passando pelas prateleiras de um supermercado, com as etiquetas de preço à
-            mostra. O sistema lê os produtos e os preços das etiquetas (não precisa narrar nada) e
-            monta uma lista pra você revisar e incluir no catálogo.
+            Descubra por quanto um concorrente está vendendo. Grave um vídeo passando pelas
+            prateleiras <strong>ou</strong> envie o encarte de ofertas (PDF ou foto). O sistema lê os
+            preços, compara com os seus e guarda a data pra mostrar depois se subiu ou baixou.
           </p>
-          <div className="acoes">
-            <button type="button" className="botao primario" onClick={() => inputRef.current?.click()}>
+
+          <CampoVoz
+            rotulo="Nome do estabelecimento (obrigatório)"
+            campo="estabelecimento"
+            valor={estabelecimento}
+            aoMudar={setEstabelecimento}
+            placeholder="Ex.: Supermercado G7, Atacadão…"
+            ouvindo={ouvindoCampo === "estabelecimento"}
+            temVoz={disponivel}
+            aoOuvir={ouvir}
+            aoParar={parar}
+            largo
+          />
+
+          <div className="acoes" style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="botao primario"
+              disabled={!nomeOk}
+              onClick={() => inputVideo.current?.click()}
+            >
               🎥 Escolher vídeo
             </button>
+            <button
+              type="button"
+              className="botao neutro"
+              disabled={!nomeOk}
+              onClick={() => inputEncarte.current?.click()}
+            >
+              📄 Encarte (PDF ou foto)
+            </button>
           </div>
+          {!nomeOk && <p className="dica">Preencha o nome do estabelecimento pra continuar.</p>}
+
           <input
-            ref={inputRef}
+            ref={inputVideo}
             type="file"
             accept="video/*"
             hidden
-            onChange={(e) => importar(e.target.files?.[0])}
+            onChange={(e) => usarVideo(e.target.files?.[0])}
+          />
+          <input
+            ref={inputEncarte}
+            type="file"
+            accept="application/pdf,image/*"
+            multiple
+            hidden
+            onChange={(e) => usarEncarte(e.target.files)}
           />
         </section>
       )}
 
       {emProcesso && (
         <section className="cartao">
+          <p className="dica">
+            Concorrente: <strong>{estabelecimento.trim()}</strong>
+          </p>
           <ol className="passos">
             {passos.map((p) => {
               const s = statusPasso(p.id);
@@ -240,7 +259,7 @@ export default function ComerciosGrandes() {
                   <span className="passo-marca" aria-hidden="true">
                     {s === "feito" ? "✓" : s === "agora" ? "●" : "○"}
                   </span>
-                  {p.rotulo()}
+                  {p.rotulo}
                 </li>
               );
             })}
@@ -248,101 +267,81 @@ export default function ComerciosGrandes() {
         </section>
       )}
 
-      {erro && <p className="dica" data-erro="true">{erro}</p>}
-
-      {produtos.length > 0 && (
-        <>
-          <p className="contagem">
-            {produtos.length} produto(s) · {produtos.filter((p) => p.incluir).length} marcados
-          </p>
-          <ul className="lista lista-forn-produtos">
-            {produtos.map((p) => (
-              <li className="forn-produto" key={p.chave}>
-                <div className="forn-produto-foto">
-                  {p.foto ? <FotoAmpliavel src={p.foto} alt={p.nome} /> : <span aria-hidden="true">📦</span>}
-                </div>
-                <div className="forn-produto-info">
-                  <div className="forn-produto-topo">
-                    <label className="check-whatsapp">
-                      <input
-                        type="checkbox"
-                        checked={p.incluir}
-                        onChange={(e) => set(p.chave, { incluir: e.target.checked })}
-                        disabled={estado === "salvando"}
-                      />
-                      incluir
-                    </label>
-                    {p.jaCadastrado && (
-                      <span className="selo" data-situacao="aprovada">
-                        já no catálogo
-                      </span>
-                    )}
-                  </div>
-                  <input
-                    className="filtro-bairro"
-                    value={p.nome}
-                    onChange={(e) => set(p.chave, { nome: e.target.value })}
-                    disabled={estado === "salvando"}
-                  />
-                  <div className="forn-preco-bloco">
-                    <label>
-                      Venda (etiqueta)
-                      <span className="entrada" data-moeda="true">
-                        <span className="prefixo">R$</span>
-                        <input
-                          inputMode="decimal"
-                          value={p.preco}
-                          onChange={(e) => set(p.chave, { preco: mascararMoeda(e.target.value) })}
-                          disabled={estado === "salvando"}
-                        />
-                      </span>
-                    </label>
-                    <label>
-                      Compra (opcional)
-                      <span className="entrada" data-moeda="true">
-                        <span className="prefixo">R$</span>
-                        <input
-                          inputMode="decimal"
-                          value={p.precoCompra}
-                          onChange={(e) => set(p.chave, { precoCompra: mascararMoeda(e.target.value) })}
-                          disabled={estado === "salvando"}
-                        />
-                      </span>
-                    </label>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
+      {erro && (
+        <p className="dica" data-erro="true">
+          {erro}
+        </p>
       )}
 
-      {(estado === "revisao" || estado === "salvando") && produtos.length > 0 && (
-        <section className="cartao pedido-fechamento">
-          <div className="acoes">
-            <button
-              className="botao primario grande"
-              onClick={salvar}
-              disabled={estado === "salvando"}
-            >
-              {estado === "salvando"
-                ? "Salvando…"
-                : `Salvar ${produtos.filter((p) => p.incluir).length} no catálogo`}
-            </button>
-            {estado === "revisao" && (
-              <button
-                type="button"
-                className="botao neutro"
-                onClick={() => {
-                  setEstado("parado");
-                  setProdutos([]);
-                }}
-              >
-                Recomeçar
-              </button>
+      {estado === "resultado" && analise && (
+        <>
+          <section className="cartao">
+            <h2 className="titulo-cartao">{analise.estabelecimento}</h2>
+            <p className="dica">
+              <strong>{analise.resumo.total}</strong> produto(s) encontrado(s) ·{" "}
+              <strong>{analise.resumo.comPreco}</strong> com preço · registrado em{" "}
+              {dataBR(analise.registradoEm)}
+            </p>
+            {analise.resumo.comPreco === 0 && (
+              <p className="dica" data-erro="true">
+                Nenhum preço legível dessa vez. Tente um vídeo mais perto das etiquetas ou um encarte
+                mais nítido.
+              </p>
             )}
+          </section>
+
+          <ul className="lista cg-lista">
+            {analise.itens.map((r, i) => {
+              const dif = r.meuPreco !== null ? Math.round((r.preco - r.meuPreco) * 100) / 100 : null;
+              const sinal = dif === null ? "" : dif < 0 ? "barato" : dif > 0 ? "caro" : "igual";
+              const dir =
+                r.precoAnterior === null
+                  ? ""
+                  : r.preco > r.precoAnterior
+                    ? "subiu"
+                    : r.preco < r.precoAnterior
+                      ? "baixou"
+                      : "estavel";
+              return (
+                <li className="cg-item" key={i}>
+                  <div className="cg-item-topo">
+                    <strong>{r.nome}</strong>
+                    <span className="cg-preco">R$ {paraMoeda(r.preco)}</span>
+                  </div>
+
+                  {r.meuPreco !== null ? (
+                    <div className="cg-comparado" data-sinal={sinal}>
+                      Você vende a R$ {paraMoeda(r.meuPreco)}
+                      {r.meuNome ? ` (${r.meuNome})` : ""} —{" "}
+                      {dif! < 0
+                        ? `R$ ${paraMoeda(Math.abs(dif!))} mais barato lá`
+                        : dif! > 0
+                          ? `R$ ${paraMoeda(dif!)} mais caro lá`
+                          : "mesmo preço"}
+                    </div>
+                  ) : (
+                    <div className="cg-comparado" data-sinal="sem">
+                      Você não tem esse produto no catálogo
+                    </div>
+                  )}
+
+                  {r.precoAnterior !== null && (
+                    <div className="cg-tendencia" data-dir={dir}>
+                      {dir === "subiu" ? "↑ subiu" : dir === "baixou" ? "↓ baixou" : "→ estável"} desde{" "}
+                      {dataBR(r.dataAnterior)} (era R$ {paraMoeda(r.precoAnterior)})
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="acoes">
+            <button type="button" className="botao neutro" onClick={recomecar}>
+              Nova análise
+            </button>
           </div>
-        </section>
+        </>
       )}
     </main>
   );

@@ -219,20 +219,36 @@ voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen. The new
 `compra × 1.38` (`MARGEM_VENDA = 0.38`, same rule as "Importar compra"), still editable; the confirm route
 requires both and passes `precoCompra` to `criarProduto`.
 
-### Catálogo por vídeo de supermercado (`/produtos/comercios-grandes`)
+### Comércios grandes — cotação de preço dos concorrentes (`/produtos/comercios-grandes`)
 
-Módulo "Comércios grandes": o lojista sobe um **vídeo** gravado andando pelos corredores de um
-supermercado com as **etiquetas de preço à mostra**. **Só visão, sem áudio/transcrição** — o preço sai
-da etiqueta na prateleira. `src/lib/quadrosDeVideo.ts` extrai quadros **no navegador** (sem ffmpeg:
-`<video>` escondido + `currentTime` de 2 em 2 s + `canvas`, ~1100px, teto 70 quadros). A tela mostra o
-**passo a passo** (`.passos`: Importando → Extraindo quadros (X/Y) → Lendo os produtos (lote X/Y) →
-Pronto) e vai **preenchendo a lista de produtos ao vivo** conforme cada lote volta. Lotes de 4 quadros →
-`POST /api/produtos/comercios-grandes` (`src/lib/lerMercadoVideo.ts`, vision, `output_config`,
-`ANTHROPIC_MODEL || claude-opus-5`) → `[{nome, preco|null, quadro, jaCadastrado}]`; `buscarProduto`
-marca os que já existem. Dedup por nome normalizado (o quadro `quadro` do lote vira a foto do produto).
-Revisão: nome / preço de venda (da etiqueta) / preço de compra opcional / incluir → `POST
-.../comercios-grandes/confirmar` → `criarProduto` (estoque 0, `unidade`/`tipo_venda` = unidade, foto
-comprimida). Custo: ~alguns centavos de visão Opus por vídeo. Sem `ANTHROPIC_API_KEY` → 500 amigável.
+Módulo "Comércios grandes": **não cadastra produtos** — lê os preços de um concorrente e compara com
+os do lojista. **Só visão.** Um `<CampoVoz>` **obrigatório de "Nome do estabelecimento"** precede
+qualquer upload (os botões ficam desabilitados enquanto vazio) — é a chave do histórico de preço.
+Duas fontes:
+
+- **🎥 Vídeo** — `src/lib/quadrosDeVideo.ts` extrai quadros **no navegador** (sem ffmpeg: `<video>` +
+  `currentTime` de 2 em 2 s + `canvas`, ~1100px, teto 70). Lotes de 4 quadros → `POST
+  /api/produtos/comercios-grandes` (`fonte=video`, `src/lib/lerMercadoVideo.ts` — lê a etiqueta da
+  prateleira) → `[{nome, preco|null}]`.
+- **📄 Encarte (PDF ou foto)** — `POST /api/produtos/comercios-grandes` com o campo `pdf` (um PDF) ou
+  `fotos` (`fonte=foto`, 1-8 imagens) → `src/lib/lerEncartePdf.ts` (`extrairPrecosDoEncarte`, aceita
+  bloco `document`/`application/pdf` **ou** `image`, tudo numa chamada) → `[{nome, preco|null}]`.
+
+`POST /api/produtos/comercios-grandes` **não grava nada** — só extrai. A tela mostra o **passo a passo**
+(`.passos`) e no fim junta tudo e chama **`POST /api/produtos/comercios-grandes/analisar`**
+`{estabelecimento, fonte, itens}`:
+- dedup por nome normalizado (`normalizarNomeProduto` em `db.ts`), **fica só com os que tiveram preço**;
+- `compararCotacoes` — pra cada um: `buscarProduto` (match ≥ 0.5) devolve `meuNome`/`meuPreco`; e a
+  última linha de `cotacao_concorrente` (`db/31`) do mesmo `estabelecimento`+`nome_norm` **de um dia
+  anterior** vira `precoAnterior`/`dataAnterior` (a tendência ↑/↓);
+- `registrarCotacoes` grava a leitura do dia — **uma linha por produto/estabelecimento/dia**
+  (`ux_cotacao_conc_dia`, `ON CONFLICT ... DO UPDATE`), então reanálise no mesmo dia sobrescreve e não
+  polui o histórico.
+
+Resultado: resumo ("N encontrados · M com preço · registrado em dd/mm") + lista **só dos com preço**,
+ordenada por "mais barato lá" primeiro, cada item com o preço do concorrente, o comparativo com o meu
+(`.cg-comparado` — barato/caro/igual/sem match) e a tendência vs. a leitura anterior (`.cg-tendencia`).
+Custo: ~alguns centavos de visão Opus por análise. Sem `ANTHROPIC_API_KEY` → 500 amigável.
 
 ### Stock-by-video (`/produtos/estoque-video`)
 

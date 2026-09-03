@@ -224,7 +224,7 @@ export default function Produtos() {
           🎥 Atualizar estoque por vídeo
         </Link>
         <Link href="/produtos/comercios-grandes" className="botao neutro">
-          🏬 Comércios grandes (vídeo)
+          🏬 Comércios grandes (preços)
         </Link>
         <input
           ref={fotoInput}
