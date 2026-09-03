@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { atualizarFornecedorPublico, fornecedorPublicoDetalhe } from "@/lib/db";
+import {
+  atualizarFornecedorPublico,
+  fornecedorPublicoDetalhe,
+  garantirSlugFornecedor,
+} from "@/lib/db";
 import { exigirFornecedor } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
@@ -10,8 +14,13 @@ export async function GET() {
   if (erro) return erro;
 
   try {
-    const item = await fornecedorPublicoDetalhe(fornecedorId);
+    let item = await fornecedorPublicoDetalhe(fornecedorId);
     if (!item) return NextResponse.json({ erro: "Cadastro não encontrado." }, { status: 404 });
+    // garante o slug do portfólio pra quem já está aprovado
+    if (!item.slug && item.situacao === "aprovado") {
+      await garantirSlugFornecedor(fornecedorId);
+      item = (await fornecedorPublicoDetalhe(fornecedorId)) ?? item;
+    }
     return NextResponse.json({ item });
   } catch (e) {
     console.error("Falha ao carregar fornecedor:", e);

@@ -86,10 +86,13 @@ const GRUPO_FORNECEDOR: GrupoMenu = {
   id: "fornecedor",
   icone: "🚚",
   rotulo: "Fornecedor",
-  href: "/fornecedor",
+  itens: [
+    { href: "/fornecedor", rotulo: "Meu cadastro", descricao: "Dados e bairros que você atende" },
+    { href: "/fornecedor/produtos", rotulo: "Meus produtos", descricao: "Catálogo e portfólio" },
+  ],
 };
 
-const TODOS_GRUPOS = [...GRUPOS_LOJA, GRUPO_ADMIN];
+const TODOS_GRUPOS = [...GRUPOS_LOJA, GRUPO_ADMIN, GRUPO_FORNECEDOR];
 
 function grupoDoCaminho(caminho: string): string | null {
   const g = TODOS_GRUPOS.find(
@@ -164,8 +167,13 @@ export default function MenuLateral() {
     router.refresh();
   }
 
-  // nas telas de login e cadastro o menu nao aparece
-  if (!sessao || caminho.startsWith("/login") || caminho.startsWith("/cadastro")) {
+  // login, cadastro e o portfólio público (/p/...) não têm o menu do app
+  if (
+    !sessao ||
+    caminho.startsWith("/login") ||
+    caminho.startsWith("/cadastro") ||
+    caminho.startsWith("/p/")
+  ) {
     return null;
   }
 

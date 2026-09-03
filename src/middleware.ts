@@ -7,6 +7,11 @@ const LIVRES = ["/login", "/cadastro", "/landing.html"];
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // portfólio público do fornecedor: aberto pra todos (deslogado, loja, fornecedor)
+  if (pathname === "/p" || pathname.startsWith("/p/")) {
+    return NextResponse.next();
+  }
+
   if (LIVRES.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }

@@ -16,6 +16,8 @@ type Fornecedor = {
   pix_chave: string | null;
   cidade: string;
   bairros: string[];
+  slug: string | null;
+  tem_catalogo: boolean;
 };
 
 export default function Diretorio() {
@@ -151,6 +153,16 @@ export default function Diretorio() {
                   </span>
 
                   <span className="botoes-linha">
+                    {f.tem_catalogo && f.slug && (
+                      <a
+                        className="botao mini"
+                        href={`/p/${f.slug}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Ver catálogo
+                      </a>
+                    )}
                     {importados.has(f.id) ? (
                       <span className="selo" data-situacao="aprovada">
                         adicionado

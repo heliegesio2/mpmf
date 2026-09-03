@@ -1,4 +1,8 @@
 import { Pool } from "pg";
+import {
+  CATEGORIAS_FORNECEDOR_PRODUTO,
+  type FornecedorProdutoEntrada,
+} from "@/lib/fornecedorProduto";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -295,6 +299,25 @@ const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS decidido_em timestamptz",
   // db/25 — bairro da loja (pro diretório de fornecedores)
   "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS bairro text",
+  // db/26 — catálogo de produtos do fornecedor + portfólio público
+  `CREATE TABLE IF NOT EXISTS fornecedor_produto (
+     id                    bigserial PRIMARY KEY,
+     fornecedor_publico_id bigint NOT NULL REFERENCES fornecedor_publico(id) ON DELETE CASCADE,
+     nome                  text NOT NULL,
+     categoria             text NOT NULL DEFAULT '',
+     foto                  text,
+     preco_unidade         numeric,
+     preco_desconto        numeric,
+     desconto_qtd_min      integer,
+     preco_caixa           numeric,
+     caixa_qtd             integer,
+     ordem                 integer NOT NULL DEFAULT 0,
+     criado_em             timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS ix_fornecedor_produto_forn ON fornecedor_produto (fornecedor_publico_id)",
+  "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS slug text",
+  "CREATE UNIQUE INDEX IF NOT EXISTS ux_fornecedor_publico_slug ON fornecedor_publico (slug) WHERE slug IS NOT NULL",
+  "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS portfolio_pdf text",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1950,6 +1973,10 @@ export type FornecedorPublico = {
   motivo: string | null;
   criado_em: string;
   bairros: string[];
+  /** Preenchido só onde a query pede (diretório, portfólio). */
+  slug?: string | null;
+  tem_catalogo?: boolean;
+  tem_pdf?: boolean;
 };
 
 /** Lista os fornecedores públicos (cadastro na plataforma) — só super admin. */
@@ -2009,6 +2036,7 @@ export async function decidirFornecedorPublico(
                 ) AS bairros`,
     [id, situacao, situacao === "reprovado" ? String(motivo ?? "").trim() || null : null]
   );
+  if (rows[0] && situacao === "aprovado") await garantirSlugFornecedor(id);
   return rows[0] ?? null;
 }
 
@@ -2058,6 +2086,7 @@ export async function fornecedorPublicoDetalhe(id: number): Promise<
   const { rows } = await pool.query<FornecedorPublico & { bairro_ids: number[] }>(
     `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
             fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
+            fp.slug, (fp.portfolio_pdf IS NOT NULL AND fp.portfolio_pdf <> '') AS tem_pdf,
             COALESCE((SELECT json_agg(b.nome ORDER BY b.nome)
                         FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
                        WHERE fb.fornecedor_publico_id = fp.id), '[]'::json) AS bairros,
@@ -2156,6 +2185,8 @@ export async function listarDiretorioFornecedores(
   const { rows } = await pool.query<FornecedorPublico>(
     `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
             fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
+            fp.slug,
+            EXISTS (SELECT 1 FROM fornecedor_produto p WHERE p.fornecedor_publico_id = fp.id) AS tem_catalogo,
             COALESCE((SELECT json_agg(b.nome ORDER BY b.nome)
                         FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
                        WHERE fb.fornecedor_publico_id = fp.id), '[]'::json) AS bairros
@@ -2177,4 +2208,228 @@ export async function fornecedorPublicoPorId(id: number): Promise<FornecedorPubl
     [id]
   );
   return rows[0] ?? null;
+}
+
+// ---------- produtos do fornecedor + portfólio (db/26) ----------
+
+export type FornecedorProduto = {
+  id: number;
+  nome: string;
+  categoria: string;
+  preco_unidade: number | null;
+  preco_desconto: number | null;
+  desconto_qtd_min: number | null;
+  preco_caixa: number | null;
+  caixa_qtd: number | null;
+  ordem: number;
+  criado_em: string;
+  tem_foto: boolean;
+};
+
+const CAMPOS_FORN_PRODUTO = `id, nome, categoria,
+  preco_unidade::float8 AS preco_unidade, preco_desconto::float8 AS preco_desconto,
+  desconto_qtd_min, preco_caixa::float8 AS preco_caixa, caixa_qtd, ordem,
+  criado_em, (foto IS NOT NULL AND foto <> '') AS tem_foto`;
+
+export async function listarProdutosFornecedor(fornecedorId: number): Promise<FornecedorProduto[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<FornecedorProduto>(
+    `SELECT ${CAMPOS_FORN_PRODUTO} FROM fornecedor_produto
+      WHERE fornecedor_publico_id = $1
+      ORDER BY ordem, lower(nome)`,
+    [fornecedorId]
+  );
+  return rows;
+}
+
+export async function categoriasFornecedorUsadas(fornecedorId: number): Promise<string[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ categoria: string }>(
+    `SELECT DISTINCT categoria FROM fornecedor_produto
+      WHERE fornecedor_publico_id = $1 AND categoria <> ''
+        AND NOT (categoria = ANY ($2))
+      ORDER BY categoria`,
+    [fornecedorId, CATEGORIAS_FORNECEDOR_PRODUTO as unknown as string[]]
+  );
+  return rows.map((r) => r.categoria);
+}
+
+export async function criarProdutoFornecedor(
+  fornecedorId: number,
+  d: FornecedorProdutoEntrada
+): Promise<FornecedorProduto> {
+  await garantirSchema();
+  const { rows } = await pool.query<FornecedorProduto>(
+    `INSERT INTO fornecedor_produto
+       (fornecedor_publico_id, nome, categoria, foto, preco_unidade, preco_desconto,
+        desconto_qtd_min, preco_caixa, caixa_qtd,
+        ordem)
+     VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9,
+        COALESCE((SELECT max(ordem) + 1 FROM fornecedor_produto WHERE fornecedor_publico_id = $1), 0))
+     RETURNING ${CAMPOS_FORN_PRODUTO}`,
+    [
+      fornecedorId,
+      d.nome.trim(),
+      d.categoria.trim().slice(0, 40),
+      d.foto ?? "",
+      d.precoUnidade,
+      d.precoDesconto,
+      d.descontoQtdMin,
+      d.precoCaixa,
+      d.caixaQtd,
+    ]
+  );
+  await garantirSlugFornecedor(fornecedorId);
+  return rows[0];
+}
+
+export async function atualizarProdutoFornecedor(
+  fornecedorId: number,
+  id: number,
+  d: FornecedorProdutoEntrada
+): Promise<FornecedorProduto | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<FornecedorProduto>(
+    `UPDATE fornecedor_produto SET
+       nome = $3, categoria = $4,
+       preco_unidade = $5, preco_desconto = $6, desconto_qtd_min = $7,
+       preco_caixa = $8, caixa_qtd = $9,
+       foto = CASE
+                WHEN $10::text IS NULL THEN foto
+                WHEN $10 = '' THEN NULL
+                ELSE $10
+              END
+     WHERE id = $2 AND fornecedor_publico_id = $1
+     RETURNING ${CAMPOS_FORN_PRODUTO}`,
+    [
+      fornecedorId,
+      id,
+      d.nome.trim(),
+      d.categoria.trim().slice(0, 40),
+      d.precoUnidade,
+      d.precoDesconto,
+      d.descontoQtdMin,
+      d.precoCaixa,
+      d.caixaQtd,
+      d.foto ?? null,
+    ]
+  );
+  return rows[0] ?? null;
+}
+
+export async function excluirProdutoFornecedor(fornecedorId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "DELETE FROM fornecedor_produto WHERE id = $1 AND fornecedor_publico_id = $2",
+    [id, fornecedorId]
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
+export async function fotoProdutoFornecedor(fornecedorId: number, id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ foto: string | null }>(
+    "SELECT foto FROM fornecedor_produto WHERE id = $1 AND fornecedor_publico_id = $2",
+    [id, fornecedorId]
+  );
+  return rows[0]?.foto || null;
+}
+
+/** Foto de um produto pra página pública — casa slug + fornecedor aprovado. */
+export async function fotoProdutoPortfolio(slug: string, id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ foto: string | null }>(
+    `SELECT p.foto FROM fornecedor_produto p
+       JOIN fornecedor_publico fp ON fp.id = p.fornecedor_publico_id
+      WHERE p.id = $1 AND fp.slug = $2 AND fp.situacao = 'aprovado'`,
+    [id, slug]
+  );
+  return rows[0]?.foto || null;
+}
+
+function kebabSemAcento(s: string): string {
+  return s
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50);
+}
+
+/** Garante um slug único pro fornecedor (gera a partir do nome na 1ª vez). */
+export async function garantirSlugFornecedor(id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ slug: string | null; nome: string }>(
+    "SELECT slug, nome FROM fornecedor_publico WHERE id = $1",
+    [id]
+  );
+  if (!rows[0]) return null;
+  if (rows[0].slug) return rows[0].slug;
+
+  const base = kebabSemAcento(rows[0].nome) || "fornecedor";
+  for (const tentativa of [base, `${base}-${id}`]) {
+    try {
+      const upd = await pool.query<{ slug: string }>(
+        "UPDATE fornecedor_publico SET slug = $2 WHERE id = $1 RETURNING slug",
+        [id, tentativa]
+      );
+      return upd.rows[0]?.slug ?? null;
+    } catch {
+      // colisão no índice único — tenta a próxima
+    }
+  }
+  return null;
+}
+
+export type Portfolio = {
+  fornecedor: FornecedorPublico;
+  produtos: FornecedorProduto[];
+};
+
+/** Portfólio público de um fornecedor APROVADO (página /p/<slug> e diretório). */
+export async function portfolioPublico(slug: string): Promise<Portfolio | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<FornecedorPublico>(
+    `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
+            fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
+            fp.slug,
+            (fp.portfolio_pdf IS NOT NULL AND fp.portfolio_pdf <> '') AS tem_pdf,
+            COALESCE((SELECT json_agg(b.nome ORDER BY b.nome)
+                        FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
+                       WHERE fb.fornecedor_publico_id = fp.id), '[]'::json) AS bairros
+       FROM fornecedor_publico fp
+      WHERE fp.slug = $1 AND fp.situacao = 'aprovado'`,
+    [slug]
+  );
+  const fornecedor = rows[0];
+  if (!fornecedor) return null;
+  const produtos = await listarProdutosFornecedor(fornecedor.id);
+  return { fornecedor, produtos };
+}
+
+export async function salvarPortfolioPdf(fornecedorId: number, base64: string | null): Promise<void> {
+  await garantirSchema();
+  await pool.query("UPDATE fornecedor_publico SET portfolio_pdf = $2 WHERE id = $1", [
+    fornecedorId,
+    base64,
+  ]);
+}
+
+export async function portfolioPdf(fornecedorId: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ portfolio_pdf: string | null }>(
+    "SELECT portfolio_pdf FROM fornecedor_publico WHERE id = $1",
+    [fornecedorId]
+  );
+  return rows[0]?.portfolio_pdf || null;
+}
+
+export async function portfolioPdfPorSlug(slug: string): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ portfolio_pdf: string | null }>(
+    "SELECT portfolio_pdf FROM fornecedor_publico WHERE slug = $1 AND situacao = 'aprovado'",
+    [slug]
+  );
+  return rows[0]?.portfolio_pdf || null;
 }

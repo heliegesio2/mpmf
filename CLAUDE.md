@@ -278,12 +278,32 @@ of a blank "não foi possível salvar".
   `{usuarioId: 0, papel: "fornecedor", fornecedorId, empresaId: null}`, `destino: "/fornecedor"`.
   `middleware.ts` locks `papel === "fornecedor"` to exactly `/fornecedor` and `/fornecedor/*` (NOT
   `/fornecedores`), redirecting everything else there; non-fornecedores are bounced off `/fornecedor`.
-  `exigirFornecedor()` in `sessao.ts`. `MenuLateral` renders a slim `GRUPO_FORNECEDOR` for them.
+  `exigirFornecedor()` in `sessao.ts`. `MenuLateral`'s `GRUPO_FORNECEDOR` has **Meu cadastro**
+  (`/fornecedor`) + **Meus produtos** (`/fornecedor/produtos`).
   **`/fornecedor`** — the supplier's own screen: status badge + editable profile (data + bairros
   multi-select) → `GET/PUT /api/fornecedor` (`fornecedorPublicoDetalhe` / `atualizarFornecedorPublico`).
   **`/fornecedor/senha`** — trocar senha (`PUT /api/fornecedor/senha {atual, nova}` →
   `conferirSenha` on `fornecedorPublicoSenhaHash` then `alterarSenhaFornecedorPublico`); linked from the
   account menu (fornecedores don't get `/perfil` or `/senha`).
+- **Catálogo + portfólio do fornecedor (`db/26`)** — `fornecedor_produto` (`fornecedor_publico_id`,
+  `nome`, `categoria` free-text with suggestion chips `CATEGORIAS_FORNECEDOR_PRODUTO` in
+  `src/lib/fornecedorProduto.ts`, `foto` data-URL kept out of list queries → `tem_foto`, `preco_unidade`
+  / `preco_desconto`+`desconto_qtd_min` / `preco_caixa`+`caixa_qtd`, `ordem`). `fornecedor_publico`
+  gained `slug` (unique, generated from `nome` on approval / first product / GET `/api/fornecedor`) and
+  `portfolio_pdf` (base64, kept out of selects). **`/fornecedor/produtos`** — list-only (produtos
+  pattern): grid, name/category filter, `+ Novo produto` → `/fornecedor/produtos/novo` and
+  `.../editar/[id]` (shared `<FormularioFornecedorProduto>`), a "📄 Anexar portfólio em PDF" button
+  (`PUT/DELETE /api/fornecedor/portfolio-pdf`, multipart, ≤8MB), and the shareable portfolio link.
+  Routes: `GET/POST /api/fornecedor/produtos`, `PUT/DELETE .../[id]`, `GET .../[id]/foto`, `POST
+  .../melhorar-foto`. **Photo enhancement** — `src/lib/melhorarImagemProduto.ts` posts the picked photo
+  to remove.bg (`REMOVEBG_API_KEY`, `bg_color=ffffff` so no server-side compositing); no key / any
+  failure → returns the same photo. The form shows a "✨ com fundo branco / foto original" toggle.
+  **`/p/[slug]`** — the **public** portfolio page (server component, `revalidate = 300`), added to
+  `middleware.ts` as a for-everyone path (before the fornecedor-area lock); `MenuLateral` returns null
+  for `/p/`; `.conteudo:has(.pf-pagina)` drops the sidebar margin. Photos/PDF served publicly via
+  `/api/portfolio/[slug]/foto/[id]` and `/api/portfolio/[slug]/pdf` (join on slug + `situacao='aprovado'`).
+  `listarDiretorioFornecedores` now returns `slug` + `tem_catalogo`; `/diretorio` rows get a "Ver
+  catálogo" link to `/p/<slug>`.
 - **`/diretorio` (store side)** — `empresa` gained `bairro` (`db/25`, editable in `/configuracoes`
   alongside `cidade`). `GET /api/diretorio?bairro=` (`exigirEmpresa`) → `listarDiretorioFornecedores`
   (approved `fornecedor_publico` in `empresa.cidade`, optionally serving a bairro), defaulting the filter
