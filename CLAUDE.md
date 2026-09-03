@@ -62,8 +62,16 @@ on the Edge Runtime and needs `auth.ts` importable there. Password hashing (`src
 kept in a **separate** file for the opposite reason: it needs `node:crypto`, which the Edge Runtime can't
 bundle, so it must never be imported from `auth.ts` or anything the middleware pulls in.
 
-`middleware.ts` gates every route except `/login`, `/cadastro`, and `/api/*` (each API route checks its
-own session — see below) and `_next`/static assets. `/admin/*` additionally requires `papel === "super_admin"`.
+`middleware.ts` gates every route except `/login`, `/cadastro`, `/landing.html`, and `/api/*` (each API
+route checks its own session — see below) and `_next`/static assets. `/admin/*` additionally requires
+`papel === "super_admin"`.
+
+**Landing pública em `/`** — quando **não há sessão**, `middleware.ts` faz `rewrite` de `/` para
+`public/landing.html` (a landing page do PDV Já — fonte em `../site/index.html`, um HTML autocontido com
+`<style>`/`<script>` inline, canvas de partículas e animação de digitação; regenerar com o mesmo wrapper
+`<!doctype>` + trocar `href="https://pdvja.com.br/"` por `/cadastro`). Com sessão, `/` é a tela de
+consulta de preço (`src/app/page.tsx`) como sempre. A landing tem no topo **Entrar** (`/login`) ao lado
+de **Cadastre-se** (`/cadastro`).
 
 **"Entrar como" (impersonation)** — `/admin/empresas` has an *Entrar como* button per store user.
 `POST /api/admin/impersonar {usuarioId}` (`exigirSuperAdmin`) mints a session token *for that user* with

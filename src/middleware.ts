@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { COOKIE_SESSAO, lerToken } from "@/lib/auth";
 
 /** Paginas que qualquer um alcanca sem estar logado. */
-const LIVRES = ["/login", "/cadastro"];
+const LIVRES = ["/login", "/cadastro", "/landing.html"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -14,6 +14,10 @@ export async function middleware(request: NextRequest) {
   const sessao = await lerToken(request.cookies.get(COOKIE_SESSAO)?.value);
 
   if (!sessao) {
+    // a raiz e a landing publica (site/); o resto vai pro login
+    if (pathname === "/") {
+      return NextResponse.rewrite(new URL("/landing.html", request.url));
+    }
     const destino = new URL("/login", request.url);
     destino.searchParams.set("de", pathname);
     return NextResponse.redirect(destino);
