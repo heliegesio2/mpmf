@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
 import BotaoCopiar from "@/components/BotaoCopiar";
-import { comprimirParaDataURL } from "@/lib/imagemCliente";
+import { comprimirFotoCatalogo } from "@/lib/imagemCliente";
 import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
 
 const reais = (v: number | null | undefined) =>
@@ -111,7 +111,7 @@ export default function ProdutosFornecedor() {
     setFotoDoCard(id);
     setErro(false);
     try {
-      const dataUrl = await comprimirParaDataURL(arquivo);
+      const dataUrl = await comprimirFotoCatalogo(arquivo);
       const r = await fetch(`/api/fornecedor/produtos/${id}/foto`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -120,6 +120,28 @@ export default function ProdutosFornecedor() {
       const d = await r.json();
       if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
       setAviso("Foto do produto salva.");
+
+      // lê a embalagem e atualiza o nome com o que a IA reconhecer
+      let nomeNovo = "";
+      try {
+        const ri = await fetch("/api/fornecedor/produtos/identificar-foto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ foto: dataUrl }),
+        });
+        const di = await ri.json();
+        if (ri.ok && typeof di.nome === "string" && di.nome.trim()) {
+          nomeNovo = di.nome.trim();
+          await fetch(`/api/fornecedor/produtos/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nome: nomeNovo }),
+          });
+        }
+      } catch {
+        /* identificação é um plus */
+      }
+      if (nomeNovo) setAviso(`Foto salva. Nome atualizado para "${nomeNovo}".`);
       await carregar();
     } catch (e) {
       setErro(true);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { comprimirParaDataURL } from "@/lib/imagemCliente";
+import { comprimirFotoCatalogo, comprimirParaDataURL } from "@/lib/imagemCliente";
 
 type Props = {
   rotulo?: string;
@@ -17,11 +17,15 @@ type Props = {
    * nome sugerido (só chama se vier nome; falha é silenciosa).
    */
   aoIdentificarNome?: (nome: string) => void;
+  /** Endpoint de identificação de nome (padrão: da loja). */
+  urlIdentificar?: string;
   /**
    * Por padrão o seletor sugere a câmera (`capture`). Passe `semCaptura` pra
    * abrir o seletor normal (galeria + câmera) — útil pra foto de perfil.
    */
   semCaptura?: boolean;
+  /** Guarda a foto em resolução/qualidade altas (catálogo do fornecedor). */
+  alta?: boolean;
 };
 
 /**
@@ -36,7 +40,9 @@ export default function CampoFoto({
   aoRemover,
   aoErro,
   aoIdentificarNome,
+  urlIdentificar = "/api/produtos/identificar-foto",
   semCaptura,
+  alta,
 }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const id = useId();
@@ -48,7 +54,7 @@ export default function CampoFoto({
     setOcupado(true);
     let dataUrl = "";
     try {
-      dataUrl = await comprimirParaDataURL(arquivo);
+      dataUrl = alta ? await comprimirFotoCatalogo(arquivo) : await comprimirParaDataURL(arquivo);
       aoEscolher(dataUrl);
     } catch {
       aoErro?.("Não consegui usar essa foto. Tente outra.");
@@ -62,7 +68,7 @@ export default function CampoFoto({
     if (aoIdentificarNome && dataUrl) {
       setIdentificando(true);
       try {
-        const r = await fetch("/api/produtos/identificar-foto", {
+        const r = await fetch(urlIdentificar, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ foto: dataUrl }),

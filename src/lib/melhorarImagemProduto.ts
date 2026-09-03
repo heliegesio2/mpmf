@@ -21,7 +21,9 @@ export async function melhorarFotoProduto(dataUrl: string): Promise<{ foto: stri
   try {
     const form = new FormData();
     form.set("image_file_b64", m[2]);
-    form.set("size", "auto");
+    // "full" pede a maior resolução que o plano permitir; no plano grátis o
+    // remove.bg cai pra preview sozinho.
+    form.set("size", "full");
     form.set("bg_color", "ffffff");
     form.set("format", "jpg");
 

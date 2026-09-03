@@ -2340,20 +2340,20 @@ export async function atualizarProdutoFornecedor(
   return rows[0] ?? null;
 }
 
-/** Edição rápida só dos preços pela lista (mantém nome/categoria/foto). */
+/**
+ * Edição rápida pela lista — atualiza só as chaves presentes em `campos`
+ * (`nome`, `categoria`, `precoUnidade`, `precoDesconto`, `descontoQtdMin`,
+ * `precoCaixa`, `caixaQtd`); mantém foto e o resto.
+ */
 export async function atualizarPrecosProdutoFornecedor(
   fornecedorId: number,
   id: number,
-  campos: Partial<{
-    precoUnidade: number | null;
-    precoDesconto: number | null;
-    descontoQtdMin: number | null;
-    precoCaixa: number | null;
-    caixaQtd: number | null;
-  }>
+  campos: Record<string, string | number | null>
 ): Promise<FornecedorProduto | null> {
   await garantirSchema();
   const COL: Record<string, string> = {
+    nome: "nome",
+    categoria: "categoria",
     precoUnidade: "preco_unidade",
     precoDesconto: "preco_desconto",
     descontoQtdMin: "desconto_qtd_min",

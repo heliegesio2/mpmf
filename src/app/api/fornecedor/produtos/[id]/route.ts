@@ -32,7 +32,12 @@ export async function PATCH(request: Request, { params }: Ctx) {
 
   try {
     const c = (await request.json()) as Record<string, unknown>;
-    const campos: Record<string, number | null> = {};
+    const campos: Record<string, number | string | null> = {};
+    if ("nome" in c) {
+      const nome = String(c.nome ?? "").trim();
+      if (nome.length >= 2) campos.nome = nome;
+    }
+    if ("categoria" in c) campos.categoria = String(c.categoria ?? "").trim().slice(0, 40);
     for (const k of ["precoUnidade", "precoDesconto", "precoCaixa"]) {
       if (k in c) campos[k] = preco(c[k]);
     }

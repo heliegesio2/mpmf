@@ -227,6 +227,11 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
             <CampoFoto
               rotulo="Foto do produto"
               semCaptura
+              alta
+              urlIdentificar="/api/fornecedor/produtos/identificar-foto"
+              aoIdentificarNome={(n) => {
+                if (!nome.trim()) setNome(n);
+              }}
               preview={previewFoto}
               aoEscolher={aoEscolherFoto}
               aoRemover={

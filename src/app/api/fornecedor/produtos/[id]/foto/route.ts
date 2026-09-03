@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { atualizarFotoProdutoFornecedor, fotoProdutoFornecedor } from "@/lib/db";
-import { melhorarFotoProduto } from "@/lib/melhorarImagemProduto";
 import { exigirFornecedor } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +8,8 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * PUT /api/fornecedor/produtos/:id/foto { foto } -> troca só a foto (add rápido
- * pela lista). Passa pela melhoria de imagem (fundo branco) quando possível.
+ * pela lista). Guarda a foto em alta como veio do navegador; o "fundo branco"
+ * (remove.bg) fica pro formulário, com o toggle antes/depois.
  */
 export async function PUT(request: Request, { params }: Ctx) {
   const { fornecedorId, erro } = await exigirFornecedor();
@@ -25,8 +25,7 @@ export async function PUT(request: Request, { params }: Ctx) {
     if (typeof foto !== "string" || !foto.startsWith("data:image/")) {
       return NextResponse.json({ erro: "Foto inválida." }, { status: 400 });
     }
-    const { foto: melhor } = await melhorarFotoProduto(foto);
-    const ok = await atualizarFotoProdutoFornecedor(fornecedorId, id, melhor);
+    const ok = await atualizarFotoProdutoFornecedor(fornecedorId, id, foto);
     if (!ok) return NextResponse.json({ erro: "Produto não encontrado." }, { status: 404 });
     return NextResponse.json({ ok: true });
   } catch (e) {
