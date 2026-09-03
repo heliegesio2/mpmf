@@ -70,6 +70,7 @@ const GRUPOS_LOJA: GrupoMenu[] = [
   },
   { id: "relatorios", icone: "📊", rotulo: "Relatórios", href: "/relatorios" },
   { id: "anotacoes", icone: "📝", rotulo: "Anotações", href: "/anotacoes" },
+  { id: "avisos", icone: "🔔", rotulo: "Avisos", href: "/notificacoes" },
 ];
 
 const GRUPO_ADMIN: GrupoMenu = {
@@ -89,6 +90,7 @@ const GRUPO_FORNECEDOR: GrupoMenu = {
   itens: [
     { href: "/fornecedor", rotulo: "Meu cadastro", descricao: "Dados e bairros que você atende" },
     { href: "/fornecedor/produtos", rotulo: "Meus produtos", descricao: "Catálogo e portfólio" },
+    { href: "/notificacoes", rotulo: "Avisos", descricao: "Novidades e lembretes" },
   ],
 };
 
@@ -116,6 +118,7 @@ export default function MenuLateral() {
   const [semFoto, setSemFoto] = useState(false);
   const [sessao, setSessao] = useState<Sessao | null>(null);
   const [alertasAnotacoes, setAlertasAnotacoes] = useState(0);
+  const [avisosNaoLidos, setAvisosNaoLidos] = useState(0);
   const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(
     () => new Set(["balcao", grupoDoCaminho(caminho)].filter(Boolean) as string[])
   );
@@ -141,6 +144,13 @@ export default function MenuLateral() {
       .then((r) => (r.ok ? r.json() : { total: 0 }))
       .then((d) => setAlertasAnotacoes(Number(d?.total) || 0))
       .catch(() => setAlertasAnotacoes(0));
+  }, [caminho]);
+
+  useEffect(() => {
+    fetch("/api/notificacoes?resumo=1")
+      .then((r) => (r.ok ? r.json() : { naoLidas: 0 }))
+      .then((d) => setAvisosNaoLidos(Number(d?.naoLidas) || 0))
+      .catch(() => setAvisosNaoLidos(0));
   }, [caminho]);
 
   function alternarGrupo(id: string) {
@@ -251,6 +261,15 @@ export default function MenuLateral() {
           <img src="/api/auth/foto" alt="" onError={() => setSemFoto(true)} />
         )}
       </button>
+      {avisosNaoLidos > 0 && (
+        <Link
+          href="/notificacoes"
+          className="conta-badge"
+          aria-label={`${avisosNaoLidos} aviso(s) não lido(s)`}
+        >
+          {avisosNaoLidos > 9 ? "9+" : avisosNaoLidos}
+        </Link>
+      )}
 
       {contaAberta && (
         <>
@@ -341,6 +360,9 @@ export default function MenuLateral() {
                 <strong>{g.rotulo}</strong>
                 {g.id === "anotacoes" && alertasAnotacoes > 0 && (
                   <span className="menu-alerta">{alertasAnotacoes}</span>
+                )}
+                {g.id === "avisos" && avisosNaoLidos > 0 && (
+                  <span className="menu-alerta">{avisosNaoLidos > 9 ? "9+" : avisosNaoLidos}</span>
                 )}
               </Link>
             ) : (

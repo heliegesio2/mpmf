@@ -341,20 +341,33 @@ export default function ProdutosFornecedor() {
                 <div className="forn-produto-foto">
                   {p.tem_foto ? (
                     <FotoAmpliavel src={`/api/fornecedor/produtos/${p.id}/foto`} alt={p.nome} />
+                  ) : fotoDoCard === p.id ? (
+                    <span className="sem-foto" aria-hidden="true">
+                      <span>⏳</span>
+                      <span className="sem-foto-dica">Salvando…</span>
+                    </span>
                   ) : (
-                    <label className="sem-foto" title="Tirar ou enviar uma foto">
-                      <span aria-hidden="true">{fotoDoCard === p.id ? "⏳" : "📷"}</span>
-                      <span className="sem-foto-dica">
-                        {fotoDoCard === p.id ? "Salvando…" : "Adicionar foto"}
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        hidden
-                        disabled={fotoDoCard === p.id}
-                        onChange={(e) => fotoDireta(p.id, e.target.files?.[0])}
-                      />
-                    </label>
+                    <div className="forn-foto-acoes">
+                      <label className="forn-foto-botao" title="Tirar foto agora">
+                        <span aria-hidden="true">📷</span> Câmera
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          hidden
+                          onChange={(e) => fotoDireta(p.id, e.target.files?.[0])}
+                        />
+                      </label>
+                      <label className="forn-foto-botao" title="Enviar uma foto que já tenho">
+                        <span aria-hidden="true">🖼️</span> Arquivo
+                        <input
+                          type="file"
+                          accept="image/*"
+                          hidden
+                          onChange={(e) => fotoDireta(p.id, e.target.files?.[0])}
+                        />
+                      </label>
+                    </div>
                   )}
                 </div>
 

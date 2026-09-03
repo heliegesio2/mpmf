@@ -532,6 +532,25 @@ took (engradado, botijão…), now a required field on the form; `criarCasco` an
 `data_alerta <= CURRENT_DATE` for the menu badge (`GET /api/anotacoes/alertas`, cheap, fetched by
 `MenuLateral` per path). List sorts overdue → today → future → undated.
 
+**Messageria / avisos (`db/27`)** — `notificacao` targets **exactly one** of `usuario_id` /
+`fornecedor_publico_id` (`tipo`, `titulo`, `corpo`, `link`, `chave` for idempotency, `lida`, `criado_em`).
+`src/lib/db.ts` messageria group: `notificar(destino, {...})` (`INSERT … ON CONFLICT (…, chave) WHERE
+chave IS NOT NULL DO NOTHING`), `notificarUsuariosDaEmpresa(empresaId, …, chaveBase)` (one row per active
+user), `listarNotificacoes` / `contarNaoLidas` / `marcarNotificacaoLida` / `marcarTodasLidas`, and
+`sincronizarAvisosDeAnotacoes(usuarioId, empresaId)` — lazily materializes one aviso per **due open
+anotação** per user (`chave = anotacao:<id>:<usuario_id>`), run at the top of `GET /api/notificacoes`
+(incl. `?resumo=1`). `editarAnotacao` deletes the still-unread avisos of a note when it's marked
+`concluida`. `Destino` type + `destinoDaSessao(sessao)` (`src/lib/destinoNotificacao.ts`) — fornecedor →
+`{fornecedorId}`, else `{usuarioId}` (super-admin-with-no-store → no inbox). Routes: `GET
+/api/notificacoes[?resumo=1]`, `PATCH /api/notificacoes/[id] {lida}`, `POST /api/notificacoes/marcar-todas`.
+**`/notificacoes`** — the avisos screen (newest first, unread = `--azul-wash` + `.aviso-ponto`, tap marks
+read + follows `link`, "marcar todas como lidas"); in the loja menu as "🔔 Avisos" and in
+`GRUPO_FORNECEDOR`; `middleware.ts` lets `papel === "fornecedor"` reach it (`compartilhada`). `MenuLateral`
+polls `/api/notificacoes?resumo=1` per path and shows `.conta-badge` (red count on the account photo) +
+the menu `.menu-alerta`. Push/e-mail is **not** part of this — it's in-app only, per user. Next leva:
+**pedidos** (`pedido`/`pedido_item` `db/28`, `/pedido/<slug>` for the store, `/fornecedor/pedidos`) will
+call `notificar()` on each event.
+
 `GET/PUT /api/auth/perfil` — PUT takes `{nome, foto?}` (`foto` tri-state: key absent = keep, `""` = clear,
 data URL = replace, same convention as `atualizarProduto`) and re-mints the session cookie so the new name
 shows without re-login (the name lives inside the HMAC token); the `/perfil` page then does a full reload

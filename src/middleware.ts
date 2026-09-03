@@ -35,8 +35,12 @@ export async function middleware(request: NextRequest) {
 
   // area do fornecedor = exatamente /fornecedor e /fornecedor/... (não /fornecedores)
   const naAreaFornecedor = pathname === "/fornecedor" || pathname.startsWith("/fornecedor/");
+  // telas compartilhadas (loja + fornecedor)
+  const compartilhada = pathname === "/notificacoes";
   if (sessao.papel === "fornecedor") {
-    if (!naAreaFornecedor) return NextResponse.redirect(new URL("/fornecedor", request.url));
+    if (!naAreaFornecedor && !compartilhada) {
+      return NextResponse.redirect(new URL("/fornecedor", request.url));
+    }
   } else if (naAreaFornecedor) {
     return NextResponse.redirect(new URL("/", request.url));
   }

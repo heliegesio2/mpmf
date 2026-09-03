@@ -318,6 +318,22 @@ const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS slug text",
   "CREATE UNIQUE INDEX IF NOT EXISTS ux_fornecedor_publico_slug ON fornecedor_publico (slug) WHERE slug IS NOT NULL",
   "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS portfolio_pdf text",
+  // db/27 — messageria: avisos in-app por destinatário
+  `CREATE TABLE IF NOT EXISTS notificacao (
+     id                    bigserial PRIMARY KEY,
+     usuario_id            bigint REFERENCES usuario(id) ON DELETE CASCADE,
+     fornecedor_publico_id bigint REFERENCES fornecedor_publico(id) ON DELETE CASCADE,
+     tipo                  text NOT NULL DEFAULT 'sistema',
+     titulo                text NOT NULL,
+     corpo                 text,
+     link                  text,
+     chave                 text,
+     lida                  boolean NOT NULL DEFAULT false,
+     criado_em             timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS ix_notificacao_usuario ON notificacao (usuario_id, lida, criado_em DESC) WHERE usuario_id IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS ix_notificacao_fornecedor ON notificacao (fornecedor_publico_id, lida, criado_em DESC) WHERE fornecedor_publico_id IS NOT NULL",
+  "CREATE UNIQUE INDEX IF NOT EXISTS ux_notificacao_chave ON notificacao (coalesce(usuario_id, 0), coalesce(fornecedor_publico_id, 0), chave) WHERE chave IS NOT NULL",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1129,6 +1145,13 @@ export async function editarAnotacao(
       RETURNING ${CAMPOS_ANOTACAO}`,
     vals
   );
+  // ao concluir, tira da caixa de avisos o que ainda não foi lido
+  if (rows[0] && campos.concluida === true) {
+    await pool.query(
+      "DELETE FROM notificacao WHERE chave LIKE 'anotacao:' || $1 || ':%' AND NOT lida",
+      [id]
+    );
+  }
   return rows[0] ?? null;
 }
 
@@ -2490,4 +2513,136 @@ export async function portfolioPdfPorSlug(slug: string): Promise<string | null> 
     [slug]
   );
   return rows[0]?.portfolio_pdf || null;
+}
+
+// ---------- messageria / notificações (db/27) ----------
+
+/** Quem recebe o aviso: um `usuario` OU um `fornecedor_publico`. */
+export type Destino = { usuarioId: number } | { fornecedorId: number };
+
+export type Notificacao = {
+  id: number;
+  tipo: string;
+  titulo: string;
+  corpo: string | null;
+  link: string | null;
+  lida: boolean;
+  criado_em: string;
+};
+
+export type NovaNotificacao = {
+  tipo?: string;
+  titulo: string;
+  corpo?: string | null;
+  link?: string | null;
+  chave?: string | null;
+};
+
+/** `usuario_id = $n` ou `fornecedor_publico_id = $n`, com o valor. */
+function condDestino(d: Destino, base = 1): { where: string; params: unknown[] } {
+  return "usuarioId" in d
+    ? { where: `usuario_id = $${base}`, params: [d.usuarioId] }
+    : { where: `fornecedor_publico_id = $${base}`, params: [d.fornecedorId] };
+}
+
+const CAMPOS_NOTIF = "id, tipo, titulo, corpo, link, lida, criado_em";
+
+/** Cria um aviso pro destinatário. `chave` presente = idempotente. */
+export async function notificar(d: Destino, n: NovaNotificacao): Promise<void> {
+  await garantirSchema();
+  const usuarioId = "usuarioId" in d ? d.usuarioId : null;
+  const fornecedorId = "fornecedorId" in d ? d.fornecedorId : null;
+  await pool.query(
+    `INSERT INTO notificacao (usuario_id, fornecedor_publico_id, tipo, titulo, corpo, link, chave)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (coalesce(usuario_id, 0), coalesce(fornecedor_publico_id, 0), chave) WHERE chave IS NOT NULL DO NOTHING`,
+    [
+      usuarioId,
+      fornecedorId,
+      n.tipo ?? "sistema",
+      n.titulo,
+      n.corpo ?? null,
+      n.link ?? null,
+      n.chave ?? null,
+    ]
+  );
+}
+
+/** Cria o mesmo aviso pra todos os usuários ativos de uma empresa. */
+export async function notificarUsuariosDaEmpresa(
+  empresaId: number,
+  n: NovaNotificacao,
+  chaveBase?: string
+): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    `INSERT INTO notificacao (usuario_id, tipo, titulo, corpo, link, chave)
+     SELECT u.id, $2, $3, $4, $5,
+            CASE WHEN $6::text IS NULL THEN NULL ELSE $6 || ':' || u.id END
+       FROM usuario u
+      WHERE u.empresa_id = $1 AND u.ativo
+     ON CONFLICT (coalesce(usuario_id, 0), coalesce(fornecedor_publico_id, 0), chave) WHERE chave IS NOT NULL DO NOTHING`,
+    [empresaId, n.tipo ?? "sistema", n.titulo, n.corpo ?? null, n.link ?? null, chaveBase ?? null]
+  );
+}
+
+export async function listarNotificacoes(d: Destino, limite = 50): Promise<Notificacao[]> {
+  await garantirSchema();
+  const { where, params } = condDestino(d);
+  params.push(limite);
+  const { rows } = await pool.query<Notificacao>(
+    `SELECT ${CAMPOS_NOTIF} FROM notificacao
+      WHERE ${where}
+      ORDER BY criado_em DESC
+      LIMIT $${params.length}`,
+    params
+  );
+  return rows;
+}
+
+export async function contarNaoLidas(d: Destino): Promise<number> {
+  await garantirSchema();
+  const { where, params } = condDestino(d);
+  const { rows } = await pool.query<{ total: number }>(
+    `SELECT count(*)::int AS total FROM notificacao WHERE ${where} AND NOT lida`,
+    params
+  );
+  return rows[0]?.total ?? 0;
+}
+
+export async function marcarNotificacaoLida(d: Destino, id: number): Promise<void> {
+  await garantirSchema();
+  const { where, params } = condDestino(d, 2);
+  await pool.query(
+    `UPDATE notificacao SET lida = true WHERE id = $1 AND ${where}`,
+    [id, ...params]
+  );
+}
+
+export async function marcarTodasLidas(d: Destino): Promise<void> {
+  await garantirSchema();
+  const { where, params } = condDestino(d);
+  await pool.query(`UPDATE notificacao SET lida = true WHERE ${where} AND NOT lida`, params);
+}
+
+/**
+ * Materializa, pro usuário dado, um aviso por anotação da empresa que está no
+ * dia do alerta (ou atrasada) e ainda aberta. Idempotente pela `chave`.
+ */
+export async function sincronizarAvisosDeAnotacoes(
+  usuarioId: number,
+  empresaId: number
+): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    `INSERT INTO notificacao (usuario_id, tipo, titulo, corpo, link, chave)
+     SELECT $1::bigint, 'anotacao',
+            'Lembrete: ' || left(texto, 70),
+            texto, '/anotacoes', 'anotacao:' || id || ':' || $1::bigint
+       FROM anotacao
+      WHERE empresa_id = $2::bigint AND NOT concluida
+        AND data_alerta IS NOT NULL AND data_alerta <= CURRENT_DATE
+     ON CONFLICT (coalesce(usuario_id, 0), coalesce(fornecedor_publico_id, 0), chave) WHERE chave IS NOT NULL DO NOTHING`,
+    [usuarioId, empresaId]
+  );
 }
