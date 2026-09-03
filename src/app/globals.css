@@ -2409,13 +2409,37 @@ a.botao { display: block; text-align: center; text-decoration: none; }
 /* ============ comércios grandes: cotação dos concorrentes ============ */
 .cg-lista { gap: 8px; }
 .cg-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
   padding: 10px 12px;
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--surface);
+}
+.cg-item-linha {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.cg-item-corpo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+.cg-mini {
+  width: 60px;
+  height: 60px;
+  flex: none;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+}
+.cg-mini-vazia {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
 }
 .cg-item-topo {
   display: flex;

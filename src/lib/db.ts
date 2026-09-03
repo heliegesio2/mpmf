@@ -9,6 +9,10 @@ import {
   type StatusPedido,
   type UnidadePedido,
 } from "@/lib/pedido";
+import {
+  normalizarNomeProduto as _normNome,
+  variantesBuscaProduto,
+} from "@/lib/textoProduto";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -965,33 +969,51 @@ export async function registrarNotaCompra(
 
 // ---------- comércios grandes: cotação de preço dos concorrentes ----------
 
-export function normalizarNomeProduto(s: string): string {
-  return s
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
+export { normalizarNomeProduto } from "@/lib/textoProduto";
 
 export type LeituraCotacao = { nome: string; preco: number };
+
+/** "alta" = match confiável; "provavel" = parecido, confira; null = não achei. */
+export type ConfiancaMatch = "alta" | "provavel" | null;
 
 export type ResultadoCotacao = {
   nome: string;
   preco: number;
-  /** match no meu catálogo (>= limiar), se houver */
+  /** match no meu catálogo, se houver */
   produtoId: number | null;
   meuNome: string | null;
   meuPreco: number | null;
+  confianca: ConfiancaMatch;
   /** última leitura registrada deste produto neste estabelecimento, em dia anterior */
   precoAnterior: number | null;
   dataAnterior: string | null;
 };
 
+const MATCH_ALTA = 0.5;
+const MATCH_PROVAVEL = 0.32;
+
+/** Melhor produto do meu catálogo pro nome lido, tentando o nome cru, sem peso e só marca+tipo. */
+async function acharMeuProduto(
+  empresaId: number,
+  nomeLido: string
+): Promise<{ id: number; nome: string; preco: number; score: number } | null> {
+  let melhor: { id: number; nome: string; preco: number; score: number } | null = null;
+  for (const termo of variantesBuscaProduto(nomeLido)) {
+    const cand = await buscarProduto(empresaId, termo, 3);
+    for (const c of cand) {
+      const s = c.score ?? 0;
+      if (!melhor || s > melhor.score) {
+        melhor = { id: c.id, nome: c.nome, preco: Number(c.preco), score: s };
+      }
+    }
+  }
+  return melhor && melhor.score >= MATCH_PROVAVEL ? melhor : null;
+}
+
 /**
- * Compara cada preço lido no concorrente com o meu catálogo (`buscarProduto`) e
- * com a última cotação registrada (de um dia anterior) do mesmo estabelecimento.
- * Não grava nada.
+ * Compara cada preço lido no concorrente com o meu catálogo (por proximidade —
+ * pega o mesmo produto mesmo cadastrado com outro nome) e com a última cotação
+ * registrada (de um dia anterior) do mesmo estabelecimento. Não grava nada.
  */
 export async function compararCotacoes(
   empresaId: number,
@@ -1002,9 +1024,9 @@ export async function compararCotacoes(
   const est = estabelecimento.trim();
   return Promise.all(
     itens.map(async (it) => {
-      const norm = normalizarNomeProduto(it.nome);
-      const cand = await buscarProduto(empresaId, it.nome, 1);
-      const meu = cand[0] && (cand[0].score ?? 0) >= 0.5 ? cand[0] : null;
+      const norm = _normNome(it.nome);
+      const meu = await acharMeuProduto(empresaId, it.nome);
+      const confianca: ConfiancaMatch = meu ? (meu.score >= MATCH_ALTA ? "alta" : "provavel") : null;
       const { rows } = await pool.query<{ preco: string; data: string }>(
         `SELECT preco, to_char(data, 'YYYY-MM-DD') AS data
            FROM cotacao_concorrente
@@ -1018,7 +1040,8 @@ export async function compararCotacoes(
         preco: it.preco,
         produtoId: meu ? meu.id : null,
         meuNome: meu ? meu.nome : null,
-        meuPreco: meu ? Number(meu.preco) : null,
+        meuPreco: meu ? meu.preco : null,
+        confianca,
         precoAnterior: rows[0] ? Number(rows[0].preco) : null,
         dataAnterior: rows[0]?.data ?? null,
       };
@@ -1037,6 +1060,9 @@ export async function registrarCotacoes(
   const est = estabelecimento.trim();
   const f = ["video", "foto", "pdf"].includes(fonte) ? fonte : "foto";
   for (const it of itens) {
+    // só amarra o produto quando o match é confiável
+    const prodId = it.confianca === "alta" ? it.produtoId : null;
+    const meuPreco = it.confianca === "alta" ? it.meuPreco : null;
     await pool.query(
       `INSERT INTO cotacao_concorrente
          (empresa_id, estabelecimento, nome_produto, nome_norm, preco, produto_id, meu_preco, fonte)
@@ -1045,7 +1071,7 @@ export async function registrarCotacoes(
        DO UPDATE SET preco = EXCLUDED.preco, nome_produto = EXCLUDED.nome_produto,
                      produto_id = EXCLUDED.produto_id, meu_preco = EXCLUDED.meu_preco,
                      fonte = EXCLUDED.fonte, criado_em = now()`,
-      [empresaId, est, it.nome, normalizarNomeProduto(it.nome), it.preco, it.produtoId, it.meuPreco, f]
+      [empresaId, est, it.nome, _normNome(it.nome), it.preco, prodId, meuPreco, f]
     );
   }
   return itens.length;

@@ -4,13 +4,26 @@ import { useMemo, useRef, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import { useVoz } from "@/lib/useVoz";
 import { extrairQuadros, type QuadroVideo } from "@/lib/quadrosDeVideo";
+import { pdfParaImagens } from "@/lib/pdfParaImagens";
+import { recortarMiniatura } from "@/lib/recorteMiniatura";
+import { normalizarNomeProduto } from "@/lib/textoProduto";
+import { comprimirImagem } from "@/lib/imagemCliente";
 import { paraMoeda } from "@/lib/moeda";
+import FotoAmpliavel from "@/components/FotoAmpliavel";
 
-type Estado = "parado" | "extraindo" | "lendo" | "analisando" | "resultado";
+type Estado =
+  | "parado"
+  | "rasterizando"
+  | "extraindo"
+  | "lendo"
+  | "analisando"
+  | "resultado";
 
-type Fonte = "video" | "pdf";
+type FonteReal = "video" | "foto" | "pdf";
 
 type Bruto = { nome: string; preco: number | null };
+
+type Confianca = "alta" | "provavel" | null;
 
 type Resultado = {
   nome: string;
@@ -18,8 +31,10 @@ type Resultado = {
   produtoId: number | null;
   meuNome: string | null;
   meuPreco: number | null;
+  confianca: Confianca;
   precoAnterior: number | null;
   dataAnterior: string | null;
+  foto?: string;
 };
 
 type Analise = {
@@ -46,14 +61,24 @@ function dataUrlParaFile(dataUrl: string, nome: string): File {
   return new File([arr], nome, { type: tipo });
 }
 
+function fileParaDataUrl(f: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result));
+    r.onerror = () => rej(new Error("arquivo"));
+    r.readAsDataURL(f);
+  });
+}
+
 export default function ComerciosGrandes() {
   const inputVideo = useRef<HTMLInputElement>(null);
   const inputEncarte = useRef<HTMLInputElement>(null);
 
   const [estabelecimento, setEstabelecimento] = useState("");
   const [estado, setEstado] = useState<Estado>("parado");
-  const [fonte, setFonte] = useState<Fonte>("video");
+  const [fonteExibida, setFonteExibida] = useState<"video" | "encarte">("video");
   const [quadros, setQuadros] = useState({ feitos: 0, total: 0 });
+  const [paginas, setPaginas] = useState({ feitas: 0, total: 0 });
   const [lotes, setLotes] = useState({ feitos: 0, total: 0 });
   const [analise, setAnalise] = useState<Analise | null>(null);
   const [erro, setErro] = useState("");
@@ -67,39 +92,53 @@ export default function ComerciosGrandes() {
   const emProcesso = estado !== "parado" && estado !== "resultado";
 
   const passos = useMemo(() => {
-    if (fonte === "video") {
+    if (fonteExibida === "video") {
       return [
-        { id: "extraindo" as Estado, rotulo: `Extraindo quadros${quadros.total ? ` (${quadros.feitos}/${quadros.total})` : "…"}` },
-        { id: "lendo" as Estado, rotulo: `Lendo os preços${lotes.total ? ` (lote ${lotes.feitos}/${lotes.total})` : "…"}` },
+        {
+          id: "extraindo" as Estado,
+          rotulo: `Extraindo quadros${quadros.total ? ` (${quadros.feitos}/${quadros.total})` : "…"}`,
+        },
+        {
+          id: "lendo" as Estado,
+          rotulo: `Lendo os preços${lotes.total ? ` (lote ${lotes.feitos}/${lotes.total})` : "…"}`,
+        },
         { id: "analisando" as Estado, rotulo: "Comparando com os seus preços" },
       ];
     }
     return [
+      {
+        id: "rasterizando" as Estado,
+        rotulo: `Preparando as páginas${paginas.total ? ` (${paginas.feitas}/${paginas.total})` : "…"}`,
+      },
       { id: "lendo" as Estado, rotulo: "Lendo o encarte" },
       { id: "analisando" as Estado, rotulo: "Comparando com os seus preços" },
     ];
-  }, [fonte, quadros, lotes]);
+  }, [fonteExibida, quadros, lotes, paginas]);
 
-  const ordem: Estado[] = ["extraindo", "lendo", "analisando", "resultado"];
+  const ordem: Estado[] = ["rasterizando", "extraindo", "lendo", "analisando", "resultado"];
   function statusPasso(id: Estado): "feito" | "agora" | "espera" {
-    if (!emProcesso && estado !== "resultado") return "espera";
     const iAtual = ordem.indexOf(estado);
     const iPasso = ordem.indexOf(id);
+    if (iAtual < 0) return "espera";
     if (iPasso < iAtual) return "feito";
     if (iPasso === iAtual) return "agora";
     return "espera";
   }
 
-  async function analisar(brutos: Bruto[], daFonte: Fonte) {
+  async function analisar(brutos: Bruto[], fonte: FonteReal, fotos: Map<string, string>) {
     setEstado("analisando");
     const r = await fetch("/api/produtos/comercios-grandes/analisar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ estabelecimento: estabelecimento.trim(), fonte: daFonte, itens: brutos }),
+      body: JSON.stringify({ estabelecimento: estabelecimento.trim(), fonte, itens: brutos }),
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d?.erro ?? "Não foi possível analisar.");
-    setAnalise(d as Analise);
+    const itens: Resultado[] = (d.itens ?? []).map((it: Resultado) => ({
+      ...it,
+      foto: fotos.get(normalizarNomeProduto(it.nome)) || undefined,
+    }));
+    setAnalise({ ...(d as Analise), itens });
     setEstado("resultado");
   }
 
@@ -107,7 +146,7 @@ export default function ComerciosGrandes() {
     if (!arquivo || !nomeOk) return;
     setErro("");
     setAnalise(null);
-    setFonte("video");
+    setFonteExibida("video");
     setQuadros({ feitos: 0, total: 0 });
     setLotes({ feitos: 0, total: 0 });
     setEstado("extraindo");
@@ -123,22 +162,33 @@ export default function ComerciosGrandes() {
       const totalLotes = Math.ceil(qs.length / LOTE);
       setLotes({ feitos: 0, total: totalLotes });
       const brutos: Bruto[] = [];
+      const fotos = new Map<string, string>();
       for (let b = 0; b < totalLotes; b++) {
-        const doLote = qs.slice(b * LOTE, b * LOTE + LOTE);
+        const inicio = b * LOTE;
+        const doLote = qs.slice(inicio, inicio + LOTE);
         const fd = new FormData();
         fd.append("fonte", "video");
         doLote.forEach((q, i) => fd.append("fotos", dataUrlParaFile(q.dataUrl, `q${b}_${i}.jpg`)));
         try {
           const res = await fetch("/api/produtos/comercios-grandes", { method: "POST", body: fd });
           const d = await res.json();
-          if (res.ok && Array.isArray(d.itens)) brutos.push(...d.itens);
+          if (res.ok && Array.isArray(d.itens)) {
+            for (const it of d.itens as { nome: string; preco: number | null; quadro: number }[]) {
+              brutos.push({ nome: it.nome, preco: it.preco });
+              const frame = doLote[Math.min(it.quadro ?? 0, doLote.length - 1)]?.dataUrl;
+              const chave = normalizarNomeProduto(it.nome);
+              if (frame && !fotos.has(chave)) {
+                fotos.set(chave, await recortarMiniatura(frame, null));
+              }
+            }
+          }
         } catch {
           /* um lote que falha não derruba os outros */
         }
         setLotes({ feitos: b + 1, total: totalLotes });
       }
 
-      await analisar(brutos, "video");
+      await analisar(brutos, "video", fotos);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível processar o vídeo.");
       setEstado("parado");
@@ -150,23 +200,59 @@ export default function ComerciosGrandes() {
   async function usarEncarte(lista: FileList | null) {
     const arquivos = lista ? Array.from(lista) : [];
     if (arquivos.length === 0 || !nomeOk) return;
-    const ehPdf = arquivos.some((f) => f.type === "application/pdf");
     setErro("");
     setAnalise(null);
-    setFonte("pdf");
-    setEstado("lendo");
+    setFonteExibida("encarte");
+    setPaginas({ feitas: 0, total: 0 });
+
+    const pdf = arquivos.find((f) => f.type === "application/pdf");
+    const fonte: FonteReal = pdf ? "pdf" : "foto";
     try {
-      const fd = new FormData();
-      if (ehPdf) {
-        fd.append("pdf", arquivos.find((f) => f.type === "application/pdf")!);
+      let imagens: string[];
+      if (pdf) {
+        setEstado("rasterizando");
+        imagens = await pdfParaImagens(pdf, {
+          maxPaginas: 8,
+          aoAvancar: (feitas, total) => setPaginas({ feitas, total }),
+        });
       } else {
-        fd.append("fonte", "foto");
-        arquivos.slice(0, 8).forEach((f) => fd.append("fotos", f));
+        setEstado("rasterizando");
+        const fotos = arquivos.filter((f) => f.type.startsWith("image/")).slice(0, 10);
+        setPaginas({ feitas: 0, total: fotos.length });
+        imagens = [];
+        for (const f of fotos) {
+          imagens.push(await fileParaDataUrl(await comprimirImagem(f)));
+          setPaginas({ feitas: imagens.length, total: fotos.length });
+        }
       }
+      if (imagens.length === 0) throw new Error("Não consegui abrir esse arquivo.");
+
+      setEstado("lendo");
+      const fd = new FormData();
+      fd.append("fonte", "encarte");
+      imagens.forEach((d, i) => fd.append("fotos", dataUrlParaFile(d, `p${i}.jpg`)));
       const res = await fetch("/api/produtos/comercios-grandes", { method: "POST", body: fd });
       const d = await res.json();
       if (!res.ok) throw new Error(d?.erro ?? "Não foi possível ler o encarte.");
-      await analisar(Array.isArray(d.itens) ? d.itens : [], "pdf");
+
+      const lidos = (d.itens ?? []) as {
+        nome: string;
+        preco: number | null;
+        imagem: number;
+        caixa: { x0: number; y0: number; x1: number; y1: number } | null;
+      }[];
+      const brutos: Bruto[] = [];
+      const fotos = new Map<string, string>();
+      for (const it of lidos) {
+        brutos.push({ nome: it.nome, preco: it.preco });
+        const chave = normalizarNomeProduto(it.nome);
+        const fonteImg = imagens[Math.min(it.imagem ?? 0, imagens.length - 1)] ?? imagens[0];
+        if (fonteImg && !fotos.has(chave)) {
+          fotos.set(chave, await recortarMiniatura(fonteImg, it.caixa));
+        }
+      }
+
+      await analisar(brutos, fonte, fotos);
     } catch (e) {
       setErro(e instanceof Error ? e.message : "Não foi possível ler o encarte.");
       setEstado("parado");
@@ -192,7 +278,8 @@ export default function ComerciosGrandes() {
           <p className="dica">
             Descubra por quanto um concorrente está vendendo. Grave um vídeo passando pelas
             prateleiras <strong>ou</strong> envie o encarte de ofertas (PDF ou foto). O sistema lê os
-            preços, compara com os seus e guarda a data pra mostrar depois se subiu ou baixou.
+            preços, recorta a foto de cada produto, compara com os seus e guarda a data pra mostrar
+            depois se subiu ou baixou.
           </p>
 
           <CampoVoz
@@ -304,33 +391,50 @@ export default function ComerciosGrandes() {
                       : "estavel";
               return (
                 <li className="cg-item" key={i}>
-                  <div className="cg-item-topo">
-                    <strong>{r.nome}</strong>
-                    <span className="cg-preco">R$ {paraMoeda(r.preco)}</span>
+                  <div className="cg-item-linha">
+                    {r.foto ? (
+                      <FotoAmpliavel src={r.foto} alt={r.nome} className="cg-mini" />
+                    ) : (
+                      <span className="cg-mini cg-mini-vazia" aria-hidden="true">
+                        🏷️
+                      </span>
+                    )}
+                    <div className="cg-item-corpo">
+                      <div className="cg-item-topo">
+                        <strong>{r.nome}</strong>
+                        <span className="cg-preco">R$ {paraMoeda(r.preco)}</span>
+                      </div>
+
+                      {r.meuPreco !== null ? (
+                        <div className="cg-comparado" data-sinal={sinal}>
+                          {r.confianca === "provavel" && "Parece ser "}
+                          {r.confianca === "provavel" ? (
+                            <em>{r.meuNome}</em>
+                          ) : (
+                            <>Você vende {r.meuNome ? <em>{r.meuNome}</em> : "esse item"}</>
+                          )}{" "}
+                          a R$ {paraMoeda(r.meuPreco)} —{" "}
+                          {dif! < 0
+                            ? `R$ ${paraMoeda(Math.abs(dif!))} mais barato lá`
+                            : dif! > 0
+                              ? `R$ ${paraMoeda(dif!)} mais caro lá`
+                              : "mesmo preço"}
+                          {r.confianca === "provavel" && " (confira)"}
+                        </div>
+                      ) : (
+                        <div className="cg-comparado" data-sinal="sem">
+                          Você não tem esse produto no catálogo
+                        </div>
+                      )}
+
+                      {r.precoAnterior !== null && (
+                        <div className="cg-tendencia" data-dir={dir}>
+                          {dir === "subiu" ? "↑ subiu" : dir === "baixou" ? "↓ baixou" : "→ estável"}{" "}
+                          desde {dataBR(r.dataAnterior)} (era R$ {paraMoeda(r.precoAnterior)})
+                        </div>
+                      )}
+                    </div>
                   </div>
-
-                  {r.meuPreco !== null ? (
-                    <div className="cg-comparado" data-sinal={sinal}>
-                      Você vende a R$ {paraMoeda(r.meuPreco)}
-                      {r.meuNome ? ` (${r.meuNome})` : ""} —{" "}
-                      {dif! < 0
-                        ? `R$ ${paraMoeda(Math.abs(dif!))} mais barato lá`
-                        : dif! > 0
-                          ? `R$ ${paraMoeda(dif!)} mais caro lá`
-                          : "mesmo preço"}
-                    </div>
-                  ) : (
-                    <div className="cg-comparado" data-sinal="sem">
-                      Você não tem esse produto no catálogo
-                    </div>
-                  )}
-
-                  {r.precoAnterior !== null && (
-                    <div className="cg-tendencia" data-dir={dir}>
-                      {dir === "subiu" ? "↑ subiu" : dir === "baixou" ? "↓ baixou" : "→ estável"} desde{" "}
-                      {dataBR(r.dataAnterior)} (era R$ {paraMoeda(r.precoAnterior)})
-                    </div>
-                  )}
                 </li>
               );
             })}

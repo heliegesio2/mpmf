@@ -229,26 +229,35 @@ Duas fontes:
 - **🎥 Vídeo** — `src/lib/quadrosDeVideo.ts` extrai quadros **no navegador** (sem ffmpeg: `<video>` +
   `currentTime` de 2 em 2 s + `canvas`, ~1100px, teto 70). Lotes de 4 quadros → `POST
   /api/produtos/comercios-grandes` (`fonte=video`, `src/lib/lerMercadoVideo.ts` — lê a etiqueta da
-  prateleira) → `[{nome, preco|null}]`.
-- **📄 Encarte (PDF ou foto)** — `POST /api/produtos/comercios-grandes` com o campo `pdf` (um PDF) ou
-  `fotos` (`fonte=foto`, 1-8 imagens) → `src/lib/lerEncartePdf.ts` (`extrairPrecosDoEncarte`, aceita
-  bloco `document`/`application/pdf` **ou** `image`, tudo numa chamada) → `[{nome, preco|null}]`.
+  prateleira) → `[{nome, preco|null, quadro}]`; o quadro vira a miniatura do item.
+- **📄 Encarte (PDF ou foto)** — **o PDF é rasterizado no navegador** (`src/lib/pdfParaImagens.ts`,
+  `pdfjs-dist`, worker via `new URL(...import.meta.url)`, ~1500px/página, teto 8) e as fotos passam por
+  `comprimirImagem`; nos dois casos vira **imagem**, então dá pra recortar a miniatura. `POST
+  /api/produtos/comercios-grandes` (`fonte=encarte`, campo `fotos`, 1-10 imagens) → `src/lib/lerEncartePdf.ts`
+  (`extrairPrecosDoEncarte`, só blocos `image`, tudo numa chamada) → `[{nome, preco|null, imagem, caixa}]`
+  (`caixa` = retângulo 0..1 do produto+preço). O cliente recorta `imagens[imagem]` pela `caixa`
+  (`src/lib/recorteMiniatura.ts`) e casa a miniatura no resultado por nome normalizado.
 
 `POST /api/produtos/comercios-grandes` **não grava nada** — só extrai. A tela mostra o **passo a passo**
 (`.passos`) e no fim junta tudo e chama **`POST /api/produtos/comercios-grandes/analisar`**
-`{estabelecimento, fonte, itens}`:
-- dedup por nome normalizado (`normalizarNomeProduto` em `db.ts`), **fica só com os que tiveram preço**;
-- `compararCotacoes` — pra cada um: `buscarProduto` (match ≥ 0.5) devolve `meuNome`/`meuPreco`; e a
-  última linha de `cotacao_concorrente` (`db/31`) do mesmo `estabelecimento`+`nome_norm` **de um dia
-  anterior** vira `precoAnterior`/`dataAnterior` (a tendência ↑/↓);
+`{estabelecimento, fonte, itens}` (fonte real: `video` | `foto` | `pdf`):
+- dedup por nome normalizado (`normalizarNomeProduto` em `src/lib/textoProduto.ts` — puro, também usado
+  no cliente), **fica só com os que tiveram preço**;
+- `compararCotacoes` → `acharMeuProduto` casa **por proximidade** (tenta o nome cru, sem peso/embalagem
+  e só marca+tipo — `variantesBuscaProduto`), pega o melhor `score`: **≥ 0.5 → `confianca:"alta"`**,
+  **≥ 0.32 → `"provavel"`** (mostra "Parece ser … (confira)"), senão sem match. Pega o meu produto
+  **mesmo cadastrado com outro nome**. Também a última linha de `cotacao_concorrente` (`db/31`) do
+  mesmo `estabelecimento`+`nome_norm` **de um dia anterior** vira `precoAnterior`/`dataAnterior`
+  (tendência ↑/↓);
 - `registrarCotacoes` grava a leitura do dia — **uma linha por produto/estabelecimento/dia**
-  (`ux_cotacao_conc_dia`, `ON CONFLICT ... DO UPDATE`), então reanálise no mesmo dia sobrescreve e não
-  polui o histórico.
+  (`ux_cotacao_conc_dia`, `ON CONFLICT ... DO UPDATE`); só amarra `produto_id`/`meu_preco` quando a
+  confiança é `alta`.
 
 Resultado: resumo ("N encontrados · M com preço · registrado em dd/mm") + lista **só dos com preço**,
-ordenada por "mais barato lá" primeiro, cada item com o preço do concorrente, o comparativo com o meu
-(`.cg-comparado` — barato/caro/igual/sem match) e a tendência vs. a leitura anterior (`.cg-tendencia`).
-Custo: ~alguns centavos de visão Opus por análise. Sem `ANTHROPIC_API_KEY` → 500 amigável.
+ordenada por "mais barato lá" primeiro, cada item com a **miniatura recortada**, o preço do concorrente,
+o comparativo com o meu (`.cg-comparado` — barato/caro/igual/provável/sem match) e a tendência
+(`.cg-tendencia`). Custo: ~alguns centavos de visão Opus por análise. Sem `ANTHROPIC_API_KEY` → 500
+amigável.
 
 ### Stock-by-video (`/produtos/estoque-video`)
 
