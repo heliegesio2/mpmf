@@ -1721,6 +1721,22 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 }
 .bairro-opcao input { width: 16px; height: 16px; flex: none; }
 
+/* chips dos bairros atendidos (tela do super admin) */
+.bairros-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.bairro-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--verde-linha);
+  color: var(--creme);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .rodape-login { margin: 0; font-size: 14px; color: var(--creme-fraco); text-align: center; }
 .rodape-login a { color: var(--ambar); }
 

@@ -290,6 +290,9 @@ const MIGRACOES_IDEMPOTENTES = [
      bairro_id bigint NOT NULL REFERENCES bairro(id) ON DELETE CASCADE,
      PRIMARY KEY (fornecedor_publico_id, bairro_id)
    )`,
+  // db/24 — aprovação do fornecedor público pelo super admin
+  "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS motivo text",
+  "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS decidido_em timestamptz",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1926,4 +1929,81 @@ export async function criarFornecedorPublico(d: FornecedorPublicoEntrada): Promi
   } finally {
     cliente.release();
   }
+}
+
+export type FornecedorPublico = {
+  id: number;
+  nome: string;
+  documento: string | null;
+  telefone: string | null;
+  telefone_whatsapp: boolean;
+  endereco: string | null;
+  observacao: string | null;
+  pix_chave: string | null;
+  email: string;
+  cidade: string;
+  situacao: "pendente" | "aprovado" | "reprovado";
+  motivo: string | null;
+  criado_em: string;
+  bairros: string[];
+};
+
+/** Lista os fornecedores públicos (cadastro na plataforma) — só super admin. */
+export async function listarFornecedoresPublicos(
+  situacao?: string,
+  q = ""
+): Promise<FornecedorPublico[]> {
+  await garantirSchema();
+  const cond: string[] = [];
+  const params: unknown[] = [];
+  if (situacao && situacao !== "todas") {
+    params.push(situacao);
+    cond.push(`fp.situacao = $${params.length}`);
+  }
+  const t = q.trim();
+  if (t) {
+    params.push(t);
+    cond.push(
+      `f_unaccent(lower(fp.nome || ' ' || coalesce(fp.email, ''))) LIKE '%' || f_unaccent(lower($${params.length})) || '%'`
+    );
+  }
+  const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
+  const { rows } = await pool.query<FornecedorPublico>(
+    `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
+            fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
+            COALESCE(
+              (SELECT json_agg(b.nome ORDER BY b.nome)
+                 FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
+                WHERE fb.fornecedor_publico_id = fp.id),
+              '[]'::json
+            ) AS bairros
+       FROM fornecedor_publico fp
+       ${where}
+      ORDER BY CASE fp.situacao WHEN 'pendente' THEN 0 ELSE 1 END, fp.criado_em DESC`,
+    params
+  );
+  return rows;
+}
+
+export async function decidirFornecedorPublico(
+  id: number,
+  situacao: "aprovado" | "reprovado",
+  motivo?: string | null
+): Promise<FornecedorPublico | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<FornecedorPublico>(
+    `UPDATE fornecedor_publico fp
+        SET situacao = $2, motivo = $3, decidido_em = now()
+      WHERE fp.id = $1
+      RETURNING fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
+                fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
+                COALESCE(
+                  (SELECT json_agg(b.nome ORDER BY b.nome)
+                     FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
+                    WHERE fb.fornecedor_publico_id = fp.id),
+                  '[]'::json
+                ) AS bairros`,
+    [id, situacao, situacao === "reprovado" ? String(motivo ?? "").trim() || null : null]
+  );
+  return rows[0] ?? null;
 }

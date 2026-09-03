@@ -255,8 +255,13 @@ of a blank "não foi possível salvar".
   → `POST /api/fornecedores/cadastro` (public). Creates a `fornecedor_publico` row (`pendente`, separate
   from each store's per-empresa `fornecedor` table) + `fornecedor_publico_bairro` links. The `bairro`
   table (`cidade, uf, nome`) is seeded in `MIGRACOES_IDEMPOTENTES` with the ~110 neighborhoods of
-  **Conselheiro Lafaiete, MG** (the launch city). **No approval screen yet** — the super admin can't
-  review `fornecedor_publico` in the panel; that's the next step.
+  **Conselheiro Lafaiete, MG** (the launch city).
+- **`/admin/fornecedores` (`db/24`)** — the super admin reviews `fornecedor_publico`. Same shape as
+  `/admin/empresas`: tabs (Aguardando/Aprovados/Reprovados/Todas), `<FiltroVoz>` by name/email,
+  `<DadosContato>` + bairro chips per row, Aprovar / Reprovar (with a mandatory `motivo`).
+  `GET /api/admin/fornecedores?situacao=&q=` + `PUT /api/admin/fornecedores/:id {situacao: "aprovado"|
+  "reprovado", motivo?}` → `decidirFornecedorPublico`. An **approved fornecedor still has no way to log
+  in** (no `usuario` row) and no store-facing directory — those are follow-ups.
 - **WhatsApp on every phone field** (`db/14`) — `<CampoTelefone>` (`src/components/CampoTelefone.tsx`)
   replaces a bare phone `CampoVoz` everywhere: phone input + mic + an "Esse número é WhatsApp" checkbox,
   and a green `wa.me` shortcut once it's marked. Persisted as `empresa.telefone_whatsapp` /

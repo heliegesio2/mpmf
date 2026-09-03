@@ -75,7 +75,10 @@ const GRUPO_ADMIN: GrupoMenu = {
   id: "admin",
   icone: "🏢",
   rotulo: "Administração",
-  itens: [{ href: "/admin/empresas", rotulo: "Empresas", descricao: "Aprovar ou reprovar" }],
+  itens: [
+    { href: "/admin/empresas", rotulo: "Empresas", descricao: "Aprovar ou reprovar" },
+    { href: "/admin/fornecedores", rotulo: "Fornecedores", descricao: "Aprovar cadastros e bairros" },
+  ],
 };
 
 const TODOS_GRUPOS = [...GRUPOS_LOJA, GRUPO_ADMIN];
