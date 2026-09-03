@@ -937,6 +937,101 @@ html[data-fonte="grande"] { zoom: 1.5; }
 /* input de data: usa o seletor nativo, mas no tema escuro */
 .entrada input[type="date"] { color-scheme: dark; }
 
+/* ============ anotações ============ */
+.menu-alerta {
+  margin-left: 8px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--tomate);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+.campo-anotacao {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.campo-anotacao textarea {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 2px solid var(--verde-linha);
+  background: var(--verde-fundo);
+  color: var(--creme);
+  font: inherit;
+  font-size: 16px;
+}
+.campo-anotacao textarea:focus {
+  outline: none;
+  border-color: var(--ambar);
+}
+.campo-anotacao .microfone {
+  flex: none;
+}
+
+.lista li.anotacao {
+  align-items: flex-start;
+  gap: 12px;
+  border-left: 4px solid var(--verde-linha);
+}
+.lista li.anotacao[data-sinal="hoje"] {
+  border-left-color: var(--ambar);
+}
+.lista li.anotacao[data-sinal="atrasado"] {
+  border-left-color: var(--tomate);
+}
+.lista li.anotacao[data-concluida="true"] .anotacao-texto {
+  text-decoration: line-through;
+  color: var(--creme-fraco);
+}
+.anotacao-check {
+  flex: none;
+  padding-top: 2px;
+}
+.anotacao-check input {
+  width: 20px;
+  height: 20px;
+}
+.anotacao-texto {
+  display: block;
+  white-space: pre-wrap;
+}
+.anotacao-rodape {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 6px;
+}
+.anotacao-alerta {
+  font-weight: 800;
+}
+.anotacao-alerta[data-sinal="hoje"] {
+  color: var(--ambar);
+}
+.anotacao-alerta[data-sinal="atrasado"] {
+  color: var(--tomate);
+}
+.anotacao-data {
+  color-scheme: dark;
+  background: var(--verde-fundo);
+  border: 1px solid var(--verde-linha);
+  border-radius: 6px;
+  color: var(--creme);
+  font: inherit;
+  font-size: 13px;
+  padding: 3px 6px;
+}
+
 /* ============ estoque por vídeo ============ */
 .gravador-video {
   display: flex;

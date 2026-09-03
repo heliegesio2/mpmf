@@ -452,12 +452,24 @@ style: name + store/role header, the large-text toggle (`<AjusteFonte>`, rendere
 own `usuario.nome` + photo via `<CampoFoto>`), **Trocar senha** (`/senha`), and **Sair**.
 
 The left drawer (`.menu`) navigation is **grouped, collapsible** (`GRUPOS_LOJA` in `MenuLateral.tsx`):
-🛒 Balcão (`/`, `/venda`, `/caixa`) · 📦 Produtos (`/produtos`, `/compras/importar`) · 💰 Financeiro
-(`/contas-pagar`, `/contas`, `/custos`) · 👥 Cadastros (`/clientes`, `/fornecedores`, `/cascos`) · 📊
-Relatórios (`href` + no `itens` → a direct link, not a group) · 🏢 Administração (`/admin/empresas`,
-super-admin only). `gruposAbertos` is a `Set<string>` — "balcao" plus the group holding the current path
-start open; navigating opens the new path's group without closing the others. When adding a route, add it
-to a group's `itens`, not a flat list.
+🛒 Balcão (`/`, `/venda`, `/vendas`, `/caixa`) · 📦 Produtos (`/produtos`, `/compras/importar`) · 💰
+Financeiro (`/contas-pagar`, `/contas`, `/custos` — labeled **"Investimentos"**) · 👥 Cadastros
+(`/clientes`, `/fornecedores`, `/cascos` — labeled **"Empréstimos"**) · 📊 Relatórios (direct link) ·
+📝 Anotações (direct link, shows a red `.menu-alerta` count from `GET /api/anotacoes/alertas`) · 🏢
+Administração (`/admin/empresas`, super-admin only). Routes and DB tables keep their old names
+(`/custos`/`custo`, `/cascos`/`casco`) — only the user-facing labels/headers changed.
+`gruposAbertos` is a `Set<string>` — "balcao" plus the group holding the current path start open;
+navigating opens the new path's group without closing the others. When adding a route, add it to a
+group's `itens`, not a flat list.
+
+**Empréstimos (`/cascos`)** — `casco` table gained `item text` (`db/21`, mirrored) = what the customer
+took (engradado, botijão…), now a required field on the form; `criarCasco` and `POST /api/cascos` pass it.
+
+**Anotações (`/anotacoes`, `db/22`)** — `anotacao (texto, data_alerta date null, concluida)`. Create
+(textarea + mic + optional `<input type=date>`), toggle done, edit the alert date inline, delete.
+`GET/POST /api/anotacoes`, `PATCH/DELETE /api/anotacoes/:id`. `anotacoesEmAlerta` counts open notes with
+`data_alerta <= CURRENT_DATE` for the menu badge (`GET /api/anotacoes/alertas`, cheap, fetched by
+`MenuLateral` per path). List sorts overdue → today → future → undated.
 
 `GET/PUT /api/auth/perfil` — PUT takes `{nome, foto?}` (`foto` tri-state: key absent = keep, `""` = clear,
 data URL = replace, same convention as `atualizarProduto`) and re-mints the session cookie so the new name

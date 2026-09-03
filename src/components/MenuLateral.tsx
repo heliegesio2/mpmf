@@ -54,7 +54,7 @@ const GRUPOS_LOJA: GrupoMenu[] = [
     itens: [
       { href: "/contas-pagar", rotulo: "Contas a pagar", descricao: "Boletos e notas a vencer" },
       { href: "/contas", rotulo: "Contas a receber", descricao: "Fiado em aberto e quitação" },
-      { href: "/custos", rotulo: "Gastos", descricao: "Fale descrição, quem recebeu e o valor" },
+      { href: "/custos", rotulo: "Investimentos", descricao: "Fale descrição, quem recebeu e o valor" },
     ],
   },
   {
@@ -64,10 +64,11 @@ const GRUPOS_LOJA: GrupoMenu[] = [
     itens: [
       { href: "/clientes", rotulo: "Clientes", descricao: "Cadastro com foto, para fiado" },
       { href: "/fornecedores", rotulo: "Fornecedores", descricao: "Cadastro de quem te abastece" },
-      { href: "/cascos", rotulo: "Cascos", descricao: "Registrar empréstimo de cascos" },
+      { href: "/cascos", rotulo: "Empréstimos", descricao: "Item retirado por um cliente" },
     ],
   },
   { id: "relatorios", icone: "📊", rotulo: "Relatórios", href: "/relatorios" },
+  { id: "anotacoes", icone: "📝", rotulo: "Anotações", href: "/anotacoes" },
 ];
 
 const GRUPO_ADMIN: GrupoMenu = {
@@ -100,6 +101,7 @@ export default function MenuLateral() {
   const [contaAberta, setContaAberta] = useState(false);
   const [semFoto, setSemFoto] = useState(false);
   const [sessao, setSessao] = useState<Sessao | null>(null);
+  const [alertasAnotacoes, setAlertasAnotacoes] = useState(0);
   const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(
     () => new Set(["balcao", grupoDoCaminho(caminho)].filter(Boolean) as string[])
   );
@@ -118,6 +120,13 @@ export default function MenuLateral() {
       .then((r) => r.json())
       .then((d) => setSessao(d.sessao))
       .catch(() => setSessao(null));
+  }, [caminho]);
+
+  useEffect(() => {
+    fetch("/api/anotacoes/alertas")
+      .then((r) => (r.ok ? r.json() : { total: 0 }))
+      .then((d) => setAlertasAnotacoes(Number(d?.total) || 0))
+      .catch(() => setAlertasAnotacoes(0));
   }, [caminho]);
 
   function alternarGrupo(id: string) {
@@ -291,6 +300,9 @@ export default function MenuLateral() {
               >
                 <span className="menu-grupo-icone" aria-hidden="true">{g.icone}</span>
                 <strong>{g.rotulo}</strong>
+                {g.id === "anotacoes" && alertasAnotacoes > 0 && (
+                  <span className="menu-alerta">{alertasAnotacoes}</span>
+                )}
               </Link>
             ) : (
               <div key={g.id} className="menu-grupo" data-aberto={gruposAbertos.has(g.id)}>

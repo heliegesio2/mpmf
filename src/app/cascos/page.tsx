@@ -14,6 +14,7 @@ type Casco = {
   telefone_whatsapp: boolean;
   endereco: string;
   quantidade: number;
+  item: string | null;
   devolvido: boolean;
   devolvido_em: string | null;
   criado_em: string;
@@ -25,9 +26,17 @@ type NovoCasco = {
   whatsapp: boolean;
   endereco: string;
   quantidade: string;
+  item: string;
 };
 
-const VAZIO: NovoCasco = { responsavel: "", telefone: "", whatsapp: false, endereco: "", quantidade: "" };
+const VAZIO: NovoCasco = {
+  responsavel: "",
+  telefone: "",
+  whatsapp: false,
+  endereco: "",
+  quantidade: "",
+  item: "",
+};
 
 const FILTROS = [
   { valor: "emprestados", rotulo: "Emprestados" },
@@ -115,6 +124,7 @@ export default function Cascos() {
     form.responsavel.trim().length >= 2 &&
     form.telefone.trim().length >= 8 &&
     form.endereco.trim().length >= 2 &&
+    form.item.trim().length >= 2 &&
     Number(form.quantidade) > 0;
 
   async function salvar() {
@@ -172,7 +182,7 @@ export default function Cascos() {
   return (
     <main className="tela">
       <header className="marca">
-        Cascos <span>•</span> {itens.length} na lista
+        Empréstimos <span>•</span> {itens.length} na lista
       </header>
 
       <section className="cartao">
@@ -186,13 +196,14 @@ export default function Cascos() {
 
         <div className="grade-form">
           <CampoVoz rotulo="Responsável" placeholder="Nome de quem levou" largo {...comum("responsavel")} />
+          <CampoVoz rotulo="Item retirado" placeholder="Engradado de cerveja, botijão…" largo {...comum("item")} />
           <CampoTelefone
             rotulo="Telefone"
             {...comum("telefone")}
             ehWhatsapp={form.whatsapp}
             aoMudarWhatsapp={(v) => setForm((f) => ({ ...f, whatsapp: v }))}
           />
-          <CampoVoz rotulo="Quantidade de cascos" placeholder="12" numerico {...comum("quantidade")} />
+          <CampoVoz rotulo="Quantidade" placeholder="12" numerico {...comum("quantidade")} />
           <CampoVoz rotulo="Endereço" placeholder="Rua, número, bairro" largo {...comum("endereco")} />
         </div>
 
@@ -232,7 +243,7 @@ export default function Cascos() {
                 {c.responsavel}
                 <span className="sub">
                   {[
-                    `${c.quantidade} casco(s)`,
+                    `${c.quantidade}× ${c.item ?? "casco(s)"}`,
                     c.devolvido
                       ? `devolvido em ${data.format(new Date(c.devolvido_em!))}`
                       : `desde ${data.format(new Date(c.criado_em))}`,

@@ -138,6 +138,18 @@ const MIGRACOES_IDEMPOTENTES = [
      valor numeric(10,2) NOT NULL
    )`,
   "CREATE INDEX IF NOT EXISTS idx_venda_pagamento_venda ON venda_pagamento (venda_id)",
+  // db/21 — o que foi retirado no empréstimo (antigo "casco")
+  "ALTER TABLE casco ADD COLUMN IF NOT EXISTS item text",
+  // db/22 — anotações com lembrete
+  `CREATE TABLE IF NOT EXISTS anotacao (
+     id bigserial PRIMARY KEY,
+     empresa_id bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     texto text NOT NULL,
+     data_alerta date,
+     concluida boolean NOT NULL DEFAULT false,
+     criado_em timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS idx_anotacao_empresa ON anotacao (empresa_id, concluida, data_alerta)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -802,13 +814,14 @@ export type Casco = {
   telefone_whatsapp: boolean;
   endereco: string;
   quantidade: number;
+  item: string | null;
   devolvido: boolean;
   devolvido_em: string | null;
   criado_em: string;
 };
 
 const CAMPOS_CASCO =
-  "id, responsavel, telefone, telefone_whatsapp, endereco, quantidade, devolvido, devolvido_em, criado_em";
+  "id, responsavel, telefone, telefone_whatsapp, endereco, quantidade, item, devolvido, devolvido_em, criado_em";
 
 export async function listarCascos(empresaId: number, situacao?: string): Promise<Casco[]> {
   await garantirSchema();
@@ -827,14 +840,29 @@ export async function listarCascos(empresaId: number, situacao?: string): Promis
 
 export async function criarCasco(
   empresaId: number,
-  dados: { responsavel: string; telefone: string; whatsapp: boolean; endereco: string; quantidade: number }
+  dados: {
+    responsavel: string;
+    telefone: string;
+    whatsapp: boolean;
+    endereco: string;
+    quantidade: number;
+    item?: string | null;
+  }
 ): Promise<Casco> {
   await garantirSchema();
   const { rows } = await pool.query<Casco>(
-    `INSERT INTO casco (empresa_id, responsavel, telefone, telefone_whatsapp, endereco, quantidade)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO casco (empresa_id, responsavel, telefone, telefone_whatsapp, endereco, quantidade, item)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING ${CAMPOS_CASCO}`,
-    [empresaId, dados.responsavel, dados.telefone, dados.whatsapp, dados.endereco, dados.quantidade]
+    [
+      empresaId,
+      dados.responsavel,
+      dados.telefone,
+      dados.whatsapp,
+      dados.endereco,
+      dados.quantidade,
+      dados.item?.trim() || null,
+    ]
   );
   return rows[0];
 }
@@ -856,6 +884,100 @@ export async function excluirCasco(empresaId: number, id: number): Promise<boole
     [id, empresaId]
   );
   return (r.rowCount ?? 0) > 0;
+}
+
+// ---------- anotacoes (lembretes com data de alerta) ----------
+
+export type Anotacao = {
+  id: number;
+  texto: string;
+  data_alerta: string | null;
+  concluida: boolean;
+  criado_em: string;
+};
+
+const CAMPOS_ANOTACAO = "id, texto, data_alerta::text AS data_alerta, concluida, criado_em";
+
+export async function listarAnotacoes(empresaId: number, situacao?: string): Promise<Anotacao[]> {
+  await garantirSchema();
+  const filtro =
+    situacao === "abertas" ? "AND concluida = false"
+    : situacao === "concluidas" ? "AND concluida = true"
+    : "";
+  const { rows } = await pool.query<Anotacao>(
+    `SELECT ${CAMPOS_ANOTACAO} FROM anotacao
+      WHERE empresa_id = $1 ${filtro}
+      ORDER BY concluida,
+               (data_alerta IS NULL),
+               data_alerta,
+               criado_em DESC`,
+    [empresaId]
+  );
+  return rows;
+}
+
+export async function criarAnotacao(
+  empresaId: number,
+  texto: string,
+  dataAlerta: string | null
+): Promise<Anotacao> {
+  await garantirSchema();
+  const { rows } = await pool.query<Anotacao>(
+    `INSERT INTO anotacao (empresa_id, texto, data_alerta)
+     VALUES ($1, $2, $3::date)
+     RETURNING ${CAMPOS_ANOTACAO}`,
+    [empresaId, texto, dataAlerta || null]
+  );
+  return rows[0];
+}
+
+/** Alterna concluida, ou (com `texto`/`dataAlerta`) edita o conteúdo. */
+export async function editarAnotacao(
+  empresaId: number,
+  id: number,
+  campos: { concluida?: boolean; texto?: string; dataAlerta?: string | null }
+): Promise<Anotacao | null> {
+  await garantirSchema();
+  const sets: string[] = [];
+  const vals: unknown[] = [id, empresaId];
+  if (campos.concluida !== undefined) {
+    vals.push(campos.concluida);
+    sets.push(`concluida = $${vals.length}`);
+  }
+  if (campos.texto !== undefined) {
+    vals.push(campos.texto);
+    sets.push(`texto = $${vals.length}`);
+  }
+  if (campos.dataAlerta !== undefined) {
+    vals.push(campos.dataAlerta || null);
+    sets.push(`data_alerta = $${vals.length}::date`);
+  }
+  if (sets.length === 0) return null;
+  const { rows } = await pool.query<Anotacao>(
+    `UPDATE anotacao SET ${sets.join(", ")}
+      WHERE id = $1 AND empresa_id = $2
+      RETURNING ${CAMPOS_ANOTACAO}`,
+    vals
+  );
+  return rows[0] ?? null;
+}
+
+export async function excluirAnotacao(empresaId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query("DELETE FROM anotacao WHERE id = $1 AND empresa_id = $2", [id, empresaId]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+/** Quantas anotações abertas já estão no dia do alerta (ou atrasadas). */
+export async function anotacoesEmAlerta(empresaId: number): Promise<number> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ total: string }>(
+    `SELECT count(*)::int AS total FROM anotacao
+      WHERE empresa_id = $1 AND concluida = false
+        AND data_alerta IS NOT NULL AND data_alerta <= CURRENT_DATE`,
+    [empresaId]
+  );
+  return Number(rows[0]?.total ?? 0);
 }
 
 // ---------- clientes ----------

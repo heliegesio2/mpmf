@@ -157,7 +157,7 @@ export default function Custos() {
       setItens(dados.itens);
     } catch {
       setErro(true);
-      setAviso("Não foi possível carregar os gastos.");
+      setAviso("Não foi possível carregar os investimentos.");
     } finally {
       setCarregando(false);
     }
@@ -182,7 +182,7 @@ export default function Custos() {
       const dados = await r.json();
       if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
 
-      setAviso("Gasto incluído.");
+      setAviso("Investimento incluído.");
       setDescricao("");
       setBeneficiario("");
       setValor("");
@@ -201,12 +201,12 @@ export default function Custos() {
       const r = await fetch(`/api/custos/${c.id}`, { method: "DELETE" });
       const dados = await r.json();
       if (!r.ok) throw new Error(dados?.erro);
-      setAviso("Gasto excluído.");
+      setAviso("Investimento excluído.");
       setErro(false);
       await carregar();
     } catch {
       setErro(true);
-      setAviso("Não foi possível excluir o gasto.");
+      setAviso("Não foi possível excluir o investimento.");
     }
   }
 
@@ -215,11 +215,11 @@ export default function Custos() {
   return (
     <main className="tela">
       <header className="marca">
-        Gastos <span>•</span> {itens.length} registrados
+        Investimentos <span>•</span> {itens.length} registrados
       </header>
 
       <section className="cartao">
-        <h2 className="titulo-cartao">Novo gasto</h2>
+        <h2 className="titulo-cartao">Novo investimento</h2>
 
         <p className="ajuda-voz" data-erro={!disponivel}>
           {disponivel
@@ -292,7 +292,7 @@ export default function Custos() {
 
         <div className="acoes">
           <button className="botao primario" onClick={salvar} disabled={salvando || !formularioValido}>
-            {salvando ? "Salvando…" : "Incluir custo"}
+            {salvando ? "Salvando…" : "Incluir investimento"}
           </button>
         </div>
 
@@ -304,7 +304,7 @@ export default function Custos() {
       {carregando ? (
         <p className="vazio">Carregando…</p>
       ) : itens.length === 0 ? (
-        <p className="vazio">Nenhum gasto registrado ainda.</p>
+        <p className="vazio">Nenhum investimento registrado ainda.</p>
       ) : (
         <>
           <p className="contagem">Total: R$ {moeda.format(total)}</p>
