@@ -12,6 +12,7 @@ type ItemConfirmado = {
   nome?: string;
   unidade?: string;
   tipoVenda?: string;
+  precoCompra?: number;
   preco?: number;
   estoque?: number;
 };
@@ -72,7 +73,7 @@ export async function POST(request: Request) {
         unidade: item.unidade || "unidade",
         tipoVenda: item.tipoVenda || "unidade",
         preco: item.preco,
-        precoCompra: 0,
+        precoCompra: numeroValido(item.precoCompra) ? item.precoCompra : 0,
         estoque: item.estoque,
       });
       resultados.push(criado);

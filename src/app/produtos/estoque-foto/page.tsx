@@ -19,11 +19,18 @@ type LinhaEdicao = {
   incluir: boolean;
   novoEstoque: string; // produto ja cadastrado
   nome: string; // produto novo
-  preco: string; // produto novo
+  precoCompra: string; // produto novo
+  preco: string; // produto novo (venda)
   estoque: string; // produto novo
   tipoVenda: string;
   unidade: string;
 };
+
+const MARGEM_VENDA = 0.38;
+/** venda sugerida = compra + 38% (mesma regra do "Importar compra"). */
+function vendaSugerida(compra: number): number {
+  return Math.round(compra * (1 + MARGEM_VENDA) * 100) / 100;
+}
 
 /** Casa a unidade que a IA leu ("garrafa", "kg"...) com uma embalagem conhecida. */
 function mapearEmbalagem(unidadeDetectada: string): string {
@@ -39,6 +46,7 @@ function linhaInicial(item: ItemProposto): LinhaEdicao {
     incluir: true,
     novoEstoque: String(item.quantidadeEstimada),
     nome: item.produto?.nome ?? item.descricaoDetectada,
+    precoCompra: "",
     preco: "",
     estoque: String(item.quantidadeEstimada),
     tipoVenda: "unidade",
@@ -59,17 +67,41 @@ export default function EstoquePorFoto() {
     setLinhas((ls) => ls.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)));
   }
 
+  /** troca o preço de compra e sugere a venda (compra + 38%). */
+  function mudarCompra(i: number, texto: string) {
+    setLinhas((ls) =>
+      ls.map((l, idx) => {
+        if (idx !== i) return l;
+        const mascarado = mascararMoeda(texto);
+        const compra = moedaParaNumero(mascarado);
+        return {
+          ...l,
+          precoCompra: mascarado,
+          preco: compra > 0 ? paraMoeda(vendaSugerida(compra)) : l.preco,
+        };
+      })
+    );
+  }
+
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
       const campo = campoAtual.current;
-      if (!campo || !campo.startsWith("preco-")) return;
-      const i = Number(campo.slice("preco-".length));
+      if (!campo) return;
       const n = numeroFalado(texto);
-      if (n === null) {
+      const falhou = () => {
         setErro(true);
         setAviso(`Não entendi "${texto}" como valor. Tente "quatro e cinquenta".`);
+      };
+      if (campo.startsWith("precoCompra-")) {
+        if (n === null) return falhou();
+        mudarCompra(Number(campo.slice("precoCompra-".length)), paraMoeda(n));
+        setErro(false);
+        setAviso("");
         return;
       }
+      if (!campo.startsWith("preco-")) return;
+      const i = Number(campo.slice("preco-".length));
+      if (n === null) return falhou();
       mudarLinha(i, "preco", paraMoeda(n));
       setErro(false);
       setAviso("");
@@ -126,6 +158,11 @@ export default function EstoquePorFoto() {
         .filter(({ l }) => l.incluir);
 
       for (const { l, item } of selecionados) {
+        if (!item.produto && moedaParaNumero(l.precoCompra) <= 0) {
+          setErro(true);
+          setAviso(`Informe o preço de compra de "${l.nome}" antes de salvar.`);
+          return;
+        }
         if (!item.produto && moedaParaNumero(l.preco) <= 0) {
           setErro(true);
           setAviso(`Informe o preço de venda de "${l.nome}" antes de salvar.`);
@@ -140,6 +177,7 @@ export default function EstoquePorFoto() {
               nome: l.nome,
               unidade: l.unidade,
               tipoVenda: l.tipoVenda,
+              precoCompra: moedaParaNumero(l.precoCompra),
               preco: moedaParaNumero(l.preco),
               estoque: Number(l.estoque.replace(",", ".")),
             }
@@ -246,7 +284,20 @@ export default function EstoquePorFoto() {
                   </label>
 
                   <CampoVoz
-                    rotulo="Preço de venda"
+                    rotulo="Preço de compra"
+                    campo={`precoCompra-${i}`}
+                    valor={linha.precoCompra}
+                    aoMudar={(v) => mudarCompra(i, v)}
+                    placeholder="0,00"
+                    moeda
+                    ouvindo={ouvindoCampo === `precoCompra-${i}`}
+                    temVoz={disponivel}
+                    aoOuvir={ouvir}
+                    aoParar={parar}
+                  />
+
+                  <CampoVoz
+                    rotulo="Preço de venda (compra + 38%)"
                     campo={`preco-${i}`}
                     valor={linha.preco}
                     aoMudar={(v) => mudarLinha(i, "preco", mascararMoeda(v))}

@@ -197,9 +197,10 @@ a narrow single-column `UPDATE ... SET estoque` (unlike `atualizarProduto`, whic
 this path never touches price, name, or category. For no match, the item is included by default as a **new**
 product (name/embalagem/tipo-venda editable, stock prefilled from the photo count) — sale price has no source
 in a shelf photo, so that field starts empty and must be filled before saving, by typing or via the same
-voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen; the confirm route rejects a new-product
-line with no price rather than defaulting it. Created products get `preco_compra = 0` (unknown from a shelf
-photo) — expect the margin display on Produtos to show 100% until someone corrects it from a real invoice.
+voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen. The new-product line now has **both
+`preço de compra` and `preço de venda`** — typing/speaking the purchase price auto-fills the sale price as
+`compra × 1.38` (`MARGEM_VENDA = 0.38`, same rule as "Importar compra"), still editable; the confirm route
+requires both and passes `precoCompra` to `criarProduto`.
 
 ### Stock-by-video (`/produtos/estoque-video`)
 
