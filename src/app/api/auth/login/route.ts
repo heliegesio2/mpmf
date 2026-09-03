@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { usuarioPorEmail } from "@/lib/db";
-import { COOKIE_SESSAO } from "@/lib/auth";
+import { fornecedorPublicoPorEmail, usuarioPorEmail } from "@/lib/db";
+import { COOKIE_SESSAO, criarToken } from "@/lib/auth";
 import { conferirSenha } from "@/lib/senha";
 import { autorizarLogin } from "@/lib/login";
 
@@ -24,7 +24,49 @@ export async function POST(request: Request) {
       return NextResponse.json({ erro: "E-mail ou senha incorretos." }, { status: 401 });
     };
 
-    if (!usuario) return negar("e-mail nao cadastrado");
+    // não é usuário de loja? pode ser um fornecedor com cadastro público.
+    if (!usuario) {
+      const forn = await fornecedorPublicoPorEmail(String(email));
+      if (forn) {
+        if (forn.situacao === "pendente") {
+          return NextResponse.json(
+            { erro: "Seu cadastro de fornecedor está aguardando aprovação." },
+            { status: 403 }
+          );
+        }
+        if (forn.situacao === "reprovado") {
+          return NextResponse.json(
+            {
+              erro:
+                "Seu cadastro de fornecedor não foi aprovado." +
+                (forn.motivo ? ` Motivo: ${forn.motivo}` : ""),
+            },
+            { status: 403 }
+          );
+        }
+        if (!forn.senha_hash || !(await conferirSenha(String(senha), forn.senha_hash))) {
+          return negar("senha de fornecedor incorreta");
+        }
+        const { token, expiraEm } = await criarToken({
+          usuarioId: 0,
+          nome: forn.nome,
+          papel: "fornecedor",
+          empresaId: null,
+          empresaNome: null,
+          fornecedorId: forn.id,
+        });
+        const resp = NextResponse.json({ nome: forn.nome, papel: "fornecedor", destino: "/fornecedor" });
+        resp.cookies.set(COOKIE_SESSAO, token, {
+          httpOnly: true,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+          path: "/",
+          expires: expiraEm,
+        });
+        return resp;
+      }
+      return negar("e-mail nao cadastrado");
+    }
     if (!usuario.ativo) return negar("usuario inativo");
     // conta só de rede social não tem senha
     if (!usuario.senha_hash) {

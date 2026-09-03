@@ -21,6 +21,14 @@ export async function middleware(request: NextRequest) {
 
   // area de empresas: so o super admin
   if (pathname.startsWith("/admin") && sessao.papel !== "super_admin") {
+    return NextResponse.redirect(new URL(sessao.papel === "fornecedor" ? "/fornecedor" : "/", request.url));
+  }
+
+  // area do fornecedor = exatamente /fornecedor e /fornecedor/... (não /fornecedores)
+  const naAreaFornecedor = pathname === "/fornecedor" || pathname.startsWith("/fornecedor/");
+  if (sessao.papel === "fornecedor") {
+    if (!naAreaFornecedor) return NextResponse.redirect(new URL("/fornecedor", request.url));
+  } else if (naAreaFornecedor) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 

@@ -13,6 +13,7 @@ type Config = {
   telefone: string;
   telefoneWhatsapp: boolean;
   cidade: string;
+  bairro: string;
   cep: string;
   endereco: string;
   horario: string;
@@ -26,6 +27,7 @@ const VAZIO: Config = {
   telefone: "",
   telefoneWhatsapp: false,
   cidade: "",
+  bairro: "",
   cep: "",
   endereco: "",
   horario: "",
@@ -67,6 +69,7 @@ export default function Configuracoes() {
           telefone: e.telefone ?? "",
           telefoneWhatsapp: Boolean(e.telefone_whatsapp),
           cidade: e.cidade ?? "",
+          bairro: e.bairro ?? "",
           cep: e.cep ?? "",
           endereco: e.endereco ?? "",
           horario: e.horario ?? "",
@@ -134,6 +137,7 @@ export default function Configuracoes() {
                 aoMudarWhatsapp={(v) => setForm((f) => ({ ...f, telefoneWhatsapp: v }))}
               />
               <CampoVoz rotulo="Cidade" placeholder="São Paulo" {...comum("cidade")} />
+              <CampoVoz rotulo="Bairro" placeholder="Centro" {...comum("bairro")} />
               <CampoVoz rotulo="CEP" placeholder="00000-000" numerico {...comum("cep")} />
               <CampoVoz rotulo="Endereço" placeholder="Rua, número, bairro" largo {...comum("endereco")} />
               <CampoVoz

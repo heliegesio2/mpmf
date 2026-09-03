@@ -249,8 +249,8 @@ of a blank "não foi possível salvar".
   `pix_nome`, added to `empresa`). Only non-super-admins have the `LOJA` menu, so only they see it.
   `/cadastro` (public store sign-up, `POST /api/empresas`) collects the same `horario` / `pix_chave` /
   `pix_nome` up front so a freshly approved store already has a working Pix QR.
-- **`/cadastro` forks (`db/23`)** — a "Sou uma empresa / Sou fornecedor" toggle at the top (hidden in
-  `?social=1` mode). **Fornecedor** → the fornecedor fields (nome, documento, telefone+WhatsApp, endereço,
+- **`/cadastro` forks (`db/23`)** — an **Empresa / Fornecedor** tab strip (`.abas-cadastro` /
+  `.aba-cadastro`) at the top (hidden in `?social=1` mode). **Fornecedor** → the fornecedor fields (nome, documento, telefone+WhatsApp, endereço,
   observação, pix) + **bairros atendidos** (a checkbox grid from `GET /api/bairros?cidade=`) + email/senha
   → `POST /api/fornecedores/cadastro` (public). Creates a `fornecedor_publico` row (`pendente`, separate
   from each store's per-empresa `fornecedor` table) + `fornecedor_publico_bairro` links. The `bairro`
@@ -260,8 +260,22 @@ of a blank "não foi possível salvar".
   `/admin/empresas`: tabs (Aguardando/Aprovados/Reprovados/Todas), `<FiltroVoz>` by name/email,
   `<DadosContato>` + bairro chips per row, Aprovar / Reprovar (with a mandatory `motivo`).
   `GET /api/admin/fornecedores?situacao=&q=` + `PUT /api/admin/fornecedores/:id {situacao: "aprovado"|
-  "reprovado", motivo?}` → `decidirFornecedorPublico`. An **approved fornecedor still has no way to log
-  in** (no `usuario` row) and no store-facing directory — those are follow-ups.
+  "reprovado", motivo?}` → `decidirFornecedorPublico`.
+- **Fornecedor login (`db/25`)** — a `Papel` is now `... | "fornecedor"`, `Sessao` gets optional
+  `fornecedorId`. `POST /api/auth/login`: if `usuarioPorEmail` misses, tries `fornecedorPublicoPorEmail`
+  — `pendente`/`reprovado` → 403 with the reason, `aprovado` + right password → mints a token
+  `{usuarioId: 0, papel: "fornecedor", fornecedorId, empresaId: null}`, `destino: "/fornecedor"`.
+  `middleware.ts` locks `papel === "fornecedor"` to exactly `/fornecedor` and `/fornecedor/*` (NOT
+  `/fornecedores`), redirecting everything else there; non-fornecedores are bounced off `/fornecedor`.
+  `exigirFornecedor()` in `sessao.ts`. `MenuLateral` renders a slim `GRUPO_FORNECEDOR` for them.
+  **`/fornecedor`** — the supplier's own screen: status badge + editable profile (data + bairros
+  multi-select) → `GET/PUT /api/fornecedor` (`fornecedorPublicoDetalhe` / `atualizarFornecedorPublico`).
+- **`/diretorio` (store side)** — `empresa` gained `bairro` (`db/25`, editable in `/configuracoes`
+  alongside `cidade`). `GET /api/diretorio?bairro=` (`exigirEmpresa`) → `listarDiretorioFornecedores`
+  (approved `fornecedor_publico` in `empresa.cidade`, optionally serving a bairro), defaulting the filter
+  to `empresa.bairro`. `POST /api/diretorio/importar {fornecedorPublicoId}` copies the public record into
+  the store's own `fornecedor` table via `criarFornecedor`. In the **Cadastros** menu group as "Buscar
+  fornecedores".
 - **WhatsApp on every phone field** (`db/14`) — `<CampoTelefone>` (`src/components/CampoTelefone.tsx`)
   replaces a bare phone `CampoVoz` everywhere: phone input + mic + an "Esse número é WhatsApp" checkbox,
   and a green `wa.me` shortcut once it's marked. Persisted as `empresa.telefone_whatsapp` /

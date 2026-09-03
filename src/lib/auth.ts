@@ -7,7 +7,7 @@
  * auth.ts e roda no Edge, que não empacota módulos node:crypto.
  */
 
-export type Papel = "super_admin" | "admin" | "operador";
+export type Papel = "super_admin" | "admin" | "operador" | "fornecedor";
 
 export type Sessao = {
   usuarioId: number;
@@ -15,6 +15,8 @@ export type Sessao = {
   papel: Papel;
   empresaId: number | null;
   empresaNome: string | null;
+  /** Só na sessão de fornecedor (login público): id em `fornecedor_publico`. */
+  fornecedorId?: number;
   /**
    * Preenchido só quando um super admin usou "entrar como" para assumir a
    * sessão deste usuário. Guarda quem ele é de verdade, para poder voltar.

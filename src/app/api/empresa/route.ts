@@ -42,6 +42,7 @@ export async function PUT(request: Request) {
       telefone: texto(c.telefone),
       telefoneWhatsapp: Boolean(c.telefoneWhatsapp),
       cidade: texto(c.cidade),
+      bairro: texto(c.bairro),
       cep: texto(c.cep),
       endereco: texto(c.endereco),
       horario: texto(c.horario),

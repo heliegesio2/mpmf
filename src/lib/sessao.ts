@@ -39,6 +39,19 @@ export async function exigirSuperAdmin(): Promise<
   return r;
 }
 
+/** Rotas da area do fornecedor (login publico). */
+export async function exigirFornecedor(): Promise<
+  { fornecedorId: number; sessao: Sessao; erro?: never }
+  | { fornecedorId?: never; sessao?: never; erro: NextResponse }
+> {
+  const r = await exigirSessao();
+  if (r.erro) return { erro: r.erro };
+  if (r.sessao.papel !== "fornecedor" || !r.sessao.fornecedorId) {
+    return { erro: NextResponse.json({ erro: "Acesso restrito ao fornecedor." }, { status: 403 }) };
+  }
+  return { fornecedorId: r.sessao.fornecedorId, sessao: r.sessao };
+}
+
 /** Empresa do usuario logado. O super admin nao opera loja. */
 export async function exigirEmpresa(): Promise<
   { empresaId: number; sessao: Sessao; erro?: never }

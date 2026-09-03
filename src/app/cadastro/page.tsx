@@ -218,32 +218,35 @@ function Conteudo() {
         </h1>
 
         {!social && (
-          <div className="tipo-cadastro">
-            <button
-              type="button"
-              className="tipo-opcao"
-              data-ativo={tipo === "empresa"}
-              onClick={() => { setTipo("empresa"); setErro(""); }}
-            >
-              <span className="tipo-check" aria-hidden="true" />
-              <span>
-                <strong>Sou uma empresa</strong>
-                <small>Mercadinho / loja que vai usar o PDV</small>
-              </span>
-            </button>
-            <button
-              type="button"
-              className="tipo-opcao"
-              data-ativo={tipo === "fornecedor"}
-              onClick={() => { setTipo("fornecedor"); setErro(""); }}
-            >
-              <span className="tipo-check" aria-hidden="true" />
-              <span>
-                <strong>Sou fornecedor</strong>
-                <small>Abasteço as lojas — informo os bairros que atendo</small>
-              </span>
-            </button>
-          </div>
+          <>
+            <div className="abas-cadastro" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tipo === "empresa"}
+                className="aba-cadastro"
+                data-ativo={tipo === "empresa"}
+                onClick={() => { setTipo("empresa"); setErro(""); }}
+              >
+                Empresa
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tipo === "fornecedor"}
+                className="aba-cadastro"
+                data-ativo={tipo === "fornecedor"}
+                onClick={() => { setTipo("fornecedor"); setErro(""); }}
+              >
+                Fornecedor
+              </button>
+            </div>
+            <p className="dica">
+              {ehFornecedor
+                ? "Você abastece as lojas — informe os bairros que atende."
+                : "Mercadinho / loja que vai usar o PDV."}
+            </p>
+          </>
         )}
 
         {social && (

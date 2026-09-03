@@ -1650,46 +1650,30 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 .cartao-login .ajuda-voz { margin: -4px 0 12px; }
 
 /* cadastro: escolher empresa x fornecedor */
-.tipo-cadastro {
+.abas-cadastro {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 4px 0 16px;
-}
-.tipo-opcao {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 4px;
+  margin: 4px 0 8px;
+  padding: 4px;
   border-radius: 12px;
-  border: 2px solid var(--verde-linha);
+  border: 1px solid var(--verde-linha);
   background: var(--verde-fundo);
-  color: var(--creme);
-  text-align: left;
-  cursor: pointer;
+}
+.aba-cadastro {
+  padding: 11px 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--creme-fraco);
   font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
-.tipo-opcao[data-ativo="true"] {
-  border-color: var(--ambar);
-  background: rgba(255, 197, 61, 0.08);
-}
-.tipo-opcao strong { display: block; font-size: 15px; }
-.tipo-opcao small { color: var(--creme-fraco); font-size: 12px; }
-.tipo-check {
-  flex: none;
-  width: 20px;
-  height: 20px;
-  margin-top: 2px;
-  border-radius: 999px;
-  border: 2px solid var(--creme-fraco);
-}
-.tipo-opcao[data-ativo="true"] .tipo-check {
-  border-color: var(--ambar);
-  background: var(--ambar);
-  box-shadow: inset 0 0 0 3px var(--verde-fundo);
-}
-@media (max-width: 560px) {
-  .tipo-cadastro { grid-template-columns: 1fr; }
+.aba-cadastro[data-ativo="true"] {
+  background: rgba(255, 197, 61, 0.12);
+  color: var(--ambar);
+  box-shadow: inset 0 0 0 1px var(--ambar);
 }
 
 /* cadastro de fornecedor: bairros atendidos */

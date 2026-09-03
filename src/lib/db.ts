@@ -293,6 +293,8 @@ const MIGRACOES_IDEMPOTENTES = [
   // db/24 — aprovação do fornecedor público pelo super admin
   "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS motivo text",
   "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS decidido_em timestamptz",
+  // db/25 — bairro da loja (pro diretório de fornecedores)
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS bairro text",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -729,6 +731,7 @@ export type EmpresaConfig = {
   telefone: string | null;
   telefone_whatsapp: boolean;
   cidade: string | null;
+  bairro: string | null;
   cep: string | null;
   endereco: string | null;
   horario: string | null;
@@ -742,6 +745,7 @@ export type EmpresaConfigEntrada = {
   telefone: string | null;
   telefoneWhatsapp: boolean;
   cidade: string | null;
+  bairro: string | null;
   cep: string | null;
   endereco: string | null;
   horario: string | null;
@@ -750,7 +754,7 @@ export type EmpresaConfigEntrada = {
 };
 
 const CAMPOS_EMPRESA_CONFIG =
-  "id, nome, documento, telefone, telefone_whatsapp, cidade, cep, endereco, horario, pix_chave, pix_nome";
+  "id, nome, documento, telefone, telefone_whatsapp, cidade, bairro, cep, endereco, horario, pix_chave, pix_nome";
 
 export async function configEmpresa(empresaId: number): Promise<EmpresaConfig | null> {
   await garantirSchema();
@@ -769,12 +773,12 @@ export async function salvarConfigEmpresa(
   const { rows } = await pool.query<EmpresaConfig>(
     `UPDATE empresa
         SET nome = $2, documento = $3, telefone = $4, telefone_whatsapp = $5, cidade = $6, cep = $7,
-            endereco = $8, horario = $9, pix_chave = $10, pix_nome = $11
+            endereco = $8, horario = $9, pix_chave = $10, pix_nome = $11, bairro = $12
       WHERE id = $1
       RETURNING ${CAMPOS_EMPRESA_CONFIG}`,
     [
       empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.cidade, d.cep,
-      d.endereco, d.horario, d.pixChave, d.pixNome,
+      d.endereco, d.horario, d.pixChave, d.pixNome, d.bairro ?? null,
     ]
   );
   return rows[0] ?? null;
@@ -2004,6 +2008,157 @@ export async function decidirFornecedorPublico(
                   '[]'::json
                 ) AS bairros`,
     [id, situacao, situacao === "reprovado" ? String(motivo ?? "").trim() || null : null]
+  );
+  return rows[0] ?? null;
+}
+
+// ---------- login e área do fornecedor público (db/25) ----------
+
+export type FornecedorLogin = {
+  id: number;
+  nome: string;
+  email: string;
+  senha_hash: string | null;
+  situacao: "pendente" | "aprovado" | "reprovado";
+  motivo: string | null;
+};
+
+export async function fornecedorPublicoPorEmail(email: string): Promise<FornecedorLogin | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<FornecedorLogin>(
+    `SELECT id, nome, email, senha_hash, situacao, motivo
+       FROM fornecedor_publico WHERE lower(email) = lower($1)`,
+    [email.trim()]
+  );
+  return rows[0] ?? null;
+}
+
+/** Dados completos do fornecedor logado + bairros que atende + bairros da cidade. */
+export async function fornecedorPublicoDetalhe(id: number): Promise<
+  | (FornecedorPublico & { bairroIds: number[]; bairrosCidade: Bairro[] })
+  | null
+> {
+  await garantirSchema();
+  const { rows } = await pool.query<FornecedorPublico & { bairro_ids: number[] }>(
+    `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
+            fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
+            COALESCE((SELECT json_agg(b.nome ORDER BY b.nome)
+                        FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
+                       WHERE fb.fornecedor_publico_id = fp.id), '[]'::json) AS bairros,
+            COALESCE((SELECT json_agg(fb.bairro_id)
+                        FROM fornecedor_publico_bairro fb
+                       WHERE fb.fornecedor_publico_id = fp.id), '[]'::json) AS bairro_ids
+       FROM fornecedor_publico fp WHERE fp.id = $1`,
+    [id]
+  );
+  const fp = rows[0];
+  if (!fp) return null;
+  const bairrosCidade = await listarBairros(fp.cidade);
+  return {
+    ...fp,
+    bairroIds: (fp.bairro_ids ?? []).map((n) => Number(n)),
+    bairrosCidade,
+  };
+}
+
+export async function atualizarFornecedorPublico(
+  id: number,
+  d: {
+    nome: string;
+    documento?: string | null;
+    telefone?: string | null;
+    telefoneWhatsapp?: boolean;
+    endereco?: string | null;
+    observacao?: string | null;
+    pixChave?: string | null;
+    cidade: string;
+    bairroIds: number[];
+  }
+): Promise<boolean> {
+  await garantirSchema();
+  const cliente = await pool.connect();
+  try {
+    await cliente.query("BEGIN");
+    const upd = await cliente.query(
+      `UPDATE fornecedor_publico
+          SET nome = $2, documento = $3, telefone = $4, telefone_whatsapp = $5,
+              endereco = $6, observacao = $7, pix_chave = $8, cidade = $9
+        WHERE id = $1`,
+      [
+        id,
+        d.nome,
+        d.documento?.replace(/\D/g, "") || null,
+        d.telefone || null,
+        Boolean(d.telefoneWhatsapp),
+        d.endereco || null,
+        d.observacao || null,
+        d.pixChave || null,
+        d.cidade.trim(),
+      ]
+    );
+    if (!upd.rowCount) {
+      await cliente.query("ROLLBACK");
+      return false;
+    }
+    await cliente.query("DELETE FROM fornecedor_publico_bairro WHERE fornecedor_publico_id = $1", [id]);
+    const ids = Array.from(new Set(d.bairroIds.filter((n) => Number.isInteger(n))));
+    for (const bairroId of ids) {
+      await cliente.query(
+        `INSERT INTO fornecedor_publico_bairro (fornecedor_publico_id, bairro_id)
+         SELECT $1, $2 WHERE EXISTS (SELECT 1 FROM bairro WHERE id = $2)
+         ON CONFLICT DO NOTHING`,
+        [id, bairroId]
+      );
+    }
+    await cliente.query("COMMIT");
+    return true;
+  } catch (e) {
+    await cliente.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    cliente.release();
+  }
+}
+
+// ---------- diretório de fornecedores (pras lojas) ----------
+
+/** Fornecedores APROVADOS que atendem a cidade (e, se passado, o bairro) da loja. */
+export async function listarDiretorioFornecedores(
+  cidade: string,
+  bairro?: string | null
+): Promise<FornecedorPublico[]> {
+  await garantirSchema();
+  const params: unknown[] = [cidade.trim()];
+  let filtroBairro = "";
+  if (bairro && bairro.trim()) {
+    params.push(bairro.trim());
+    filtroBairro = `AND EXISTS (
+      SELECT 1 FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
+       WHERE fb.fornecedor_publico_id = fp.id AND lower(b.nome) = lower($${params.length})
+    )`;
+  }
+  const { rows } = await pool.query<FornecedorPublico>(
+    `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
+            fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
+            COALESCE((SELECT json_agg(b.nome ORDER BY b.nome)
+                        FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
+                       WHERE fb.fornecedor_publico_id = fp.id), '[]'::json) AS bairros
+       FROM fornecedor_publico fp
+      WHERE fp.situacao = 'aprovado' AND lower(fp.cidade) = lower($1) ${filtroBairro}
+      ORDER BY fp.nome`,
+    params
+  );
+  return rows;
+}
+
+export async function fornecedorPublicoPorId(id: number): Promise<FornecedorPublico | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<FornecedorPublico>(
+    `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
+            fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
+            '[]'::json AS bairros
+       FROM fornecedor_publico fp WHERE fp.id = $1`,
+    [id]
   );
   return rows[0] ?? null;
 }

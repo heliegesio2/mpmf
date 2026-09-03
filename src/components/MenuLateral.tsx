@@ -9,7 +9,7 @@ import { esquecerCarrinho, useCarrinho } from "@/lib/carrinho";
 
 type Sessao = {
   nome: string;
-  papel: "super_admin" | "admin" | "operador";
+  papel: "super_admin" | "admin" | "operador" | "fornecedor";
   empresaNome: string | null;
   /** Presente quando um super admin usou "entrar como" e está nesta sessão. */
   origem: { usuarioId: number; nome: string } | null;
@@ -64,6 +64,7 @@ const GRUPOS_LOJA: GrupoMenu[] = [
     itens: [
       { href: "/clientes", rotulo: "Clientes", descricao: "Cadastro com foto, para fiado" },
       { href: "/fornecedores", rotulo: "Fornecedores", descricao: "Cadastro de quem te abastece" },
+      { href: "/diretorio", rotulo: "Buscar fornecedores", descricao: "Fornecedores da região no diretório" },
       { href: "/cascos", rotulo: "Empréstimos", descricao: "Item retirado por um cliente" },
     ],
   },
@@ -79,6 +80,13 @@ const GRUPO_ADMIN: GrupoMenu = {
     { href: "/admin/empresas", rotulo: "Empresas", descricao: "Aprovar ou reprovar" },
     { href: "/admin/fornecedores", rotulo: "Fornecedores", descricao: "Aprovar cadastros e bairros" },
   ],
+};
+
+const GRUPO_FORNECEDOR: GrupoMenu = {
+  id: "fornecedor",
+  icone: "🚚",
+  rotulo: "Fornecedor",
+  href: "/fornecedor",
 };
 
 const TODOS_GRUPOS = [...GRUPOS_LOJA, GRUPO_ADMIN];
@@ -161,17 +169,21 @@ export default function MenuLateral() {
     return null;
   }
 
+  const ehFornecedor = sessao.papel === "fornecedor";
+
   // super admin sem empresa propria: so ve a area de aprovar empresas.
   // com empresa propria (caso da Mercadinho): ve os dois blocos de menu.
-  const grupos =
-    sessao.papel === "super_admin"
+  // fornecedor: so a propria area.
+  const grupos = ehFornecedor
+    ? [GRUPO_FORNECEDOR]
+    : sessao.papel === "super_admin"
       ? sessao.empresaNome
         ? [GRUPO_ADMIN, ...GRUPOS_LOJA]
         : [GRUPO_ADMIN]
       : GRUPOS_LOJA;
 
   // super admin sem loja própria não vende — não mostra o atalho do carrinho
-  const temLoja = sessao.papel !== "super_admin" || Boolean(sessao.empresaNome);
+  const temLoja = !ehFornecedor && (sessao.papel !== "super_admin" || Boolean(sessao.empresaNome));
 
   return (
     <>
@@ -239,8 +251,10 @@ export default function MenuLateral() {
             <div className="conta-menu-cabeca">
               <strong>{sessao.nome}</strong>
               <span>
-                {sessao.empresaNome ?? "Administração"}
-                {sessao.papel === "super_admin" ? " · super admin" : ""}
+                {ehFornecedor
+                  ? "Fornecedor"
+                  : (sessao.empresaNome ?? "Administração") +
+                    (sessao.papel === "super_admin" ? " · super admin" : "")}
               </span>
             </div>
 
@@ -255,12 +269,21 @@ export default function MenuLateral() {
                   Configurações da empresa
                 </Link>
               )}
-              <Link href="/perfil" role="menuitem" data-ativo={caminho === "/perfil"}>
-                Meu perfil
-              </Link>
-              <Link href="/senha" role="menuitem" data-ativo={caminho === "/senha"}>
-                Trocar senha
-              </Link>
+              {ehFornecedor && (
+                <Link href="/fornecedor" role="menuitem" data-ativo={caminho === "/fornecedor"}>
+                  Meu cadastro
+                </Link>
+              )}
+              {!ehFornecedor && (
+                <>
+                  <Link href="/perfil" role="menuitem" data-ativo={caminho === "/perfil"}>
+                    Meu perfil
+                  </Link>
+                  <Link href="/senha" role="menuitem" data-ativo={caminho === "/senha"}>
+                    Trocar senha
+                  </Link>
+                </>
+              )}
               <button type="button" role="menuitem" onClick={sair}>
                 Sair
               </button>
@@ -284,12 +307,12 @@ export default function MenuLateral() {
       {aberto && <div className="fundo-menu" onClick={() => setAberto(false)} />}
 
       <nav className="menu" data-aberto={aberto} aria-label="Seções">
-        <Link href="/" className="menu-logo" aria-label="PDV Já — início">
+        <Link href={ehFornecedor ? "/fornecedor" : "/"} className="menu-logo" aria-label="PDV Já — início">
           <Logo />
         </Link>
         <div className="menu-marca">
-          {sessao.empresaNome ?? "Administração"}
-          <span>{sessao.papel === "super_admin" ? "super admin" : "balcão"}</span>
+          {ehFornecedor ? sessao.nome : (sessao.empresaNome ?? "Administração")}
+          <span>{ehFornecedor ? "fornecedor" : sessao.papel === "super_admin" ? "super admin" : "balcão"}</span>
         </div>
 
         <div className="menu-grupos">
