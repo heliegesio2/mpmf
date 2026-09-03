@@ -934,6 +934,25 @@ html[data-fonte="grande"] { zoom: 1.5; }
 }
 .entrada input:focus, .entrada select:focus { outline: none; }
 .entrada select option { background: var(--verde-superficie); color: var(--creme); }
+/* input de data: usa o seletor nativo, mas no tema escuro */
+.entrada input[type="date"] { color-scheme: dark; }
+
+/* ============ /vendas ============ */
+.resumo-vendas {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--verde-linha);
+  color: var(--creme-fraco);
+  font-size: 14px;
+}
+.resumo-vendas strong {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 22px;
+  color: var(--ambar);
+}
 
 .mic-campo {
   flex: none;

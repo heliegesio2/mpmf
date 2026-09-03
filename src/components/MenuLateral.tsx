@@ -34,6 +34,7 @@ const GRUPOS_LOJA: GrupoMenu[] = [
     itens: [
       { href: "/", rotulo: "Consultar preço", descricao: "Fale ou digite" },
       { href: "/venda", rotulo: "Venda", descricao: "Ditar itens e fechar" },
+      { href: "/vendas", rotulo: "Vendas do dia", descricao: "Histórico por data, valor e pagamento" },
       { href: "/caixa", rotulo: "Caixa", descricao: "Informar o valor final do dia" },
     ],
   },

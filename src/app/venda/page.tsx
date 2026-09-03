@@ -569,21 +569,29 @@ export default function Venda() {
           throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — ") || "Falha ao lançar o fiado.");
         }
       }
-      // dá baixa no estoque — a venda já foi cobrada, então uma falha aqui
-      // não desfaz a venda (o lojista reconta o estoque depois pela foto)
+      // grava a venda (aparece em /vendas) e dá baixa no estoque — a venda já
+      // foi cobrada, então uma falha aqui não a desfaz (o servidor loga)
       let estoques: Record<number, { estoque: number; critico: boolean }> = {};
       try {
-        const r = await fetch("/api/venda/baixar-estoque", {
+        const r = await fetch("/api/venda/concluir", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            itens: itens.map((i) => ({ id: i.produto.id, quantidade: i.quantidade })),
+            data: new Date().toLocaleDateString("en-CA"),
+            itens: itens.map((i) => ({
+              id: i.produto.id,
+              nome: i.produto.nome,
+              quantidade: i.quantidade,
+              precoUnit: Number(i.produto.preco),
+              tipoVenda: i.produto.tipo_venda,
+            })),
+            partes: partes.map((p) => ({ forma: p.forma, valor: p.valor })),
           }),
         });
         const d = await r.json().catch(() => ({}));
         if (r.ok && d?.estoques) estoques = d.estoques;
       } catch (e) {
-        console.error("Não foi possível baixar o estoque da venda:", e);
+        console.error("Não foi possível concluir a venda no servidor:", e);
       }
 
       reconhecimento.current?.abort();

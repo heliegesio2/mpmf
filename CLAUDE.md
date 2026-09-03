@@ -253,14 +253,21 @@ of a blank "não foi possível salvar".
   "quitar tudo". `criarFiado` re-checks `cliente.empresa_id` in the INSERT so a session can't post to
   another store's client.
 
-Still **no sales ledger** — a split sale persists nothing except its `fiado` parts and the
-**stock deduction**: `fechar()` POSTs the cart to `POST /api/venda/baixar-estoque`
-(`baixarEstoqueVenda` in `db.ts` — one `UPDATE … SET estoque = GREATEST(0, estoque - qtd)
-RETURNING id, estoque` per line, never negative). It runs after the fiado inserts and is
-**non-blocking** — a failure is logged but the paid sale still completes (the shopkeeper
-re-counts via the shelf photo). The route returns `estoques` (`{id: novoEstoque}`), which
-`fechar()` stores in `finalizada`; the completion receipt shows each item's remaining stock
-on the right in red (`.col-direita` / `.estoque-restante`).
+**Sales are now persisted** (`db/20` — `venda` + `venda_item` + `venda_pagamento`). On finish,
+`fechar()` POSTs the cart to `POST /api/venda/concluir` (after the fiado inserts), which does
+two **non-blocking** things (the sale is already paid — a failure is only logged): (1)
+`registrarVenda` — inserts the sale header + line items + payment parts; `venda.data` is the
+**client's local date** (sent in the body) so the `/vendas` day filter doesn't depend on the
+server's UTC clock; (2) `baixarEstoqueVenda` — `UPDATE … SET estoque = GREATEST(0, estoque - qtd)
+RETURNING id, estoque, estoque_minimo` per line, never negative. The route returns
+`estoques` (`{id: {estoque, critico}}`), which `fechar()` stores in `finalizada`; the completion
+receipt shows each item's remaining stock as a chip under its name — `.chip-estoque-venda`,
+solid red only when `critico`.
+
+**`/vendas`** — the sales history. Two `<input type="date">` (De / Até, both default to the
+local today), `GET /api/vendas?de=&ate=` → `listarVendas` (filters on `venda.data`, `json_agg`s
+the payment parts), a period total, and a list: time + item count + `forma R$ valor + …` +
+total. In the **balcão** menu group, labeled "Vendas do dia" (distinct from `/venda`).
 
 **Stock field gotcha:** the DB returns `numeric` as `"3.000"`. `FormularioProduto` must load
 `estoque`/`estoque_minimo` as `String(Number(p.estoque))` and send `estoque` back as **raw text**
@@ -323,13 +330,12 @@ re-paying after a reopen clones again (accepted).
 
 ### Reports dashboard (`/relatorios`)
 
-There is **no sales ledger / stock-movement table** — the app records the current product row
-(`estoque`, `preco`, `preco_compra`), manual expense entries (`custo`), daily till closings (`caixa`),
-and crate loans (`casco`), but never an individual sale. Everything on `/relatorios` is therefore a
-read-only derivation over those four tables: KPIs and inventory value from `produto`, spend charts from
-`custo`, and the "revenue" trend line is **approximated by the daily `caixa` closing** because nothing
-finer exists. Keep this in mind before adding any report that needs per-sale data — it would need a new
-table and a write path first.
+**`/relatorios` doesn't use the `venda` ledger yet** (added in `db/20`, see the Sales screen section).
+It still derives everything from the current product row (`estoque`, `preco`, `preco_compra`), manual
+expense entries (`custo`), daily till closings (`caixa`), and crate loans (`casco`): KPIs and inventory
+value from `produto`, spend charts from `custo`, and the "revenue" trend line **approximated by the daily
+`caixa` closing**. A real per-sale revenue report is now possible off `venda`/`venda_item`/`venda_pagamento`
+— wiring it into `/relatorios` is a follow-up.
 
 `GET /api/relatorios` (`export const dynamic = "force-dynamic"`) runs every indicator in one
 `Promise.all` and returns a single JSON blob; the page does one fetch on mount. All query functions live
