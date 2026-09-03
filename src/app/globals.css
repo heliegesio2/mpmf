@@ -937,6 +937,25 @@ html[data-fonte="grande"] { zoom: 1.5; }
 /* input de data: usa o seletor nativo, mas no tema escuro */
 .entrada input[type="date"] { color-scheme: dark; }
 
+/* ============ preço por vídeo ============ */
+.transcricao-video {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--creme-fraco);
+}
+.transcricao-video summary {
+  cursor: pointer;
+  color: var(--ambar);
+}
+.transcricao-video p {
+  margin: 8px 0 0;
+  padding: 10px 12px;
+  background: var(--verde-fundo);
+  border: 1px solid var(--verde-linha);
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
+
 /* ============ /vendas ============ */
 .resumo-vendas {
   display: flex;

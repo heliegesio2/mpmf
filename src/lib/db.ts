@@ -317,6 +317,22 @@ export async function atualizarEstoqueProduto(
   return rows[0] ?? null;
 }
 
+/** So mexe no preco de venda — usado pela atualizacao de preco por video. */
+export async function atualizarPrecoProduto(
+  empresaId: number,
+  id: number,
+  novoPreco: number
+): Promise<Produto | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<Produto>(
+    `UPDATE produto SET preco = $3, alterado_em = now()
+      WHERE id = $1 AND empresa_id = $2
+      RETURNING ${CAMPOS}`,
+    [id, empresaId, novoPreco]
+  );
+  return rows[0] ?? null;
+}
+
 /**
  * Da baixa no estoque dos itens vendidos ao fechar uma venda.
  * `GREATEST(0, ...)` para nao deixar o estoque negativo. Uma query por item

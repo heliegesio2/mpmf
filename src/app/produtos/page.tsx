@@ -220,6 +220,9 @@ export default function Produtos() {
         <Link href="/produtos/estoque-foto" className="botao neutro">
           📦 Atualizar estoque por foto
         </Link>
+        <Link href="/produtos/preco-video" className="botao neutro">
+          🎥 Atualizar preço por vídeo
+        </Link>
         <input
           ref={fotoInput}
           type="file"
