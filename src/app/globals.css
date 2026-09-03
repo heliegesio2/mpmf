@@ -709,6 +709,8 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .logo.grande .logo-marca { width: 40px; height: 40px; }
 .logo.grande .logo-nome { font-size: 27px; }
 .logo-login { margin-bottom: 4px; }
+.logo-link { display: inline-flex; text-decoration: none; width: fit-content; }
+.logo-link:focus-visible { outline: 2px solid var(--azul); outline-offset: 3px; border-radius: 6px; }
 /* dentro do menu lateral escuro a marca inverte */
 .menu .logo { color: var(--nav-ink); }
 .menu .logo-nome { color: var(--nav-ink); }
@@ -863,6 +865,8 @@ html[data-fonte="grande"] { zoom: 1.5; }
   letter-spacing: 0;
 }
 .rotulo input:focus { outline: none; border-color: var(--azul); }
+.rotulo input:disabled,
+.rotulo input[readonly] { opacity: 0.7; cursor: not-allowed; color: var(--ink-dim); }
 
 .acoes { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
 
@@ -1786,6 +1790,20 @@ label.botao { display: inline-block; text-align: center; cursor: pointer; }
 }
 
 /* cadastro de fornecedor: bairros atendidos */
+.filtro-bairro {
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.filtro-bairro:focus { outline: none; border-color: var(--azul); }
 .bairros-grade {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

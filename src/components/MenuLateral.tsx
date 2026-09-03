@@ -313,7 +313,7 @@ export default function MenuLateral() {
 
       <nav className="menu" data-aberto={aberto} aria-label="Seções">
         <Link href={ehFornecedor ? "/fornecedor" : "/"} className="menu-logo" aria-label="PDV Já — início">
-          <Logo />
+          <Logo href={null} />
         </Link>
         <div className="menu-marca">
           {ehFornecedor ? sessao.nome : (sessao.empresaNome ?? "Administração")}

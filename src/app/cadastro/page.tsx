@@ -62,6 +62,7 @@ function Conteudo() {
   // bairros (só no cadastro de fornecedor)
   const [bairros, setBairros] = useState<Bairro[]>([]);
   const [bairrosSel, setBairrosSel] = useState<Set<number>>(new Set());
+  const [filtroBairro, setFiltroBairro] = useState("");
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -128,6 +129,12 @@ function Conteudo() {
     });
     setErro("");
   }
+
+  const semAcento = (s: string) =>
+    s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const bairrosFiltrados = filtroBairro.trim()
+    ? bairros.filter((b) => semAcento(b.nome).includes(semAcento(filtroBairro.trim())))
+    : bairros;
 
   async function enviar() {
     setEnviando(true);
@@ -280,7 +287,10 @@ function Conteudo() {
           {ehFornecedor ? (
             <>
               <CampoVoz rotulo="Endereço" placeholder="Rua, número, bairro" largo {...comum("endereco")} />
-              <CampoVoz rotulo="Cidade que atende" placeholder={CIDADE_PADRAO} largo {...comum("cidade")} />
+              <label className="rotulo largo">
+                Cidade que atende
+                <input type="text" value={CIDADE_PADRAO} disabled readOnly />
+              </label>
               <CampoVoz
                 rotulo="Chave Pix (opcional)"
                 placeholder="CPF/CNPJ, celular, e-mail ou aleatória"
@@ -297,20 +307,33 @@ function Conteudo() {
               <div className="rotulo largo">
                 <span className="campo-foto-rotulo">Bairros que você atende</span>
                 {bairros.length === 0 ? (
-                  <p className="dica">Carregando bairros de {form.cidade || CIDADE_PADRAO}…</p>
+                  <p className="dica">Carregando bairros de {CIDADE_PADRAO}…</p>
                 ) : (
-                  <div className="bairros-grade">
-                    {bairros.map((b) => (
-                      <label key={b.id} className="bairro-opcao" data-ativo={bairrosSel.has(b.id)}>
-                        <input
-                          type="checkbox"
-                          checked={bairrosSel.has(b.id)}
-                          onChange={() => alternarBairro(b.id)}
-                        />
-                        {b.nome}
-                      </label>
-                    ))}
-                  </div>
+                  <>
+                    <input
+                      type="text"
+                      className="filtro-bairro"
+                      value={filtroBairro}
+                      onChange={(e) => setFiltroBairro(e.target.value)}
+                      placeholder="Buscar bairro pelo nome"
+                    />
+                    <div className="bairros-grade">
+                      {bairrosFiltrados.length === 0 ? (
+                        <p className="dica">Nenhum bairro com “{filtroBairro}”.</p>
+                      ) : (
+                        bairrosFiltrados.map((b) => (
+                          <label key={b.id} className="bairro-opcao" data-ativo={bairrosSel.has(b.id)}>
+                            <input
+                              type="checkbox"
+                              checked={bairrosSel.has(b.id)}
+                              onChange={() => alternarBairro(b.id)}
+                            />
+                            {b.nome}
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </>
                 )}
                 <p className="dica">{bairrosSel.size} bairro(s) selecionado(s)</p>
               </div>

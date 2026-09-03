@@ -1,15 +1,23 @@
+import Link from "next/link";
+
 type Props = {
   /** Só o símbolo, sem o texto. */
   soMarca?: boolean;
   className?: string;
+  /**
+   * Destino ao clicar. Por padrão a marca leva pra home (`/`). Passe `null`
+   * pra renderizar sem link (ex.: quando já está dentro de um <Link>).
+   */
+  href?: string | null;
 };
 
 /**
  * Marca do PDV Já: sacola de compras com o "check" de venda concluída.
- * Cores puxadas do globals.css (verde escuro / âmbar / creme).
+ * Cores puxadas do globals.css (azul / âmbar / tinta).
+ * Por padrão é um link pra home — a marca sempre volta pro início.
  */
-export default function Logo({ soMarca, className }: Props) {
-  return (
+export default function Logo({ soMarca, className, href = "/" }: Props) {
+  const conteudo = (
     <span className={`logo${className ? " " + className : ""}`}>
       <svg className="logo-marca" viewBox="0 0 32 32" role="img" aria-label="PDV Já">
         <path
@@ -41,5 +49,12 @@ export default function Logo({ soMarca, className }: Props) {
         </span>
       )}
     </span>
+  );
+
+  if (href === null) return conteudo;
+  return (
+    <Link href={href} className="logo-link" aria-label="PDV Já — início">
+      {conteudo}
+    </Link>
   );
 }

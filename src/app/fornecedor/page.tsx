@@ -42,6 +42,7 @@ export default function AreaFornecedor() {
   const [motivo, setMotivo] = useState<string | null>(null);
   const [bairros, setBairros] = useState<Bairro[]>([]);
   const [sel, setSel] = useState<Set<number>>(new Set());
+  const [filtroBairro, setFiltroBairro] = useState("");
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
@@ -117,6 +118,12 @@ export default function AreaFornecedor() {
     });
   }
 
+  const semAcento = (s: string) =>
+    s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  const bairrosFiltrados = filtroBairro.trim()
+    ? bairros.filter((b) => semAcento(b.nome).includes(semAcento(filtroBairro.trim())))
+    : bairros;
+
   async function salvar() {
     setSalvando(true);
     setErro(false);
@@ -124,7 +131,11 @@ export default function AreaFornecedor() {
       const r = await fetch("/api/fornecedor", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, bairroIds: [...sel] }),
+        body: JSON.stringify({
+          ...form,
+          cidade: form.cidade || "Conselheiro Lafaiete",
+          bairroIds: [...sel],
+        }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
@@ -194,7 +205,10 @@ export default function AreaFornecedor() {
             aoMudarWhatsapp={(v) => setForm((f) => ({ ...f, telefoneWhatsapp: v }))}
           />
           <CampoVoz rotulo="Endereço" placeholder="Rua, número, bairro" largo {...comum("endereco")} />
-          <CampoVoz rotulo="Cidade que atende" placeholder="Conselheiro Lafaiete" largo {...comum("cidade")} />
+          <label className="rotulo largo">
+            Cidade que atende
+            <input type="text" value={form.cidade || "Conselheiro Lafaiete"} disabled readOnly />
+          </label>
           <CampoVoz rotulo="Chave Pix (opcional)" placeholder="CPF/CNPJ, celular, e-mail…" largo {...comum("pixChave")} />
           <CampoVoz rotulo="Observação (opcional)" placeholder="Dias de entrega, pedido mínimo…" largo {...comum("observacao")} />
 
@@ -203,14 +217,27 @@ export default function AreaFornecedor() {
             {bairros.length === 0 ? (
               <p className="dica">Nenhum bairro cadastrado para {form.cidade || "sua cidade"}.</p>
             ) : (
-              <div className="bairros-grade">
-                {bairros.map((b) => (
-                  <label key={b.id} className="bairro-opcao" data-ativo={sel.has(b.id)}>
-                    <input type="checkbox" checked={sel.has(b.id)} onChange={() => alternar(b.id)} />
-                    {b.nome}
-                  </label>
-                ))}
-              </div>
+              <>
+                <input
+                  type="text"
+                  className="filtro-bairro"
+                  value={filtroBairro}
+                  onChange={(e) => setFiltroBairro(e.target.value)}
+                  placeholder="Buscar bairro pelo nome"
+                />
+                <div className="bairros-grade">
+                  {bairrosFiltrados.length === 0 ? (
+                    <p className="dica">Nenhum bairro com “{filtroBairro}”.</p>
+                  ) : (
+                    bairrosFiltrados.map((b) => (
+                      <label key={b.id} className="bairro-opcao" data-ativo={sel.has(b.id)}>
+                        <input type="checkbox" checked={sel.has(b.id)} onChange={() => alternar(b.id)} />
+                        {b.nome}
+                      </label>
+                    ))
+                  )}
+                </div>
+              </>
             )}
             <p className="dica">{sel.size} bairro(s) selecionado(s)</p>
           </div>
