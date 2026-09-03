@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import MenuLateral from "@/components/MenuLateral";
 import { CarrinhoProvider } from "@/lib/carrinho";
 import "./globals.css";
@@ -7,6 +7,13 @@ export const metadata: Metadata = {
   title: "PDV Já — o balcão que entende sua voz",
   description:
     "Ponto de venda para mercadinhos: consulta de preço e venda por voz, contas a pagar e receber, estoque e relatórios.",
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f1f5fc" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b1a2b" },
+  ],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

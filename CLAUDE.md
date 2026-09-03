@@ -262,9 +262,10 @@ of a blank "não foi possível salvar".
   `GET /api/admin/fornecedores?situacao=&q=` + `PUT /api/admin/fornecedores/:id {situacao: "aprovado"|
   "reprovado", motivo?}` → `decidirFornecedorPublico`.
 - **Fornecedor login (`db/25`)** — a `Papel` is now `... | "fornecedor"`, `Sessao` gets optional
-  `fornecedorId`. `/login` has the same **Empresa / Fornecedor** tab strip as `/cadastro` (cosmetic —
-  the endpoint is the same for both; the Fornecedor tab hides the social buttons and links to
-  `/cadastro?tipo=fornecedor`). `POST /api/auth/login`: if `usuarioPorEmail` misses, tries `fornecedorPublicoPorEmail`
+  `fornecedorId`. `/login` is a single unified form (e-mail/senha + Google/Facebook, no
+  empresa-vs-fornecedor choice — the empresa/fornecedor split lives only in `/cadastro`); it carries a
+  full-width "Não sou cadastrado — cadastre-se" button to `/cadastro`. `POST /api/auth/login`: if
+  `usuarioPorEmail` misses, tries `fornecedorPublicoPorEmail`
   — `pendente`/`reprovado` → 403 with the reason, `aprovado` + right password → mints a token
   `{usuarioId: 0, papel: "fornecedor", fornecedorId, empresaId: null}`, `destino: "/fornecedor"`.
   `middleware.ts` locks `papel === "fornecedor"` to exactly `/fornecedor` and `/fornecedor/*` (NOT

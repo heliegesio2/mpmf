@@ -50,11 +50,8 @@ type Bairro = { id: number; nome: string };
 type Social = { email: string; nome: string; provedor: "google" | "facebook" } | null;
 
 function Conteudo() {
-  const params = useSearchParams();
-  const modoSocial = params.get("social") === "1";
-  const [tipo, setTipo] = useState<Tipo>(
-    params.get("tipo") === "fornecedor" ? "fornecedor" : "empresa"
-  );
+  const modoSocial = useSearchParams().get("social") === "1";
+  const [tipo, setTipo] = useState<Tipo>("empresa");
   const [form, setForm] = useState<Form>({ ...VAZIO, cidade: "" });
   const [social, setSocial] = useState<Social>(null);
   const [carregandoSocial, setCarregandoSocial] = useState(modoSocial);
