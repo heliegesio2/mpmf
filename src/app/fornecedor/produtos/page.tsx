@@ -4,8 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
 import BotaoCopiar from "@/components/BotaoCopiar";
-import { linhasDePreco } from "@/lib/fornecedorProduto";
 import { comprimirParaDataURL } from "@/lib/imagemCliente";
+import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
+
+const reais = (v: number | null | undefined) =>
+  v == null
+    ? "—"
+    : "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 type Produto = {
   id: number;
@@ -39,6 +44,11 @@ export default function ProdutosFornecedor() {
   const [enviandoPdf, setEnviandoPdf] = useState(false);
   const pdfInput = useRef<HTMLInputElement>(null);
   const [fotoDoCard, setFotoDoCard] = useState<number | null>(null);
+
+  // edição rápida dos preços direto na linha
+  const [editPrecos, setEditPrecos] = useState<number | null>(null);
+  const [pf, setPf] = useState({ un: "", descQtd: "", descPreco: "", cxQtd: "", cxPreco: "" });
+  const [salvandoPrecos, setSalvandoPrecos] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
@@ -145,6 +155,48 @@ export default function ProdutosFornecedor() {
     await fetch("/api/fornecedor/portfolio-pdf", { method: "DELETE" });
     setTemPdf(false);
     setAviso("PDF removido.");
+  }
+
+  function abrirPrecos(p: Produto) {
+    setEditPrecos(p.id);
+    setPf({
+      un: p.preco_unidade != null ? paraMoeda(p.preco_unidade) : "",
+      descQtd: p.desconto_qtd_min ? String(p.desconto_qtd_min) : "",
+      descPreco: p.preco_desconto != null ? paraMoeda(p.preco_desconto) : "",
+      cxQtd: p.caixa_qtd ? String(p.caixa_qtd) : "",
+      cxPreco: p.preco_caixa != null ? paraMoeda(p.preco_caixa) : "",
+    });
+    setAviso("");
+    setErro(false);
+  }
+
+  async function salvarPrecos(id: number) {
+    setSalvandoPrecos(true);
+    setErro(false);
+    try {
+      const corpo = {
+        precoUnidade: pf.un.trim() ? moedaParaNumero(pf.un) : null,
+        precoDesconto: pf.descPreco.trim() ? moedaParaNumero(pf.descPreco) : null,
+        descontoQtdMin: pf.descQtd.trim() ? Number(pf.descQtd) : null,
+        precoCaixa: pf.cxPreco.trim() ? moedaParaNumero(pf.cxPreco) : null,
+        caixaQtd: pf.cxQtd.trim() ? Number(pf.cxQtd) : null,
+      };
+      const r = await fetch(`/api/fornecedor/produtos/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(corpo),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
+      setItens((xs) => xs.map((x) => (x.id === id ? { ...x, ...d.item } : x)));
+      setEditPrecos(null);
+      setAviso("Preços atualizados.");
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSalvandoPrecos(false);
+    }
   }
 
   const categorias = [...new Set(itens.map((i) => i.categoria).filter(Boolean))].sort();
@@ -276,50 +328,170 @@ export default function ProdutosFornecedor() {
             : "Nenhum produto com esse filtro."}
         </p>
       ) : (
-        <div className="grade-produtos">
-          {filtrados.map((p) => (
-            <article className="card-produto" key={p.id}>
-              <div className="card-produto-foto">
-                {p.tem_foto ? (
-                  <FotoAmpliavel src={`/api/fornecedor/produtos/${p.id}/foto`} alt={p.nome} />
-                ) : (
-                  <label className="sem-foto" title="Tirar ou enviar uma foto">
-                    <span aria-hidden="true">{fotoDoCard === p.id ? "⏳" : "📷"}</span>
-                    <span className="sem-foto-dica">
-                      {fotoDoCard === p.id ? "Salvando…" : "Adicionar foto"}
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      hidden
-                      disabled={fotoDoCard === p.id}
-                      onChange={(e) => fotoDireta(p.id, e.target.files?.[0])}
-                    />
-                  </label>
-                )}
-              </div>
-              <div className="card-produto-corpo">
-                <strong className="card-produto-nome">{p.nome}</strong>
-                {p.categoria && <span className="sub">{p.categoria}</span>}
-                <div className="card-produto-valores">
-                  {linhasDePreco(p).map((l) => (
-                    <span className="preco" key={l}>
-                      {l}
-                    </span>
-                  ))}
+        <ul className="lista lista-forn-produtos">
+          {filtrados.map((p) => {
+            const porUnNaCaixa =
+              p.preco_caixa != null && p.caixa_qtd ? p.preco_caixa / p.caixa_qtd : null;
+            const economiaDesc =
+              p.preco_unidade != null && p.preco_desconto != null
+                ? p.preco_unidade - p.preco_desconto
+                : null;
+            return (
+              <li className="forn-produto" key={p.id}>
+                <div className="forn-produto-foto">
+                  {p.tem_foto ? (
+                    <FotoAmpliavel src={`/api/fornecedor/produtos/${p.id}/foto`} alt={p.nome} />
+                  ) : (
+                    <label className="sem-foto" title="Tirar ou enviar uma foto">
+                      <span aria-hidden="true">{fotoDoCard === p.id ? "⏳" : "📷"}</span>
+                      <span className="sem-foto-dica">
+                        {fotoDoCard === p.id ? "Salvando…" : "Adicionar foto"}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        disabled={fotoDoCard === p.id}
+                        onChange={(e) => fotoDireta(p.id, e.target.files?.[0])}
+                      />
+                    </label>
+                  )}
                 </div>
-              </div>
-              <div className="card-produto-acoes">
-                <Link href={`/fornecedor/produtos/editar/${p.id}`} className="botao mini">
-                  Editar
-                </Link>
-                <button className="botao mini perigo" onClick={() => excluir(p)}>
-                  Excluir
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
+
+                <div className="forn-produto-info">
+                  <div className="forn-produto-topo">
+                    <div>
+                      <strong className="forn-produto-nome">{p.nome}</strong>
+                      {p.categoria && <span className="sub">{p.categoria}</span>}
+                    </div>
+                    <div className="botoes-linha">
+                      <Link
+                        href={`/fornecedor/produtos/editar/${p.id}`}
+                        className="botao mini"
+                      >
+                        Editar
+                      </Link>
+                      <button className="botao mini perigo" onClick={() => excluir(p)}>
+                        Excluir
+                      </button>
+                    </div>
+                  </div>
+
+                  {editPrecos === p.id ? (
+                    <div className="forn-preco-edit">
+                      <label className="rotulo">
+                        Preço por unidade
+                        <span className="entrada" data-moeda="true">
+                          <span className="prefixo">R$</span>
+                          <input
+                            inputMode="decimal"
+                            value={pf.un}
+                            onChange={(e) => setPf({ ...pf, un: mascararMoeda(e.target.value) })}
+                          />
+                        </span>
+                      </label>
+
+                      <fieldset className="forn-preco-bloco">
+                        <legend>Desconto por quantidade</legend>
+                        <label>
+                          a partir de
+                          <input
+                            type="number"
+                            min={2}
+                            inputMode="numeric"
+                            value={pf.descQtd}
+                            onChange={(e) => setPf({ ...pf, descQtd: e.target.value })}
+                          />
+                          un, sai a
+                        </label>
+                        <span className="entrada" data-moeda="true">
+                          <span className="prefixo">R$</span>
+                          <input
+                            inputMode="decimal"
+                            value={pf.descPreco}
+                            onChange={(e) =>
+                              setPf({ ...pf, descPreco: mascararMoeda(e.target.value) })
+                            }
+                          />
+                        </span>
+                        <small>por unidade</small>
+                      </fieldset>
+
+                      <fieldset className="forn-preco-bloco">
+                        <legend>Caixa fechada</legend>
+                        <label>
+                          <input
+                            type="number"
+                            min={1}
+                            inputMode="numeric"
+                            value={pf.cxQtd}
+                            onChange={(e) => setPf({ ...pf, cxQtd: e.target.value })}
+                          />
+                          un por
+                        </label>
+                        <span className="entrada" data-moeda="true">
+                          <span className="prefixo">R$</span>
+                          <input
+                            inputMode="decimal"
+                            value={pf.cxPreco}
+                            onChange={(e) =>
+                              setPf({ ...pf, cxPreco: mascararMoeda(e.target.value) })
+                            }
+                          />
+                        </span>
+                      </fieldset>
+
+                      <div className="botoes-linha">
+                        <button
+                          className="botao mini"
+                          onClick={() => salvarPrecos(p.id)}
+                          disabled={salvandoPrecos}
+                        >
+                          {salvandoPrecos ? "Salvando…" : "Salvar preços"}
+                        </button>
+                        <button
+                          className="botao mini perigo"
+                          onClick={() => setEditPrecos(null)}
+                          disabled={salvandoPrecos}
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="forn-produto-precos">
+                      <span className="forn-preco-linha destaque">
+                        <b>1 un</b> {reais(p.preco_unidade)}
+                      </span>
+                      {p.preco_desconto != null && p.desconto_qtd_min != null && (
+                        <span className="forn-preco-linha">
+                          <b>{p.desconto_qtd_min}+ un</b> {reais(p.preco_desconto)}
+                          {economiaDesc != null && economiaDesc > 0 && (
+                            <em> economiza {reais(economiaDesc)}/un</em>
+                          )}
+                        </span>
+                      )}
+                      {p.preco_caixa != null && (
+                        <span className="forn-preco-linha">
+                          <b>{p.caixa_qtd ? `caixa ${p.caixa_qtd} un` : "caixa"}</b>{" "}
+                          {reais(p.preco_caixa)}
+                          {porUnNaCaixa != null && <em> ({reais(porUnNaCaixa)}/un)</em>}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        className="botao mini forn-editar-precos"
+                        onClick={() => abrirPrecos(p)}
+                      >
+                        ✏️ editar preços
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </main>
   );

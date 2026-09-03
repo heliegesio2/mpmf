@@ -2317,6 +2317,50 @@ export async function atualizarProdutoFornecedor(
   return rows[0] ?? null;
 }
 
+/** Edição rápida só dos preços pela lista (mantém nome/categoria/foto). */
+export async function atualizarPrecosProdutoFornecedor(
+  fornecedorId: number,
+  id: number,
+  campos: Partial<{
+    precoUnidade: number | null;
+    precoDesconto: number | null;
+    descontoQtdMin: number | null;
+    precoCaixa: number | null;
+    caixaQtd: number | null;
+  }>
+): Promise<FornecedorProduto | null> {
+  await garantirSchema();
+  const COL: Record<string, string> = {
+    precoUnidade: "preco_unidade",
+    precoDesconto: "preco_desconto",
+    descontoQtdMin: "desconto_qtd_min",
+    precoCaixa: "preco_caixa",
+    caixaQtd: "caixa_qtd",
+  };
+  const sets: string[] = [];
+  const params: unknown[] = [fornecedorId, id];
+  for (const [chave, coluna] of Object.entries(COL)) {
+    if (chave in campos) {
+      params.push((campos as Record<string, unknown>)[chave] ?? null);
+      sets.push(`${coluna} = $${params.length}`);
+    }
+  }
+  if (sets.length === 0) {
+    const { rows } = await pool.query<FornecedorProduto>(
+      `SELECT ${CAMPOS_FORN_PRODUTO} FROM fornecedor_produto WHERE id = $2 AND fornecedor_publico_id = $1`,
+      [fornecedorId, id]
+    );
+    return rows[0] ?? null;
+  }
+  const { rows } = await pool.query<FornecedorProduto>(
+    `UPDATE fornecedor_produto SET ${sets.join(", ")}
+      WHERE id = $2 AND fornecedor_publico_id = $1
+      RETURNING ${CAMPOS_FORN_PRODUTO}`,
+    params
+  );
+  return rows[0] ?? null;
+}
+
 export async function excluirProdutoFornecedor(fornecedorId: number, id: number): Promise<boolean> {
   await garantirSchema();
   const r = await pool.query(

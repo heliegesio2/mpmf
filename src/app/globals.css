@@ -2134,6 +2134,115 @@ a.botao { display: block; text-align: center; text-decoration: none; }
 }
 
 /* ============ catálogo do fornecedor ============ */
+/* lista de produtos — uma linha larga por produto */
+.lista-forn-produtos { gap: 10px; }
+.forn-produto {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.forn-produto-foto {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+.forn-produto-foto > img { width: 100%; height: 100%; object-fit: cover; }
+.forn-produto-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.forn-produto-topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.forn-produto-nome { display: block; font-size: 16px; font-weight: 700; }
+.forn-produto-topo .sub { display: block; font-size: 12px; color: var(--ink-dim); margin-top: 2px; }
+
+.forn-produto-precos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.forn-preco-linha {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  color: var(--ink);
+}
+.forn-preco-linha b { color: var(--ink-dim); font-weight: 700; margin-right: 6px; }
+.forn-preco-linha.destaque { font-size: 15px; }
+.forn-preco-linha.destaque b { color: var(--ink); }
+.forn-preco-linha em {
+  font-style: normal;
+  color: var(--ok);
+  font-size: 11px;
+  margin-left: 8px;
+}
+.forn-editar-precos { margin-top: 4px; }
+
+.forn-preco-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+}
+.forn-preco-edit .rotulo { gap: 6px; }
+.forn-preco-edit .entrada { max-width: 160px; background: var(--surface); }
+.forn-preco-bloco {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+}
+.forn-preco-bloco legend {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+  padding: 0 4px;
+}
+.forn-preco-bloco label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+.forn-preco-bloco input[type="number"] {
+  width: 64px;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+}
+.forn-preco-bloco small { color: var(--ink-dim); font-size: 12px; }
+
+@media (max-width: 560px) {
+  .forn-produto { flex-wrap: wrap; }
+  .forn-preco-edit .entrada { max-width: none; }
+}
+
 /* antes/depois da foto melhorada por IA */
 .melhorar-foto {
   display: flex;
