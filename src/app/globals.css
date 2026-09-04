@@ -1181,6 +1181,14 @@ html[data-fonte="grande"] { zoom: 1.5; }
   text-decoration: line-through;
   color: var(--ink-dim);
 }
+.anotacao-acoes-coluna {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  align-items: stretch;
+}
+.anotacao-acoes-coluna .botao { text-align: center; white-space: nowrap; }
 .anotacao-check {
   flex: none;
   padding-top: 2px;

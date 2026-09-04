@@ -88,10 +88,12 @@ export default function AnotacaoDetalhe() {
           <section className="cartao">
             {item.de_admin && (
               <span className="selo" data-situacao="pendente">
-                aviso da administração
+                Aviso do sistema
               </span>
             )}
-            <h2 className="titulo-cartao">{item.titulo || "Anotação"}</h2>
+            <h2 className="titulo-cartao">
+              {item.titulo || (item.de_admin ? "Aviso" : "Anotação")}
+            </h2>
 
             {item.tem_foto && (
               <div style={{ margin: "10px 0" }}>

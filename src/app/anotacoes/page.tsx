@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import CampoFoto from "@/components/CampoFoto";
 import CampoTextoRico from "@/components/CampoTextoRico";
 import { CampoVoz } from "@/components/CampoVoz";
@@ -42,6 +43,11 @@ function sinalAlerta(iso: string | null): "atrasado" | "hoje" | "futuro" | null 
 }
 function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+/** tira as tags e resume — usado no card de um aviso do sistema na lista. */
+function resumoTexto(html: string, max = 90): string {
+  const puro = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return puro.length > max ? `${puro.slice(0, max)}…` : puro;
 }
 
 export default function Anotacoes() {
@@ -512,21 +518,22 @@ export default function Anotacoes() {
                 </span>
 
                 <span className="rotulo-item">
-                  <span className="anotacao-texto html-aviso">
-                    {a.de_admin && (
+                  {a.de_admin ? (
+                    <span className="anotacao-texto">
                       <span className="selo" data-situacao="pendente">
-                        aviso da administração
+                        Aviso do sistema
                       </span>
-                    )}
-                    {a.titulo && (
-                      <>
-                        <br />
-                        <strong>{a.titulo}</strong>
-                      </>
-                    )}
-                    <br />
-                    <span dangerouslySetInnerHTML={{ __html: a.texto }} />
-                  </span>
+                      <br />
+                      <strong>{a.titulo || "Aviso"}</strong>
+                      <span className="sub" style={{ display: "block" }}>
+                        {resumoTexto(a.texto)}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="anotacao-texto html-aviso">
+                      <span dangerouslySetInnerHTML={{ __html: a.texto }} />
+                    </span>
+                  )}
                   <span className="sub anotacao-rodape">
                     {(sinal === "atrasado" || sinal === "hoje") && (
                       <span className="anotacao-alerta" data-sinal={sinal}>
@@ -550,11 +557,18 @@ export default function Anotacoes() {
                   </span>
                 </span>
 
-                {!a.de_admin && (
-                  <button className="botao mini perigo" onClick={() => excluir(a)}>
-                    Excluir
-                  </button>
-                )}
+                <span className="anotacao-acoes-coluna">
+                  {a.de_admin && (
+                    <Link href={`/anotacoes/${a.id}`} className="botao mini">
+                      Ver mensagem
+                    </Link>
+                  )}
+                  {!a.de_admin && (
+                    <button className="botao mini perigo" onClick={() => excluir(a)}>
+                      Excluir
+                    </button>
+                  )}
+                </span>
               </li>
             );
           })}
