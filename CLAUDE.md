@@ -605,13 +605,22 @@ took (engradado, botijão…), now a required field on the form; `criarCasco` an
 **Anotações (`/anotacoes`, `db/22`)** — `anotacao (texto, data_alerta date null, concluida)` +
 `foto` (`db/29`, data URL, out of `CAMPOS_ANOTACAO` → `tem_foto`; bytes at `GET /api/anotacoes/:id/foto`,
 add/replace at `PUT`). Create (`<CampoTextoRico>` + mic + optional `<input type=date>` + `<CampoFoto>`),
-toggle done, edit the alert date inline, delete. `GET/POST /api/anotacoes`, `PATCH/DELETE
-/api/anotacoes/:id`. `anotacoesEmAlerta` counts open notes with `data_alerta <= CURRENT_DATE` for the
-menu badge (`GET /api/anotacoes/alertas`). List sorts overdue → today → future → undated. **Photo is
+toggle done, edit the alert date inline, delete. `GET/POST /api/anotacoes`, `GET/PATCH/DELETE
+/api/anotacoes/:id` (`anotacaoPorId`/`editarAnotacao`/`excluirAnotacao`). `anotacoesEmAlerta` counts open
+notes with `data_alerta <= CURRENT_DATE` for the menu badge (`GET /api/anotacoes/alertas`). List sorts
+overdue → today → future → undated, with filter tabs Abertas/Concluídas/Todas plus a **super-admin-only**
+"Aviso da administração" tab (`situacao=administracao` → `WHERE de_admin`, shown only when `souSuperAdmin`
+— it's how the sender reviews their own broadcasts, since `enviarAvisoAdmin` always CCs them). **Photo is
 read** (`src/lib/lerFotoAnotacao.ts` → `POST /api/anotacoes/interpretar-foto` → `{nome}`): written text
 is transcribed, a list becomes `- ` lines, a bare product becomes "marca + tipo + peso"; the result is
 appended to the note's `texto` as `<br>` + escaped text (in the form via `<CampoFoto aoIdentificarNome>`
 + `urlIdentificar`; on the inline add-photo via a `PATCH`).
+
+**`/anotacoes/[id]`** — the detail screen a notification actually opens into (see below): title, the
+`texto` rendered as HTML, the photo, the alert date, the concluir checkbox, and (not `de_admin`) delete.
+When the anotação carries its own `link` (see the admin-aviso section), a **"🔗 Clique aqui para conferir
+a novidade"** button appears and `router.push`es there — a deliberate two-step: land on the note's own
+content first, then optionally go on to whatever it's about.
 
 **`texto` is HTML, not plain text** (`<CampoTextoRico>`, `src/components/CampoTextoRico.tsx`) — a
 `contentEditable` box (no library: `document.execCommand("bold"/"italic"/"insertUnorderedList")` from a
@@ -642,8 +651,11 @@ concluded note drops out of the `WHERE NOT concluida` in both queries, and `excl
 (same `<CampoTextoRico>`, mic, `<CampoFoto>`, date field) into broadcast mode, adding two more required-
 ish fields: **título** (`<CampoVoz>`, required — becomes the notification's `titulo` instead of the
 auto "Aviso da administração: " + truncated text) and **link** (`<CampoVoz>`, optional path into the
-system, e.g. `/produtos/comercios-grandes` — becomes the notification's `link` instead of the default
-`/anotacoes`; server keeps only values starting with `/`, never an external URL). Plus "Enviar para
+system, e.g. `/produtos/comercios-grandes`; server keeps only values starting with `/`, never an
+external URL). The **notification's own `link` is always `/anotacoes/<id>`** now (the detail screen,
+below) — `anotacao.link` is separate data the detail screen reads to render its own "conferir a
+novidade" button, so clicking a notification always lands on the note's title+content first, one step
+before wherever `link` points. Plus "Enviar para
 todos os clientes" (default on; unchecked shows a store search hitting `GET
 /api/empresas?situacao=aprovada&q=`) and the existing date field becomes "Quando avisar (vazio =
 imediato)". Submitting in that mode posts to `POST /api/admin/avisos` instead of `POST /api/anotacoes`.

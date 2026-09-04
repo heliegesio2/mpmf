@@ -27,6 +27,7 @@ const FILTROS = [
   { valor: "concluidas", rotulo: "Concluídas" },
   { valor: "todas", rotulo: "Todas" },
 ];
+const FILTRO_ADMIN = { valor: "administracao", rotulo: "Aviso da administração" };
 
 function hojeISO(): string {
   return new Date().toLocaleDateString("en-CA");
@@ -462,7 +463,7 @@ export default function Anotacoes() {
       </section>
 
       <div className="abas">
-        {FILTROS.map((f) => (
+        {[...FILTROS, ...(souSuperAdmin ? [FILTRO_ADMIN] : [])].map((f) => (
           <button
             key={f.valor}
             className="botao aba"

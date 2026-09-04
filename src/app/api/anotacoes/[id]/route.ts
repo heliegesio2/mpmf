@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { editarAnotacao, excluirAnotacao } from "@/lib/db";
+import { anotacaoPorId, editarAnotacao, excluirAnotacao } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +7,26 @@ export const dynamic = "force-dynamic";
 type Ctx = { params: Promise<{ id: string }> };
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
 const LIMITE_TEXTO = 300_000;
+
+/** GET /api/anotacoes/:id -> uma anotação (tela de detalhe). */
+export async function GET(_request: Request, { params }: Ctx) {
+  const { empresaId, erro } = await exigirEmpresa();
+  if (erro) return erro;
+
+  const id = Number((await params).id);
+  if (!Number.isInteger(id)) {
+    return NextResponse.json({ erro: "Anotação inválida." }, { status: 400 });
+  }
+
+  try {
+    const item = await anotacaoPorId(empresaId, id);
+    if (!item) return NextResponse.json({ erro: "Anotação não encontrada." }, { status: 404 });
+    return NextResponse.json({ item });
+  } catch (e) {
+    console.error("Falha ao carregar anotação:", e);
+    return NextResponse.json({ erro: "Não foi possível carregar." }, { status: 500 });
+  }
+}
 
 /** PATCH /api/anotacoes/:id { concluida?, texto?, dataAlerta? } */
 export async function PATCH(request: Request, { params }: Ctx) {

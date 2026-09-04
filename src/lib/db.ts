@@ -1520,6 +1520,7 @@ export async function listarAnotacoes(empresaId: number, situacao?: string): Pro
   const filtro =
     situacao === "abertas" ? "AND concluida = false"
     : situacao === "concluidas" ? "AND concluida = true"
+    : situacao === "administracao" ? "AND de_admin"
     : "";
   const { rows } = await pool.query<Anotacao>(
     `SELECT ${CAMPOS_ANOTACAO} FROM anotacao
@@ -1531,6 +1532,15 @@ export async function listarAnotacoes(empresaId: number, situacao?: string): Pro
     [empresaId]
   );
   return rows;
+}
+
+export async function anotacaoPorId(empresaId: number, id: number): Promise<Anotacao | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<Anotacao>(
+    `SELECT ${CAMPOS_ANOTACAO} FROM anotacao WHERE id = $1 AND empresa_id = $2`,
+    [id, empresaId]
+  );
+  return rows[0] ?? null;
 }
 
 export async function criarAnotacao(
@@ -3163,7 +3173,7 @@ export async function sincronizarAvisosDeAnotacoes(
               WHEN de_admin THEN 'Aviso da administração: ' || left(regexp_replace(texto, '<[^>]*>', '', 'g'), 70)
               ELSE 'Lembrete: ' || left(regexp_replace(texto, '<[^>]*>', '', 'g'), 70)
             END,
-            texto, coalesce(nullif(link, ''), '/anotacoes'), 'anotacao:' || id || ':' || $1::bigint, de_admin
+            texto, '/anotacoes/' || id, 'anotacao:' || id || ':' || $1::bigint, de_admin
        FROM anotacao
       WHERE empresa_id = $2::bigint AND NOT concluida
         AND data_alerta IS NOT NULL AND data_alerta <= CURRENT_DATE
