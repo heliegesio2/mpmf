@@ -20,6 +20,14 @@ const ROTULO_FORMA: Record<string, string> = {
   fiado: "Fiado",
 };
 
+const ICONE_FORMA: Record<string, string> = {
+  dinheiro: "💵",
+  debito: "💳",
+  credito: "🧾",
+  pix: "⚡",
+  fiado: "📒",
+};
+
 const moeda = new Intl.NumberFormat("pt-BR", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
@@ -118,7 +126,12 @@ export default function Vendas() {
           <div className="formas-pagamento">
             {formasComValor.map((f) => (
               <div className="forma-card" key={f} data-forma={f}>
-                <span className="forma-card-rotulo">{ROTULO_FORMA[f] ?? f}</span>
+                <span className="forma-card-topo">
+                  <span className="forma-card-icone" aria-hidden="true">
+                    {ICONE_FORMA[f] ?? "💰"}
+                  </span>
+                  <span className="forma-card-rotulo">{ROTULO_FORMA[f] ?? f}</span>
+                </span>
                 <strong>R$ {moeda.format(porForma[f])}</strong>
               </div>
             ))}
