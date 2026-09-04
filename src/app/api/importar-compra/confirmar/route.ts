@@ -4,6 +4,7 @@ import {
   criarProduto,
   notaCompraExistente,
   produtoPorId,
+  registrarItensNota,
   registrarNotaCompra,
 } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
@@ -77,6 +78,13 @@ export async function POST(request: Request) {
     }
 
     const resultados = [];
+    const itensNota: {
+      nome: string;
+      precoCompra: number;
+      precoVenda: number;
+      produtoId: number | null;
+      novo: boolean;
+    }[] = [];
     for (const item of itens) {
       if (item.produtoId) {
         const atual = await produtoPorId(empresaId, item.produtoId);
@@ -101,9 +109,17 @@ export async function POST(request: Request) {
           precoEmbalagem: atual.preco_embalagem === null ? null : Number(atual.preco_embalagem),
         });
         resultados.push(atualizado);
+        itensNota.push({
+          nome: atual.nome,
+          precoCompra: item.precoCompra,
+          precoVenda: item.precoVenda,
+          produtoId: atualizado?.id ?? item.produtoId,
+          novo: false,
+        });
       } else {
+        const nome = String(item.nome ?? "").trim();
         const criado = await criarProduto(empresaId, {
-          nome: String(item.nome ?? "").trim(),
+          nome,
           categoria: item.categoria ?? null,
           unidade: item.unidade ?? "unidade",
           tipoVenda: item.tipoVenda ?? "unidade",
@@ -112,17 +128,25 @@ export async function POST(request: Request) {
           estoque: 0,
         });
         resultados.push(criado);
+        itensNota.push({
+          nome,
+          precoCompra: item.precoCompra,
+          precoVenda: item.precoVenda,
+          produtoId: criado?.id ?? null,
+          novo: true,
+        });
       }
     }
 
     if (hashImagem) {
-      await registrarNotaCompra(empresaId, {
+      const compraNotaId = await registrarNotaCompra(empresaId, {
         hashImagem,
         chave,
         numero: String(corpo.nota?.numero ?? "").trim() || null,
         emitente: String(corpo.nota?.emitente ?? "").trim() || null,
         itens: resultados.length,
       });
+      await registrarItensNota(compraNotaId, itensNota);
     }
 
     return NextResponse.json({ itens: resultados });

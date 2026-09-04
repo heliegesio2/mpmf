@@ -9,6 +9,8 @@ import { CampoVoz } from "@/components/CampoVoz";
 import { comprimirImagem } from "@/lib/imagemCliente";
 import CameraFoto from "@/components/CameraFoto";
 
+type Estado = "lista" | "nova";
+
 type ItemProposto = {
   descricaoExtraida: string;
   quantidade: number;
@@ -36,6 +38,24 @@ type LinhaEdicao = {
   incluir: boolean;
 };
 
+type NotaResumo = {
+  id: number;
+  numero: string | null;
+  emitente: string | null;
+  itens: number;
+  criado_em: string;
+};
+
+type NotaDetalhe = NotaResumo & {
+  itensDetalhe: {
+    nome: string;
+    precoCompra: number;
+    precoVenda: number;
+    produtoId: number | null;
+    novo: boolean;
+  }[];
+};
+
 function vendaComMargem(compra: number, margemPct: number): number {
   return Math.round(compra * (1 + margemPct / 100) * 100) / 100;
 }
@@ -53,7 +73,20 @@ function linhaInicial(item: ItemProposto): LinhaEdicao {
   };
 }
 
+function dataHoraBR(iso: string): string {
+  const d = new Date(iso);
+  return `${d.toLocaleDateString("pt-BR")} ${d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
 export default function ImportarCompra() {
+  const [estado, setEstado] = useState<Estado>("lista");
+
+  const [historico, setHistorico] = useState<NotaResumo[]>([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(true);
+  const [abertaId, setAbertaId] = useState<number | null>(null);
+  const [detalhes, setDetalhes] = useState<Record<number, NotaDetalhe>>({});
+  const [carregandoDetalhe, setCarregandoDetalhe] = useState<number | null>(null);
+
   const [fotos, setFotos] = useState<File[]>([]);
   const [margem, setMargem] = useState("38");
   const [propostos, setPropostos] = useState<ItemProposto[]>([]);
@@ -65,12 +98,20 @@ export default function ImportarCompra() {
   const [jaProcessada, setJaProcessada] = useState("");
   const [erro, setErro] = useState(false);
 
-  const margemNum = () => {
-    const n = Number(margem.replace(",", "."));
-    return Number.isFinite(n) && n >= 0 ? n : 38;
-  };
-
+  async function carregarHistorico() {
+    setCarregandoHistorico(true);
+    try {
+      const r = await fetch("/api/importar-compra/notas");
+      const d = await r.json();
+      setHistorico(r.ok && Array.isArray(d.itens) ? d.itens : []);
+    } catch {
+      /* histórico é só uma listagem — falha aqui não impede nova importação */
+    } finally {
+      setCarregandoHistorico(false);
+    }
+  }
   useEffect(() => {
+    carregarHistorico();
     fetch("/api/importar-compra/margem")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
@@ -78,6 +119,41 @@ export default function ImportarCompra() {
       })
       .catch(() => {});
   }, []);
+
+  async function verItens(id: number) {
+    if (abertaId === id) {
+      setAbertaId(null);
+      return;
+    }
+    setAbertaId(id);
+    if (detalhes[id]) return;
+    setCarregandoDetalhe(id);
+    try {
+      const r = await fetch(`/api/importar-compra/notas/${id}`);
+      const d = await r.json();
+      if (r.ok && d.item) setDetalhes((ds) => ({ ...ds, [id]: d.item }));
+    } catch {
+      /* falha ao abrir — tenta de novo no próximo clique */
+    } finally {
+      setCarregandoDetalhe(null);
+    }
+  }
+
+  function novaImportacao() {
+    setFotos([]);
+    setPropostos([]);
+    setLinhas([]);
+    setNota(null);
+    setAviso("");
+    setJaProcessada("");
+    setErro(false);
+    setEstado("nova");
+  }
+
+  const margemNum = () => {
+    const n = Number(margem.replace(",", "."));
+    return Number.isFinite(n) && n >= 0 ? n : 38;
+  };
 
   function aplicarMargem(n: number) {
     setMargem(String(n));
@@ -250,11 +326,12 @@ export default function ImportarCompra() {
       }
       if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
 
-      setAviso(`${itens.length} produtos atualizados/criados com sucesso.`);
       setPropostos([]);
       setLinhas([]);
       setNota(null);
       setFotos([]);
+      setEstado("lista");
+      await carregarHistorico();
     } catch (e) {
       setErro(true);
       setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
@@ -276,161 +353,231 @@ export default function ImportarCompra() {
     <main className="tela">
       <header className="marca">Importar compra</header>
 
-      <section className="cartao">
-        <h2 className="titulo-cartao">Margem de lucro</h2>
-        <p className="ajuda-voz">
-          Quanto você quer ganhar sobre o preço de compra. O preço de venda de cada item vem
-          calculado com essa margem — dá pra ajustar item a item depois.
-        </p>
-        <div style={{ maxWidth: 240 }}>
-          <CampoVoz
-            rotulo="Lucro sobre a compra (%)"
-            valor={margem}
-            aoMudar={(v) => setMargem(v.replace(/[^\d.,]/g, ""))}
-            aoSair={salvarMargem}
-            numerico
-            {...vozProps("margem")}
-          />
-        </div>
-      </section>
+      {estado === "lista" && (
+        <>
+          <div className="acoes">
+            <button type="button" className="botao primario" onClick={novaImportacao}>
+              ➕ Nova importação
+            </button>
+          </div>
 
-      <section className="cartao">
-        <h2 className="titulo-cartao">Foto do cupom fiscal</h2>
-        <p className="ajuda-voz">
-          Tire uma foto do cupom da distribuidora ou envie uma que você já tem. O sistema lê os
-          itens e sugere o preço de venda com a sua margem — confira antes de salvar.
-        </p>
+          {carregandoHistorico ? (
+            <p className="vazio">Carregando…</p>
+          ) : historico.length === 0 ? (
+            <p className="vazio">Nenhuma nota importada ainda.</p>
+          ) : (
+            <ul className="lista">
+              {historico.map((n) => (
+                <li key={n.id} style={{ flexWrap: "wrap" }}>
+                  <span className="rotulo-item">
+                    {n.emitente || "Fornecedor não identificado"}
+                    <span className="sub">
+                      {n.numero && `nº ${n.numero} · `}
+                      {n.itens} item(ns) · {dataHoraBR(n.criado_em)}
+                    </span>
+                  </span>
+                  <button type="button" className="botao mini" onClick={() => verItens(n.id)}>
+                    {abertaId === n.id ? "Ocultar itens" : "Ver itens"}
+                  </button>
 
-        <CameraFoto
-          fotos={fotos}
-          aoMudar={mudarFotos}
-          max={1}
-          aoErro={(m) => {
-            setErro(true);
-            setAviso(m);
-          }}
-        />
-
-        {aviso && (
-          <p className="dica" data-erro={erro} role="status" aria-live="polite">
-            {aviso}
-          </p>
-        )}
-        {analisando && <p className="dica">Lendo o cupom…</p>}
-      </section>
-
-      {jaProcessada && (
-        <section className="cartao" data-erro="true">
-          <h2 className="titulo-cartao">Nota repetida</h2>
-          <p className="dica" data-erro="true">
-            {jaProcessada}
-          </p>
-        </section>
+                  {abertaId === n.id && (
+                    <div className="cg-comparar-painel" style={{ width: "100%" }}>
+                      {carregandoDetalhe === n.id ? (
+                        <p className="dica">Carregando os itens…</p>
+                      ) : !detalhes[n.id] ? (
+                        <p className="dica" data-erro="true">
+                          Não foi possível carregar os itens.
+                        </p>
+                      ) : (
+                        <ul className="lista cg-lista">
+                          {detalhes[n.id].itensDetalhe.map((it, i) => (
+                            <li className="cg-item" key={i}>
+                              <div className="cg-item-topo">
+                                <strong>{it.nome}</strong>
+                                <span className="cg-preco">R$ {paraMoeda(it.precoVenda)}</span>
+                              </div>
+                              <div className="cg-comparado" data-sinal="igual">
+                                Compra: R$ {paraMoeda(it.precoCompra)}
+                                {it.novo ? " · produto novo" : " · produto já cadastrado"}
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
-      {nota && (nota.emitente || nota.numero) && linhas.length > 0 && (
-        <p className="dica">
-          Nota: {[nota.emitente, nota.numero && `nº ${nota.numero}`].filter(Boolean).join(" · ")}
-        </p>
-      )}
+      {estado === "nova" && (
+        <>
+          <div className="acoes">
+            <button type="button" className="botao mini neutro" onClick={() => setEstado("lista")}>
+              ← Voltar
+            </button>
+          </div>
 
-      {linhas.map((linha, i) => {
-        const item = propostos[i];
-        return (
-          <section className="cartao" key={i}>
-            <h2 className="titulo-cartao">
-              {item.descricaoExtraida}
-              <span className="sub">
-                {" "}
-                · {item.quantidade} {item.unidade} · compra {paraMoeda(item.precoCompra)}
-              </span>
-            </h2>
-
-            <div className="grade-form">
-              <label className="rotulo largo">
-                <input
-                  type="checkbox"
-                  checked={linha.incluir}
-                  onChange={(e) => mudarLinha(i, "incluir", e.target.checked)}
-                />{" "}
-                Incluir este item
-              </label>
-
-              {item.produtoSugerido && (
-                <label className="rotulo largo">
-                  <input
-                    type="checkbox"
-                    checked={linha.usarSugestao}
-                    onChange={(e) => mudarLinha(i, "usarSugestao", e.target.checked)}
-                  />{" "}
-                  Atualizar produto já cadastrado: <strong>{item.produtoSugerido.nome}</strong>
-                </label>
-              )}
-
-              {!linha.usarSugestao && (
-                <>
-                  <CampoVoz
-                    rotulo="Nome do produto novo"
-                    valor={linha.nome}
-                    aoMudar={(v) => mudarLinha(i, "nome", v)}
-                    largo
-                    {...vozProps(`nome-${i}`)}
-                  />
-                  <label className="rotulo">
-                    Vendido por
-                    <select
-                      value={linha.tipoVenda}
-                      onChange={(e) => mudarLinha(i, "tipoVenda", e.target.value)}
-                    >
-                      {TIPOS_VENDA.map((t) => (
-                        <option key={t.valor} value={t.valor}>
-                          {t.rotulo}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="rotulo">
-                    Embalagem
-                    <select
-                      value={linha.unidade}
-                      onChange={(e) => mudarLinha(i, "unidade", e.target.value)}
-                    >
-                      {EMBALAGENS.map((e) => (
-                        <option key={e.valor} value={e.valor}>
-                          {e.rotulo}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </>
-              )}
-
+          <section className="cartao">
+            <h2 className="titulo-cartao">Margem de lucro</h2>
+            <p className="ajuda-voz">
+              Quanto você quer ganhar sobre o preço de compra. O preço de venda de cada item vem
+              calculado com essa margem — dá pra ajustar item a item depois.
+            </p>
+            <div style={{ maxWidth: 240 }}>
               <CampoVoz
-                rotulo="Preço de compra"
-                valor={linha.precoCompra}
-                aoMudar={(v) => mudarCompra(i, v)}
-                moeda
-                {...vozProps(`precoCompra-${i}`)}
-              />
-
-              <CampoVoz
-                rotulo={rotuloVenda}
-                valor={linha.precoVenda}
-                aoMudar={(v) => mudarLinha(i, "precoVenda", v)}
-                moeda
-                {...vozProps(`precoVenda-${i}`)}
+                rotulo="Lucro sobre a compra (%)"
+                valor={margem}
+                aoMudar={(v) => setMargem(v.replace(/[^\d.,]/g, ""))}
+                aoSair={salvarMargem}
+                numerico
+                {...vozProps("margem")}
               />
             </div>
           </section>
-        );
-      })}
 
-      {linhas.length > 0 && (
-        <div className="acoes">
-          <button className="botao primario" onClick={salvar} disabled={salvando}>
-            {salvando ? "Salvando…" : "Confirmar e salvar"}
-          </button>
-        </div>
+          <section className="cartao">
+            <h2 className="titulo-cartao">Foto do cupom fiscal</h2>
+            <p className="ajuda-voz">
+              Tire uma foto do cupom da distribuidora ou envie uma que você já tem. O sistema lê os
+              itens e sugere o preço de venda com a sua margem — confira antes de salvar.
+            </p>
+
+            <CameraFoto
+              fotos={fotos}
+              aoMudar={mudarFotos}
+              max={1}
+              aoErro={(m) => {
+                setErro(true);
+                setAviso(m);
+              }}
+            />
+
+            {aviso && (
+              <p className="dica" data-erro={erro} role="status" aria-live="polite">
+                {aviso}
+              </p>
+            )}
+            {analisando && <p className="dica">Lendo o cupom…</p>}
+          </section>
+
+          {jaProcessada && (
+            <section className="cartao" data-erro="true">
+              <h2 className="titulo-cartao">Nota repetida</h2>
+              <p className="dica" data-erro="true">
+                {jaProcessada}
+              </p>
+            </section>
+          )}
+
+          {nota && (nota.emitente || nota.numero) && linhas.length > 0 && (
+            <p className="dica">
+              Nota: {[nota.emitente, nota.numero && `nº ${nota.numero}`].filter(Boolean).join(" · ")}
+            </p>
+          )}
+
+          {linhas.map((linha, i) => {
+            const item = propostos[i];
+            return (
+              <section className="cartao" key={i}>
+                <h2 className="titulo-cartao">
+                  {item.descricaoExtraida}
+                  <span className="sub">
+                    {" "}
+                    · {item.quantidade} {item.unidade} · compra {paraMoeda(item.precoCompra)}
+                  </span>
+                </h2>
+
+                <div className="grade-form">
+                  <label className="rotulo largo">
+                    <input
+                      type="checkbox"
+                      checked={linha.incluir}
+                      onChange={(e) => mudarLinha(i, "incluir", e.target.checked)}
+                    />{" "}
+                    Incluir este item
+                  </label>
+
+                  {item.produtoSugerido && (
+                    <label className="rotulo largo">
+                      <input
+                        type="checkbox"
+                        checked={linha.usarSugestao}
+                        onChange={(e) => mudarLinha(i, "usarSugestao", e.target.checked)}
+                      />{" "}
+                      Atualizar produto já cadastrado: <strong>{item.produtoSugerido.nome}</strong>
+                    </label>
+                  )}
+
+                  {!linha.usarSugestao && (
+                    <>
+                      <CampoVoz
+                        rotulo="Nome do produto novo"
+                        valor={linha.nome}
+                        aoMudar={(v) => mudarLinha(i, "nome", v)}
+                        largo
+                        {...vozProps(`nome-${i}`)}
+                      />
+                      <label className="rotulo">
+                        Vendido por
+                        <select
+                          value={linha.tipoVenda}
+                          onChange={(e) => mudarLinha(i, "tipoVenda", e.target.value)}
+                        >
+                          {TIPOS_VENDA.map((t) => (
+                            <option key={t.valor} value={t.valor}>
+                              {t.rotulo}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="rotulo">
+                        Embalagem
+                        <select
+                          value={linha.unidade}
+                          onChange={(e) => mudarLinha(i, "unidade", e.target.value)}
+                        >
+                          {EMBALAGENS.map((e) => (
+                            <option key={e.valor} value={e.valor}>
+                              {e.rotulo}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  )}
+
+                  <CampoVoz
+                    rotulo="Preço de compra"
+                    valor={linha.precoCompra}
+                    aoMudar={(v) => mudarCompra(i, v)}
+                    moeda
+                    {...vozProps(`precoCompra-${i}`)}
+                  />
+
+                  <CampoVoz
+                    rotulo={rotuloVenda}
+                    valor={linha.precoVenda}
+                    aoMudar={(v) => mudarLinha(i, "precoVenda", v)}
+                    moeda
+                    {...vozProps(`precoVenda-${i}`)}
+                  />
+                </div>
+              </section>
+            );
+          })}
+
+          {linhas.length > 0 && (
+            <div className="acoes">
+              <button className="botao primario" onClick={salvar} disabled={salvando}>
+                {salvando ? "Salvando…" : "Confirmar e salvar"}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </main>
   );

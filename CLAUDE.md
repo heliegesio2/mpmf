@@ -198,6 +198,19 @@ true, aviso }` and the UI shows a "Nota repetida" card instead of line items. Th
 The upload photo is downscaled/re-encoded to JPEG client-side (`comprimirImagem`, max 1800px long edge)
 before it's sent — both to stay under serverless request-body limits and to control vision token cost.
 
+**Virou uma tela de listagem (`db/37`)** — `/compras/importar` agora tem dois estados client-side
+(`Estado = "lista" | "nova"`): por padrão mostra as **últimas notas confirmadas** (`GET
+/api/importar-compra/notas` → `listarNotasCompra`: emitente, número, quantidade de itens, quando) com um
+botão **"➕ Nova importação"** que abre o fluxo de sempre (foto → revisão → confirmar); ao salvar, volta
+pra lista e recarrega. Cada linha tem **"Ver itens"**, que expande ali mesmo (sem navegar, mesmo padrão
+`.cg-comparar-painel`/`.cg-item` do Comércios grandes) trazendo `GET /api/importar-compra/notas/:id`
+(`notaCompraDetalhe`) — nome, preço de compra, preço de venda e se era produto novo ou já cadastrado,
+pra cada item daquela nota. Isso existe porque `compra_nota` só guardava a **contagem** de itens; agora
+`compra_nota_item` (`compra_nota_id`, `produto_id`, `nome`, `preco_compra`, `preco_venda`, `novo`) grava
+uma linha por item, escrita em `POST /api/importar-compra/confirmar` logo depois de
+`registrarNotaCompra` (que passou a devolver o `id` — `ON CONFLICT ... DO UPDATE ... RETURNING id`, pra
+sempre ter onde pendurar os itens mesmo numa corrida).
+
 The client-side JPEG compression (`src/lib/imagemCliente.ts`, `comprimirImagem`) is shared with the shelf-photo
 stock update below — don't duplicate it per screen.
 

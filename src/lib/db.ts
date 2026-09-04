@@ -436,6 +436,17 @@ const MIGRACOES_IDEMPOTENTES = [
      criado_em       timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (empresa_id, estabelecimento)
    )`,
+  // db/37 — itens de cada nota de compra confirmada (pra tela de listagem do importar compra)
+  `CREATE TABLE IF NOT EXISTS compra_nota_item (
+     id             bigserial PRIMARY KEY,
+     compra_nota_id bigint NOT NULL REFERENCES compra_nota(id) ON DELETE CASCADE,
+     produto_id     bigint REFERENCES produto(id) ON DELETE SET NULL,
+     nome           text NOT NULL,
+     preco_compra   numeric(10,2) NOT NULL,
+     preco_venda    numeric(10,2) NOT NULL,
+     novo           boolean NOT NULL DEFAULT false
+   )`,
+  "CREATE INDEX IF NOT EXISTS ix_compra_nota_item_nota ON compra_nota_item (compra_nota_id)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1001,6 +1012,7 @@ export async function notaCompraExistente(
   return rows[0] ?? null;
 }
 
+/** Grava a nota confirmada e devolve o id (mesmo num reenvio de corrida — vira update). */
 export async function registrarNotaCompra(
   empresaId: number,
   d: {
@@ -1010,14 +1022,105 @@ export async function registrarNotaCompra(
     emitente: string | null;
     itens: number;
   }
-): Promise<void> {
+): Promise<number> {
   await garantirSchema();
-  await pool.query(
+  const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO compra_nota (empresa_id, hash_imagem, chave, numero, emitente, itens)
      VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (empresa_id, hash_imagem) DO NOTHING`,
+     ON CONFLICT (empresa_id, hash_imagem) DO UPDATE SET itens = EXCLUDED.itens
+     RETURNING id`,
     [empresaId, d.hashImagem, d.chave, d.numero, d.emitente, d.itens]
   );
+  return rows[0].id;
+}
+
+export type ItemNotaEntrada = {
+  nome: string;
+  precoCompra: number;
+  precoVenda: number;
+  produtoId: number | null;
+  novo: boolean;
+};
+
+export async function registrarItensNota(
+  compraNotaId: number,
+  itens: ItemNotaEntrada[]
+): Promise<void> {
+  await garantirSchema();
+  for (const it of itens) {
+    await pool.query(
+      `INSERT INTO compra_nota_item (compra_nota_id, produto_id, nome, preco_compra, preco_venda, novo)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [compraNotaId, it.produtoId, it.nome, it.precoCompra, it.precoVenda, it.novo]
+    );
+  }
+}
+
+export type NotaCompraResumo = {
+  id: number;
+  numero: string | null;
+  emitente: string | null;
+  itens: number;
+  criado_em: string;
+};
+
+/** Últimas notas de compra confirmadas, mais recente primeiro. */
+export async function listarNotasCompra(empresaId: number, limite = 30): Promise<NotaCompraResumo[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<NotaCompraResumo>(
+    `SELECT id, numero, emitente, itens, criado_em FROM compra_nota
+      WHERE empresa_id = $1
+      ORDER BY criado_em DESC
+      LIMIT $2`,
+    [empresaId, limite]
+  );
+  return rows;
+}
+
+export type ItemNotaCompra = {
+  nome: string;
+  precoCompra: number;
+  precoVenda: number;
+  produtoId: number | null;
+  novo: boolean;
+};
+
+export type NotaCompraDetalhe = NotaCompraResumo & { itensDetalhe: ItemNotaCompra[] };
+
+/** Uma nota confirmada + todos os itens que ela trouxe, com o preço de cada um. */
+export async function notaCompraDetalhe(
+  empresaId: number,
+  id: number
+): Promise<NotaCompraDetalhe | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<NotaCompraResumo>(
+    `SELECT id, numero, emitente, itens, criado_em FROM compra_nota
+      WHERE id = $1 AND empresa_id = $2`,
+    [id, empresaId]
+  );
+  const nota = rows[0];
+  if (!nota) return null;
+  const { rows: itensRows } = await pool.query<{
+    nome: string;
+    preco_compra: string;
+    preco_venda: string;
+    produto_id: number | null;
+    novo: boolean;
+  }>(
+    `SELECT nome, preco_compra, preco_venda, produto_id, novo
+       FROM compra_nota_item WHERE compra_nota_id = $1 ORDER BY id`,
+    [id]
+  );
+  return {
+    ...nota,
+    itensDetalhe: itensRows.map((r) => ({
+      nome: r.nome,
+      precoCompra: Number(r.preco_compra),
+      precoVenda: Number(r.preco_venda),
+      produtoId: r.produto_id,
+      novo: r.novo,
+    })),
+  };
 }
 
 // ---------- comércios grandes: cotação de preço dos concorrentes ----------
