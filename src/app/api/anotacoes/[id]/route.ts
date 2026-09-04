@@ -6,6 +6,7 @@ export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
+const LIMITE_TEXTO = 300_000;
 
 /** PATCH /api/anotacoes/:id { concluida?, texto?, dataAlerta? } */
 export async function PATCH(request: Request, { params }: Ctx) {
@@ -21,7 +22,9 @@ export async function PATCH(request: Request, { params }: Ctx) {
     const c = await request.json().catch(() => ({}));
     const campos: { concluida?: boolean; texto?: string; dataAlerta?: string | null } = {};
     if (typeof c.concluida === "boolean") campos.concluida = c.concluida;
-    if (typeof c.texto === "string" && c.texto.trim().length >= 2) campos.texto = c.texto.trim().slice(0, 2000);
+    if (typeof c.texto === "string" && c.texto.trim().length >= 2) {
+      campos.texto = c.texto.trim().slice(0, LIMITE_TEXTO);
+    }
     if ("dataAlerta" in c) {
       campos.dataAlerta = typeof c.dataAlerta === "string" && DIA.test(c.dataAlerta) ? c.dataAlerta : null;
     }

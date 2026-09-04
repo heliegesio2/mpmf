@@ -5,6 +5,7 @@ import { exigirSuperAdmin } from "@/lib/sessao";
 export const dynamic = "force-dynamic";
 
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
+const LIMITE_TEXTO = 300_000;
 
 function hojeISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
 
     const totalLojas = await enviarAvisoAdmin({
       empresaId,
-      texto: texto.slice(0, 2000),
+      texto: texto.slice(0, LIMITE_TEXTO),
       dataAlerta: dataEnvio,
       foto,
     });

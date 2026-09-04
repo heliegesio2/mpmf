@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import CampoFoto from "@/components/CampoFoto";
+import CampoTextoRico from "@/components/CampoTextoRico";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -9,6 +10,9 @@ type EmpresaResumo = { id: number; nome: string };
 
 function hojeISO(): string {
   return new Date().toLocaleDateString("en-CA");
+}
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export default function EnviarNotificacao() {
@@ -26,7 +30,8 @@ export default function EnviarNotificacao() {
 
   const { ouvir, parar, ouvindoCampo, disponivel } = useVoz({
     aoFinalizar: (fala) => {
-      setTexto((t) => (t.trim() ? `${t.trim()} ${capitalizar(fala)}` : capitalizar(fala)));
+      const trecho = escapeHtml(capitalizar(fala));
+      setTexto((t) => (t ? `${t} ${trecho}` : trecho));
       setErro(false);
       setAviso("");
     },
@@ -35,6 +40,10 @@ export default function EnviarNotificacao() {
       setAviso(m);
     },
   });
+
+  function textoVazio(html: string): boolean {
+    return html.replace(/<[^>]*>/g, "").trim().length < 2 && !html.includes("<img");
+  }
 
   useEffect(() => {
     if (paraTodos || lojaEscolhida) return;
@@ -53,7 +62,7 @@ export default function EnviarNotificacao() {
   }, [buscaLoja, paraTodos, lojaEscolhida]);
 
   async function enviar() {
-    if (texto.trim().length < 2) return;
+    if (textoVazio(texto)) return;
     if (!paraTodos && !lojaEscolhida) {
       setErro(true);
       setAviso("Escolha a loja, ou marque \"enviar para todos os clientes\".");
@@ -67,7 +76,7 @@ export default function EnviarNotificacao() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          texto: texto.trim(),
+          texto,
           foto: foto || undefined,
           empresaId: paraTodos ? null : lojaEscolhida!.id,
           imediato: enviarAgora,
@@ -104,11 +113,14 @@ export default function EnviarNotificacao() {
           renderizado.
         </p>
         <div className="campo-anotacao">
-          <textarea
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
+          <CampoTextoRico
+            valor={texto}
+            aoMudar={setTexto}
             placeholder="Ex.: Nova funcionalidade liberada: comércios grandes já lê preço por PDF…"
-            rows={4}
+            aoErro={(m) => {
+              setErro(true);
+              setAviso(m);
+            }}
           />
           <button
             type="button"
@@ -230,7 +242,7 @@ export default function EnviarNotificacao() {
         <button
           className="botao primario"
           onClick={enviar}
-          disabled={enviando || texto.trim().length < 2}
+          disabled={enviando || textoVazio(texto)}
         >
           {enviando ? "Enviando…" : "Enviar notificação"}
         </button>

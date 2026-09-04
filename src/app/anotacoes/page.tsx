@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import CampoFoto from "@/components/CampoFoto";
+import CampoTextoRico from "@/components/CampoTextoRico";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
 import { comprimirParaDataURL } from "@/lib/imagemCliente";
 import { useVoz } from "@/lib/useVoz";
@@ -16,6 +17,8 @@ type Anotacao = {
   tem_foto: boolean;
   de_admin: boolean;
 };
+
+type EmpresaResumo = { id: number; nome: string };
 
 const FILTROS = [
   { valor: "abertas", rotulo: "Abertas" },
@@ -34,6 +37,9 @@ function sinalAlerta(iso: string | null): "atrasado" | "hoje" | "futuro" | null 
   if (iso === hoje) return "hoje";
   return "futuro";
 }
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 export default function Anotacoes() {
   const [itens, setItens] = useState<Anotacao[]>([]);
@@ -46,11 +52,40 @@ export default function Anotacoes() {
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
-  const areaRef = useRef<HTMLTextAreaElement>(null);
+
+  // super admin: além da anotação própria, pode disparar um aviso pras lojas
+  const [souSuperAdmin, setSouSuperAdmin] = useState(false);
+  const [modoAviso, setModoAviso] = useState(false);
+  const [paraTodos, setParaTodos] = useState(true);
+  const [buscaLoja, setBuscaLoja] = useState("");
+  const [opcoesLoja, setOpcoesLoja] = useState<EmpresaResumo[]>([]);
+  const [lojaEscolhida, setLojaEscolhida] = useState<EmpresaResumo | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/sessao")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setSouSuperAdmin(d?.sessao?.papel === "super_admin"))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!modoAviso || paraTodos || lojaEscolhida) return;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/empresas?situacao=aprovada&q=${encodeURIComponent(buscaLoja)}`);
+        const d = await r.json();
+        setOpcoesLoja(r.ok ? (d.itens ?? []).slice(0, 8) : []);
+      } catch {
+        setOpcoesLoja([]);
+      }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [buscaLoja, paraTodos, lojaEscolhida, modoAviso]);
 
   const { ouvir, parar, ouvindoCampo, disponivel } = useVoz({
     aoFinalizar: (fala) => {
-      setTexto((t) => (t.trim() ? `${t.trim()} ${capitalizar(fala)}` : capitalizar(fala)));
+      const trecho = escapeHtml(capitalizar(fala));
+      setTexto((t) => (t ? `${t} ${trecho}` : trecho));
       setErro(false);
       setAviso("");
     },
@@ -79,28 +114,58 @@ export default function Anotacoes() {
     carregar(filtro);
   }, [filtro, carregar]);
 
+  function textoVazio(html: string): boolean {
+    return html.replace(/<[^>]*>/g, "").trim().length < 2 && !html.includes("<img");
+  }
+
   async function salvar() {
-    if (texto.trim().length < 2) return;
+    if (textoVazio(texto)) return;
+    if (modoAviso && !paraTodos && !lojaEscolhida) {
+      setErro(true);
+      setAviso('Escolha a loja, ou marque "enviar para todos os clientes".');
+      return;
+    }
     setSalvando(true);
     setErro(false);
     try {
-      const r = await fetch("/api/anotacoes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          texto: texto.trim(),
-          dataAlerta: dataAlerta || undefined,
-          foto: foto || undefined,
-        }),
-      });
-      const dados = await r.json();
-      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
-      setAviso("Anotação salva.");
+      if (modoAviso) {
+        const r = await fetch("/api/admin/avisos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            texto,
+            foto: foto || undefined,
+            empresaId: paraTodos ? null : lojaEscolhida!.id,
+            imediato: !dataAlerta,
+            dataEnvio: dataAlerta || undefined,
+          }),
+        });
+        const dados = await r.json();
+        if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível enviar.");
+        setAviso(
+          `Aviso enviado para ${dados.totalLojas} loja(s)${dataAlerta ? ` — vai aparecer em ${dataAlerta.split("-").reverse().join("/")}` : " agora"}.`
+        );
+        setLojaEscolhida(null);
+        setBuscaLoja("");
+      } else {
+        const r = await fetch("/api/anotacoes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            texto,
+            dataAlerta: dataAlerta || undefined,
+            foto: foto || undefined,
+          }),
+        });
+        const dados = await r.json();
+        if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
+        setAviso("Anotação salva.");
+        setFiltro("abertas");
+        await carregar("abertas");
+      }
       setTexto("");
       setDataAlerta("");
       setFoto("");
-      setFiltro("abertas");
-      await carregar("abertas");
     } catch (e) {
       setErro(true);
       setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
@@ -164,7 +229,9 @@ export default function Anotacoes() {
           await fetch(`/api/anotacoes/${a.id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ texto: a.texto.trim() ? `${a.texto.trim()}\n${lido}` : lido }),
+            body: JSON.stringify({
+              texto: a.texto ? `${a.texto}<br>${escapeHtml(lido)}` : escapeHtml(lido),
+            }),
           });
         }
       } catch {
@@ -200,15 +267,28 @@ export default function Anotacoes() {
       </header>
 
       <section className="cartao">
-        <h2 className="titulo-cartao">Nova anotação</h2>
+        <h2 className="titulo-cartao">{modoAviso ? "Novo aviso" : "Nova anotação"}</h2>
+
+        {souSuperAdmin && (
+          <label className="rotulo largo" style={{ marginBottom: 10 }}>
+            <input
+              type="checkbox"
+              checked={modoAviso}
+              onChange={(e) => setModoAviso(e.target.checked)}
+            />{" "}
+            📢 Enviar como aviso para lojas (em vez de anotação minha)
+          </label>
+        )}
 
         <div className="campo-anotacao">
-          <textarea
-            ref={areaRef}
-            value={texto}
-            onChange={(e) => setTexto(e.target.value)}
+          <CampoTextoRico
+            valor={texto}
+            aoMudar={setTexto}
             placeholder="Ex.: pedir mais gelo pro fornecedor; pagar o aluguel dia 5…"
-            rows={3}
+            aoErro={(m) => {
+              setErro(true);
+              setAviso(m);
+            }}
           />
           <button
             type="button"
@@ -227,7 +307,7 @@ export default function Anotacoes() {
 
         <div className="grade-form">
           <label className="rotulo">
-            Me alertar em (opcional)
+            {modoAviso ? "Quando avisar (vazio = imediato)" : "Me alertar em (opcional)"}
             <span className="entrada">
               <input
                 type="date"
@@ -245,9 +325,10 @@ export default function Anotacoes() {
               aoEscolher={setFoto}
               aoRemover={foto ? () => setFoto("") : undefined}
               urlIdentificar="/api/anotacoes/interpretar-foto"
-              aoIdentificarNome={(t) =>
-                setTexto((x) => (x.trim() ? `${x.trim()}\n${t}` : t))
-              }
+              aoIdentificarNome={(t) => {
+                const trecho = escapeHtml(t);
+                setTexto((x) => (x ? `${x}<br>${trecho}` : trecho));
+              }}
               aoErro={(m) => {
                 setErro(true);
                 setAviso(m);
@@ -257,13 +338,72 @@ export default function Anotacoes() {
           </div>
         </div>
 
+        {modoAviso && (
+          <div className="rotulo largo" style={{ marginTop: 10 }}>
+            <label className="rotulo largo">
+              <input
+                type="checkbox"
+                checked={paraTodos}
+                onChange={(e) => {
+                  setParaTodos(e.target.checked);
+                  if (e.target.checked) setLojaEscolhida(null);
+                }}
+              />{" "}
+              Enviar para todos os clientes
+            </label>
+
+            {!paraTodos &&
+              (lojaEscolhida ? (
+                <p className="dica">
+                  Loja escolhida: <strong>{lojaEscolhida.nome}</strong>{" "}
+                  <button
+                    type="button"
+                    className="botao mini neutro"
+                    onClick={() => setLojaEscolhida(null)}
+                  >
+                    Trocar
+                  </button>
+                </p>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  <label className="rotulo largo">
+                    Buscar a loja
+                    <span className="entrada">
+                      <input
+                        value={buscaLoja}
+                        onChange={(e) => setBuscaLoja(e.target.value)}
+                        placeholder="Nome da loja…"
+                      />
+                    </span>
+                  </label>
+                  {opcoesLoja.length > 0 && (
+                    <ul className="lista" style={{ marginTop: 8 }}>
+                      {opcoesLoja.map((e) => (
+                        <li
+                          key={e.id}
+                          className="lista-clicavel"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setLojaEscolhida(e)}
+                          onKeyDown={(ev) => ev.key === "Enter" && setLojaEscolhida(e)}
+                        >
+                          <span className="rotulo-item">{e.nome}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+          </div>
+        )}
+
         <div className="acoes">
           <button
             className="botao primario"
             onClick={salvar}
-            disabled={salvando || texto.trim().length < 2}
+            disabled={salvando || textoVazio(texto)}
           >
-            {salvando ? "Salvando…" : "Salvar anotação"}
+            {salvando ? "Salvando…" : modoAviso ? "Enviar aviso" : "Salvar anotação"}
           </button>
         </div>
 
@@ -322,17 +462,13 @@ export default function Anotacoes() {
                 </span>
 
                 <span className="rotulo-item">
-                  <span className="anotacao-texto">
+                  <span className="anotacao-texto html-aviso">
                     {a.de_admin && (
                       <span className="selo" data-situacao="pendente">
                         aviso da administração
                       </span>
                     )}{" "}
-                    {a.de_admin ? (
-                      <span className="html-aviso" dangerouslySetInnerHTML={{ __html: a.texto }} />
-                    ) : (
-                      a.texto
-                    )}
+                    <span dangerouslySetInnerHTML={{ __html: a.texto }} />
                   </span>
                   <span className="sub anotacao-rodape">
                     {(sinal === "atrasado" || sinal === "hoje") && (

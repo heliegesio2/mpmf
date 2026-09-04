@@ -604,14 +604,28 @@ took (engradado, botijão…), now a required field on the form; `criarCasco` an
 
 **Anotações (`/anotacoes`, `db/22`)** — `anotacao (texto, data_alerta date null, concluida)` +
 `foto` (`db/29`, data URL, out of `CAMPOS_ANOTACAO` → `tem_foto`; bytes at `GET /api/anotacoes/:id/foto`,
-add/replace at `PUT`). Create (textarea + mic + optional `<input type=date>` + `<CampoFoto>`), toggle
-done, edit the alert date inline, delete. `GET/POST /api/anotacoes`, `PATCH/DELETE /api/anotacoes/:id`.
-`anotacoesEmAlerta` counts open notes with `data_alerta <= CURRENT_DATE` for the menu badge (`GET
-/api/anotacoes/alertas`). List sorts overdue → today → future → undated. **Photo is read** (`src/lib/
-lerFotoAnotacao.ts` → `POST /api/anotacoes/interpretar-foto` → `{nome}`): written text is transcribed, a
-list becomes `- ` lines, a bare product becomes "marca + tipo + peso"; the result is appended to the
-note's `texto` (in the form via `<CampoFoto aoIdentificarNome>` + `urlIdentificar`; on the inline
-add-photo via a `PATCH`).
+add/replace at `PUT`). Create (`<CampoTextoRico>` + mic + optional `<input type=date>` + `<CampoFoto>`),
+toggle done, edit the alert date inline, delete. `GET/POST /api/anotacoes`, `PATCH/DELETE
+/api/anotacoes/:id`. `anotacoesEmAlerta` counts open notes with `data_alerta <= CURRENT_DATE` for the
+menu badge (`GET /api/anotacoes/alertas`). List sorts overdue → today → future → undated. **Photo is
+read** (`src/lib/lerFotoAnotacao.ts` → `POST /api/anotacoes/interpretar-foto` → `{nome}`): written text
+is transcribed, a list becomes `- ` lines, a bare product becomes "marca + tipo + peso"; the result is
+appended to the note's `texto` as `<br>` + escaped text (in the form via `<CampoFoto aoIdentificarNome>`
++ `urlIdentificar`; on the inline add-photo via a `PATCH`).
+
+**`texto` is HTML, not plain text** (`<CampoTextoRico>`, `src/components/CampoTextoRico.tsx`) — a
+`contentEditable` box (no library: `document.execCommand("bold"/"italic"/"insertUnorderedList")` from a
+3-button toolbar) that also **pastes a screenshot inline**: `onPaste` checks `clipboardData.items` for an
+`image/*` entry, compresses it with `comprimirParaDataURL` (`maxLado:1000, qualidade:0.7`) and
+`execCommand("insertImage", …)`s it into the content at the cursor — the saved `texto` is genuinely
+`<p>…</p><img src="data:...">` HTML. The DOM only re-syncs from the `valor` prop while the box is
+*not* focused (a `focado` ref), the usual guard against a controlled contentEditable eating its own
+cursor position. Voice transcripts append as `escapeHtml(texto)` (never raw). The server-side length cap
+went from 2000 to **300,000 chars** (`LIMITE_TEXTO` in each of `POST/PATCH /api/anotacoes[/:id]` and
+`POST /api/admin/avisos`) since one pasted image alone can be tens of KB of base64. The list renders
+`a.texto` via `dangerouslySetInnerHTML` (`.html-aviso` class) for **every** anotação now (not just
+admin ones) — same-tenant trust: worst case one employee's HTML/script only ever reaches a coworker at
+the same store, `empresa_id`-scoped like everything else here.
 
 **Aviso repetido a cada 2 dias (`db/33`)** — `sincronizarAvisosDeAnotacoes` (called at the top of `GET
 /api/notificacoes`) used to materialize an aviso once per anotação/usuário (idempotent by `chave`) and
@@ -622,10 +636,15 @@ every 2 days until the shopkeeper marks the note `concluida` or deletes it (eith
 concluded note drops out of the `WHERE NOT concluida` in both queries, and `excluirAnotacao` removes the
 `notificacao` rows too).
 
-**Avisos do super admin (`db/33`, `/admin/avisos`)** — "Enviar notificação": a super-admin-only screen
-(textarea + mic, `<CampoFoto semCaptura>` for an image, "Enviar para todos os clientes" checkbox
-(default on; unchecked shows a store search hitting `GET /api/empresas?situacao=aprovada&q=`) and
-"Aviso imediato" checkbox (default on; unchecked shows a date picker, min today)). `POST
+**Avisos do super admin (`db/33`)** — "Enviar como aviso para lojas" lives **inside `/anotacoes`'s "Nova
+anotação" card itself**, not a separate flow to hunt for: a checkbox shown only when `GET
+/api/auth/sessao` says `papel === "super_admin"` (fetched client-side on mount) flips the same form
+(same `<CampoTextoRico>`, mic, `<CampoFoto>`, date field) into broadcast mode — "Enviar para todos os
+clientes" (default on; unchecked shows a store search hitting `GET /api/empresas?situacao=aprovada&q=`)
+and the existing date field becomes "Quando avisar (vazio = imediato)". Submitting in that mode posts to
+`POST /api/admin/avisos` instead of `POST /api/anotacoes`. **`/admin/avisos`** (Administração menu) is
+the same composer as its own standalone page — same components, same endpoint — for a super admin who
+navigates there directly instead; neither is more canonical, they just both exist. `POST
 /api/admin/avisos` (`exigirSuperAdmin`) doesn't invent new delivery plumbing — `enviarAvisoAdmin` just
 calls `criarAnotacao(empresaId, texto, dataAlerta, foto, deAdmin=true)` once per target store (`empresaId`
 given, or every `situacao='aprovada'` store when "todos" is checked), reusing the entire existing
@@ -637,14 +656,11 @@ drops `texto`/`dataAlerta` changes when `de_admin`, `concluida` still works; `ex
 `"bloqueada"` → 403) — the only action is the existing "concluir" checkbox. The `/anotacoes` list shows a
 `.selo` "aviso da administração" badge on them.
 
-**The message can be an HTML block** — `notificacao.html` (set to `de_admin`'s value when
-`sincronizarAvisosDeAnotacoes` materializes the row) tells `/notificacoes` to render `corpo` via
-`dangerouslySetInnerHTML` (`.html-aviso` class: resets nested margins, caps images, styles links)
-instead of plain text; `/anotacoes` does the same for `a.texto` whenever `de_admin` is true. Trust
-boundary: only `exigirSuperAdmin()` can create a `de_admin` anotação, so this is the platform operator's
-own broadcast content, not arbitrary user input — a regular store's own anotações are never rendered as
-HTML. The bell dropdown/`titulo` preview strips tags (`regexp_replace(texto, '<[^>]*>', '', 'g')`) since
-that's a plain-text-only surface.
+**A de_admin message can additionally arrive as a hand-authored HTML block** (an admin who knows what
+they're doing can paste raw markup into `<CampoTextoRico>` same as anyone) — `notificacao.html` (set to
+`de_admin`'s value when `sincronizarAvisosDeAnotacoes` materializes the row) tells `/notificacoes` to
+render `corpo` via `dangerouslySetInnerHTML` too. The bell dropdown/`titulo` preview strips tags
+(`regexp_replace(texto, '<[^>]*>', '', 'g')`) since that's a plain-text-only surface.
 
 **Venda por foto (`/venda/foto`)** — a "📷 Foto do balcão" button on `/venda` opens it: the shopkeeper
 photographs the products the customer put on the counter, `src/lib/lerVendaFoto.ts` (vision, mirrors

@@ -5,6 +5,8 @@ import { exigirEmpresa } from "@/lib/sessao";
 export const dynamic = "force-dynamic";
 
 const DIA = /^\d{4}-\d{2}-\d{2}$/;
+// generoso — o texto agora é HTML e pode carregar um print colado (imagem em base64)
+const LIMITE_TEXTO = 300_000;
 
 /** GET /api/anotacoes?situacao=abertas|concluidas|todas */
 export async function GET(request: Request) {
@@ -35,7 +37,7 @@ export async function POST(request: Request) {
     const dataAlerta = typeof c.dataAlerta === "string" && DIA.test(c.dataAlerta) ? c.dataAlerta : null;
     const foto = typeof c.foto === "string" && c.foto.startsWith("data:image/") ? c.foto : undefined;
 
-    const item = await criarAnotacao(empresaId, texto.slice(0, 2000), dataAlerta, foto);
+    const item = await criarAnotacao(empresaId, texto.slice(0, LIMITE_TEXTO), dataAlerta, foto);
     return NextResponse.json({ item }, { status: 201 });
   } catch (e) {
     console.error("Falha ao criar anotação:", e);
