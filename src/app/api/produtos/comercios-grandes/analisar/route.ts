@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { compararCotacoes, normalizarNomeProduto, registrarCotacoes } from "@/lib/db";
+import {
+  compararCotacoes,
+  normalizarNomeProduto,
+  notificarParceirosSobreCotacao,
+  registrarCotacoes,
+} from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +63,10 @@ export async function POST(request: Request) {
         usuarioNome: sessao.nome,
       });
       loteId = registrado.loteId;
+      // avisa os parceiros (lojas) — quem silenciou esse estabelecimento não recebe
+      notificarParceirosSobreCotacao(empresaId, estabelecimento, loteId, comparados.length).catch(
+        (e) => console.error("Falha ao notificar parceiros sobre a cotação:", e)
+      );
     }
 
     // mais barato lá primeiro (mais relevante), depois os sem match

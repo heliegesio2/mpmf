@@ -51,8 +51,22 @@ type EstabelecimentoHistorico = {
   loteId: number;
   data: string;
   qtdProdutos: number;
+  produtosQueVoceVende: number;
   usuarioNome: string | null;
+  empresaId: number;
+  empresaNome: string;
+  empresaTemLogo: boolean;
   fonte: string;
+  silenciado: boolean;
+  ehSeuProprio: boolean;
+};
+
+type ItemComparadoLote = {
+  nome: string;
+  preco: number;
+  meuNome: string | null;
+  meuPreco: number | null;
+  confianca: Confianca;
 };
 
 type LoteResumo = {
@@ -118,6 +132,49 @@ export default function ComerciosGrandes() {
   const [lotesEstab, setLotesEstab] = useState<LoteResumo[]>([]);
   const [loteAberto, setLoteAberto] = useState<LoteDetalhe | null>(null);
   const [carregandoLote, setCarregandoLote] = useState(false);
+
+  const [comparandoEstab, setComparandoEstab] = useState<string | null>(null);
+  const [comparacao, setComparacao] = useState<ItemComparadoLote[]>([]);
+  const [carregandoComparar, setCarregandoComparar] = useState(false);
+
+  async function alternarComparar(h: EstabelecimentoHistorico) {
+    if (comparandoEstab === h.estabelecimento) {
+      setComparandoEstab(null);
+      return;
+    }
+    setComparandoEstab(h.estabelecimento);
+    setComparacao([]);
+    setCarregandoComparar(true);
+    try {
+      const r = await fetch(`/api/produtos/comercios-grandes/lotes/${h.loteId}/comparar`);
+      const d = await r.json();
+      setComparacao(r.ok && Array.isArray(d.itens) ? d.itens : []);
+    } catch {
+      setErro("Não foi possível comparar os preços.");
+    } finally {
+      setCarregandoComparar(false);
+    }
+  }
+
+  async function alternarSilencio(h: EstabelecimentoHistorico) {
+    const novoValor = !h.silenciado;
+    setHistorico((hs) =>
+      hs.map((x) => (x.estabelecimento === h.estabelecimento ? { ...x, silenciado: novoValor } : x))
+    );
+    try {
+      const r = await fetch("/api/produtos/comercios-grandes/silenciar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estabelecimento: h.estabelecimento, silenciar: novoValor }),
+      });
+      if (!r.ok) throw new Error();
+    } catch {
+      setHistorico((hs) =>
+        hs.map((x) => (x.estabelecimento === h.estabelecimento ? { ...x, silenciado: !novoValor } : x))
+      );
+      setErro("Não foi possível salvar essa preferência.");
+    }
+  }
 
   async function carregarHistorico() {
     setCarregandoHistorico(true);
@@ -371,22 +428,118 @@ export default function ComerciosGrandes() {
       {estado === "parado" && historico.length > 0 && (
         <section className="cartao">
           <h2 className="titulo-cartao">Concorrentes já analisados</h2>
+          <p className="ajuda-voz">
+            Feed compartilhado entre as lojas parceiras — inclui levantamentos que outras lojas
+            fizeram, não só os seus.
+          </p>
           <div className="cg-grade">
-            {historico.map((h) => (
-              <button
-                type="button"
-                className="cg-grade-item"
-                key={h.estabelecimento}
-                onClick={() => abrirEstabelecimento(h.estabelecimento)}
-              >
-                <strong>{h.estabelecimento}</strong>
-                <span>Último lançamento: {dataBR(h.data)}</span>
-                <span>
-                  {h.qtdProdutos} produto(s) · {ROTULO_FONTE[h.fonte] ?? h.fonte}
-                </span>
-                <span className="cg-grade-usuario">por {h.usuarioNome ?? "—"}</span>
-              </button>
-            ))}
+            {historico.map((h) => {
+              const compativeis = comparacao.filter((it) => it.meuPreco !== null);
+              const maisCaros = compativeis.filter((it) => it.preco > it.meuPreco!).length;
+              const maisBaratos = compativeis.filter((it) => it.preco < it.meuPreco!).length;
+              const comparandoAberto = comparandoEstab === h.estabelecimento;
+
+              return (
+                <div className="cg-card-rico" key={h.estabelecimento}>
+                  <div className="cg-card-topo">
+                    {h.empresaTemLogo ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        className="cg-card-logo"
+                        src={`/api/empresas/${h.empresaId}/logo`}
+                        alt=""
+                      />
+                    ) : (
+                      <span className="cg-card-logo cg-card-logo-vazia" aria-hidden="true">
+                        🏬
+                      </span>
+                    )}
+                    <div className="cg-card-titulos">
+                      <strong className="cg-card-titulo">{h.estabelecimento}</strong>
+                      <span className="cg-card-parceiro">
+                        por {h.ehSeuProprio ? "você" : h.empresaNome}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="cg-card-fatos">
+                    <div className="cg-card-fato">
+                      <span className="cg-card-fato-rotulo">Data do levantamento</span>
+                      <span className="cg-card-fato-valor">{dataBR(h.data)}</span>
+                    </div>
+                    <div className="cg-card-fato">
+                      <span className="cg-card-fato-rotulo">Produtos encontrados</span>
+                      <span className="cg-card-fato-valor">{h.qtdProdutos}</span>
+                    </div>
+                    <div className="cg-card-fato">
+                      <span className="cg-card-fato-rotulo">Produtos que você vende</span>
+                      <span className="cg-card-fato-valor">{h.produtosQueVoceVende}</span>
+                    </div>
+                  </div>
+
+                  <div className="acoes">
+                    <button type="button" className="botao mini" onClick={() => alternarComparar(h)}>
+                      {comparandoAberto ? "Ocultar comparação" : "Comparar preços"}
+                    </button>
+                    <button
+                      type="button"
+                      className="botao mini neutro"
+                      onClick={() => alternarSilencio(h)}
+                    >
+                      {h.silenciado ? "🔔 Reativar avisos" : "🔕 Silenciar avisos"}
+                    </button>
+                    <button
+                      type="button"
+                      className="botao mini neutro"
+                      onClick={() => abrirEstabelecimento(h.estabelecimento)}
+                    >
+                      Meu histórico
+                    </button>
+                  </div>
+
+                  {comparandoAberto && (
+                    <div className="cg-comparar-painel">
+                      {carregandoComparar ? (
+                        <p className="dica">Comparando…</p>
+                      ) : compativeis.length === 0 ? (
+                        <p className="dica">Nenhum produto seu compatível encontrado dessa vez.</p>
+                      ) : (
+                        <>
+                          <p className="cg-comparar-resumo">
+                            Encontramos <strong>{compativeis.length}</strong> produto(s) compatível(is)
+                            com o seu — <strong>{maisCaros}</strong> com preço maior e{" "}
+                            <strong>{maisBaratos}</strong> com preço menor.
+                          </p>
+                          <ul className="lista cg-lista">
+                            {compativeis.map((it, i) => {
+                              const dif = Math.round((it.preco - it.meuPreco!) * 100) / 100;
+                              const sinal = dif < 0 ? "barato" : dif > 0 ? "caro" : "igual";
+                              return (
+                                <li className="cg-item" key={i}>
+                                  <div className="cg-item-topo">
+                                    <strong>{it.nome}</strong>
+                                    <span className="cg-preco">R$ {paraMoeda(it.preco)}</span>
+                                  </div>
+                                  <div className="cg-comparado" data-sinal={sinal}>
+                                    Você vende {it.meuNome ? <em>{it.meuNome}</em> : "esse item"} a R${" "}
+                                    {paraMoeda(it.meuPreco!)} —{" "}
+                                    {dif < 0
+                                      ? `R$ ${paraMoeda(Math.abs(dif))} mais barato lá`
+                                      : dif > 0
+                                        ? `R$ ${paraMoeda(dif)} mais caro lá`
+                                        : "mesmo preço"}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       )}

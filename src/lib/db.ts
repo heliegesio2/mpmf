@@ -427,6 +427,15 @@ const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE anotacao ADD COLUMN IF NOT EXISTS titulo text",
   // db/35 — link opcional da anotação (aviso do super admin aponta pro módulo ajustado)
   "ALTER TABLE anotacao ADD COLUMN IF NOT EXISTS link text",
+  // db/36 — logo da empresa/fornecedor + cotação de concorrente compartilhada entre lojas
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS logo text",
+  "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS logo text",
+  `CREATE TABLE IF NOT EXISTS cotacao_silenciada (
+     empresa_id      bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     estabelecimento text NOT NULL,
+     criado_em       timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (empresa_id, estabelecimento)
+   )`,
 ];
 
 let _schema: Promise<void> | null = null;
@@ -869,6 +878,7 @@ export type EmpresaConfig = {
   horario: string | null;
   pix_chave: string | null;
   pix_nome: string | null;
+  tem_logo: boolean;
 };
 
 export type EmpresaConfigEntrada = {
@@ -886,7 +896,8 @@ export type EmpresaConfigEntrada = {
 };
 
 const CAMPOS_EMPRESA_CONFIG =
-  "id, nome, documento, telefone, telefone_whatsapp, cidade, bairro, cep, endereco, horario, pix_chave, pix_nome";
+  "id, nome, documento, telefone, telefone_whatsapp, cidade, bairro, cep, endereco, horario, pix_chave, pix_nome, " +
+  "(logo IS NOT NULL AND logo <> '') AS tem_logo";
 
 export async function configEmpresa(empresaId: number): Promise<EmpresaConfig | null> {
   await garantirSchema();
@@ -914,6 +925,24 @@ export async function salvarConfigEmpresa(
     ]
   );
   return rows[0] ?? null;
+}
+
+export async function logoEmpresa(empresaId: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ logo: string | null }>(
+    "SELECT logo FROM empresa WHERE id = $1",
+    [empresaId]
+  );
+  return rows[0]?.logo || null;
+}
+
+export async function atualizarLogoEmpresa(empresaId: number, logo: string): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query("UPDATE empresa SET logo = NULLIF($2, '') WHERE id = $1", [
+    empresaId,
+    logo,
+  ]);
+  return (r.rowCount ?? 0) > 0;
 }
 
 // ---------- importar compra (margem de lucro + notas já processadas) ----------
@@ -1017,7 +1046,7 @@ const MATCH_ALTA = 0.5;
 const MATCH_PROVAVEL = 0.32;
 
 /** Melhor produto do meu catálogo pro nome lido, tentando o nome cru, sem peso e só marca+tipo. */
-async function acharMeuProduto(
+export async function acharMeuProduto(
   empresaId: number,
   nomeLido: string
 ): Promise<{ id: number; nome: string; preco: number; score: number } | null> {
@@ -1124,13 +1153,27 @@ export type EstabelecimentoCotado = {
   loteId: number;
   data: string;
   qtdProdutos: number;
+  /** Quantos dos produtos daquele lote batem com o catálogo de quem está vendo. */
+  produtosQueVoceVende: number;
   usuarioNome: string | null;
+  empresaId: number;
+  empresaNome: string;
+  empresaTemLogo: boolean;
   fonte: string;
+  /** Quem está vendo silenciou avisos desse estabelecimento. */
+  silenciado: boolean;
+  /** O lançamento mais recente é da própria loja de quem está vendo. */
+  ehSeuProprio: boolean;
 };
 
-/** Um card por estabelecimento — o lançamento mais recente de cada um. */
+/**
+ * Feed COMPARTILHADO entre todas as lojas: um card por estabelecimento — o
+ * lançamento mais recente, não importa qual loja o fez — mostrando quem foi o
+ * "empresário parceiro" e quantos daqueles produtos batem no MEU catálogo
+ * (recalculado pra quem está vendo, nunca o snapshot de quem lançou).
+ */
 export async function listarEstabelecimentosCotados(
-  empresaId: number
+  empresaIdVisitante: number
 ): Promise<EstabelecimentoCotado[]> {
   await garantirSchema();
   const { rows } = await pool.query<{
@@ -1140,26 +1183,147 @@ export async function listarEstabelecimentosCotados(
     fonte: string;
     qtd_produtos: number;
     data: string;
+    empresa_id: number;
+    empresa_nome: string;
+    empresa_tem_logo: boolean;
   }>(
-    `SELECT estabelecimento, id AS lote_id, usuario_nome, fonte, qtd_produtos,
-            to_char(data, 'YYYY-MM-DD') AS data
+    `SELECT l.estabelecimento, l.id AS lote_id, l.usuario_nome, l.fonte, l.qtd_produtos,
+            to_char(l.data, 'YYYY-MM-DD') AS data, l.empresa_id,
+            e.nome AS empresa_nome, (e.logo IS NOT NULL AND e.logo <> '') AS empresa_tem_logo
        FROM (
          SELECT DISTINCT ON (estabelecimento) *
            FROM cotacao_lote
-          WHERE empresa_id = $1
           ORDER BY estabelecimento, data DESC, criado_em DESC
-       ) mais_recente
-      ORDER BY data DESC, mais_recente.criado_em DESC`,
-    [empresaId]
+       ) l
+       JOIN empresa e ON e.id = l.empresa_id
+      ORDER BY l.data DESC, l.criado_em DESC`
   );
-  return rows.map((r) => ({
-    estabelecimento: r.estabelecimento,
-    loteId: r.lote_id,
-    data: r.data,
-    qtdProdutos: r.qtd_produtos,
-    usuarioNome: r.usuario_nome,
-    fonte: r.fonte,
-  }));
+  if (rows.length === 0) return [];
+
+  const { rows: silenciadas } = await pool.query<{ estabelecimento: string }>(
+    "SELECT estabelecimento FROM cotacao_silenciada WHERE empresa_id = $1",
+    [empresaIdVisitante]
+  );
+  const mudos = new Set(silenciadas.map((s) => s.estabelecimento));
+
+  const resultado: EstabelecimentoCotado[] = [];
+  for (const r of rows) {
+    const { rows: itensLote } = await pool.query<{ nome_produto: string }>(
+      "SELECT nome_produto FROM cotacao_concorrente WHERE lote_id = $1",
+      [r.lote_id]
+    );
+    let compativeis = 0;
+    for (const it of itensLote) {
+      if (await acharMeuProduto(empresaIdVisitante, it.nome_produto)) compativeis += 1;
+    }
+    resultado.push({
+      estabelecimento: r.estabelecimento,
+      loteId: r.lote_id,
+      data: r.data,
+      qtdProdutos: r.qtd_produtos,
+      produtosQueVoceVende: compativeis,
+      usuarioNome: r.usuario_nome,
+      empresaId: r.empresa_id,
+      empresaNome: r.empresa_nome,
+      empresaTemLogo: r.empresa_tem_logo,
+      fonte: r.fonte,
+      silenciado: mudos.has(r.estabelecimento),
+      ehSeuProprio: r.empresa_id === empresaIdVisitante,
+    });
+  }
+  return resultado;
+}
+
+export type ItemComparadoLote = {
+  nome: string;
+  preco: number;
+  meuNome: string | null;
+  meuPreco: number | null;
+  confianca: ConfiancaMatch;
+};
+
+/** Recompara os itens de UM lote com o catálogo de quem está vendo — pro botão "Comparar preços". */
+export async function compararLoteParaEmpresa(
+  empresaIdVisitante: number,
+  loteId: number
+): Promise<ItemComparadoLote[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ nome_produto: string; preco: string }>(
+    "SELECT nome_produto, preco FROM cotacao_concorrente WHERE lote_id = $1 ORDER BY nome_produto",
+    [loteId]
+  );
+  return Promise.all(
+    rows.map(async (r) => {
+      const meu = await acharMeuProduto(empresaIdVisitante, r.nome_produto);
+      const confianca: ConfiancaMatch = meu ? (meu.score >= MATCH_ALTA ? "alta" : "provavel") : null;
+      return {
+        nome: r.nome_produto,
+        preco: Number(r.preco),
+        meuNome: meu ? meu.nome : null,
+        meuPreco: meu ? meu.preco : null,
+        confianca,
+      };
+    })
+  );
+}
+
+export async function alternarSilencioEstabelecimento(
+  empresaId: number,
+  estabelecimento: string,
+  silenciar: boolean
+): Promise<void> {
+  await garantirSchema();
+  const est = estabelecimento.trim();
+  if (silenciar) {
+    await pool.query(
+      "INSERT INTO cotacao_silenciada (empresa_id, estabelecimento) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+      [empresaId, est]
+    );
+  } else {
+    await pool.query(
+      "DELETE FROM cotacao_silenciada WHERE empresa_id = $1 AND estabelecimento = $2",
+      [empresaId, est]
+    );
+  }
+}
+
+/**
+ * Avisa as outras lojas aprovadas (menos quem lançou e quem silenciou esse
+ * estabelecimento) que um parceiro atualizou os preços de um concorrente.
+ */
+export async function notificarParceirosSobreCotacao(
+  empresaOrigemId: number,
+  estabelecimento: string,
+  loteId: number,
+  qtdProdutos: number
+): Promise<void> {
+  await garantirSchema();
+  const est = estabelecimento.trim();
+  const { rows: origem } = await pool.query<{ nome: string }>(
+    "SELECT nome FROM empresa WHERE id = $1",
+    [empresaOrigemId]
+  );
+  const nomeOrigem = origem[0]?.nome ?? "Um parceiro";
+
+  const { rows: alvos } = await pool.query<{ id: number }>(
+    `SELECT id FROM empresa
+      WHERE situacao = 'aprovada' AND id <> $1
+        AND id NOT IN (SELECT empresa_id FROM cotacao_silenciada WHERE estabelecimento = $2)`,
+    [empresaOrigemId, est]
+  );
+
+  for (const alvo of alvos) {
+    await notificarUsuariosDaEmpresa(
+      alvo.id,
+      {
+        tipo: "cotacao",
+        titulo: `💹 ${nomeOrigem} atualizou os preços de ${est}`,
+        corpo: `${qtdProdutos} produto(s) levantados por ${nomeOrigem}. Confira se tem a ver com o que você vende.`,
+        link: "/produtos/comercios-grandes",
+      },
+      `cotacao:${loteId}`
+    );
+  }
 }
 
 export type LoteResumo = {
@@ -2523,6 +2687,7 @@ export type FornecedorPublico = {
   slug?: string | null;
   tem_catalogo?: boolean;
   tem_pdf?: boolean;
+  tem_logo?: boolean;
 };
 
 /** Lista os fornecedores públicos (cadastro na plataforma) — só super admin. */
@@ -2633,6 +2798,7 @@ export async function fornecedorPublicoDetalhe(id: number): Promise<
     `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
             fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
             fp.slug, (fp.portfolio_pdf IS NOT NULL AND fp.portfolio_pdf <> '') AS tem_pdf,
+            (fp.logo IS NOT NULL AND fp.logo <> '') AS tem_logo,
             COALESCE((SELECT json_agg(b.nome ORDER BY b.nome)
                         FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
                        WHERE fb.fornecedor_publico_id = fp.id), '[]'::json) AS bairros,
@@ -3036,6 +3202,27 @@ export async function portfolioPdfPorSlug(slug: string): Promise<string | null> 
     [slug]
   );
   return rows[0]?.portfolio_pdf || null;
+}
+
+export async function logoFornecedorPublico(fornecedorId: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ logo: string | null }>(
+    "SELECT logo FROM fornecedor_publico WHERE id = $1",
+    [fornecedorId]
+  );
+  return rows[0]?.logo || null;
+}
+
+export async function atualizarLogoFornecedorPublico(
+  fornecedorId: number,
+  logo: string
+): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query(
+    "UPDATE fornecedor_publico SET logo = NULLIF($2, '') WHERE id = $1",
+    [fornecedorId, logo]
+  );
+  return (r.rowCount ?? 0) > 0;
 }
 
 // ---------- messageria / notificações (db/27) ----------

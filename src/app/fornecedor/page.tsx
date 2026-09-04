@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
+import CampoFoto from "@/components/CampoFoto";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -47,6 +48,8 @@ export default function AreaFornecedor() {
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
+  const [logoPreview, setLogoPreview] = useState("");
+  const [salvandoLogo, setSalvandoLogo] = useState(false);
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -97,6 +100,7 @@ export default function AreaFornecedor() {
       setMotivo(it.motivo ?? null);
       setBairros(it.bairrosCidade ?? []);
       setSel(new Set((it.bairroIds ?? []).map(Number)));
+      setLogoPreview(it.tem_logo ? "/api/fornecedor/logo" : "");
     } catch {
       setErro(true);
       setAviso("Não foi possível carregar seu cadastro.");
@@ -123,6 +127,44 @@ export default function AreaFornecedor() {
   const bairrosFiltrados = filtroBairro.trim()
     ? bairros.filter((b) => semAcento(b.nome).includes(semAcento(filtroBairro.trim())))
     : bairros;
+
+  async function mudarLogo(dataUrl: string) {
+    setSalvandoLogo(true);
+    setErro(false);
+    try {
+      const r = await fetch("/api/fornecedor/logo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logo: dataUrl }),
+      });
+      if (!r.ok) throw new Error();
+      setLogoPreview(dataUrl);
+      setAviso("Logo salva.");
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível salvar a logo.");
+    } finally {
+      setSalvandoLogo(false);
+    }
+  }
+
+  async function removerLogo() {
+    setSalvandoLogo(true);
+    try {
+      const r = await fetch("/api/fornecedor/logo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logo: "" }),
+      });
+      if (!r.ok) throw new Error();
+      setLogoPreview("");
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível remover a logo.");
+    } finally {
+      setSalvandoLogo(false);
+    }
+  }
 
   async function salvar() {
     setSalvando(true);
@@ -211,6 +253,20 @@ export default function AreaFornecedor() {
           </label>
           <CampoVoz rotulo="Chave Pix (opcional)" placeholder="CPF/CNPJ, celular, e-mail…" largo {...comum("pixChave")} />
           <CampoVoz rotulo="Observação (opcional)" placeholder="Dias de entrega, pedido mínimo…" largo {...comum("observacao")} />
+
+          <div className="rotulo largo">
+            <CampoFoto
+              rotulo={salvandoLogo ? "Logo (salvando…)" : "Logo"}
+              semCaptura
+              preview={logoPreview}
+              aoEscolher={mudarLogo}
+              aoRemover={logoPreview ? removerLogo : undefined}
+              aoErro={(m) => {
+                setErro(true);
+                setAviso(m);
+              }}
+            />
+          </div>
 
           <div className="rotulo largo">
             <span className="campo-foto-rotulo">Bairros que você atende</span>

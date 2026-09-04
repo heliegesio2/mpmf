@@ -262,15 +262,29 @@ amigável.
 **Virou um CRUD (`db/32`)** — cada análise é agrupada num **lote** (`cotacao_lote`: um por
 `estabelecimento`+dia, `ON CONFLICT ... DO UPDATE` — reanálise no mesmo dia atualiza o lote em vez de
 duplicar), guardando `usuario_id`/`usuario_nome` (snapshot, de `exigirEmpresa().sessao`), `fonte`,
-`qtd_produtos` e `data`; `cotacao_concorrente.lote_id` referencia o lote de cada linha. Ao entrar na
-tela (e depois de toda análise nova), `GET /api/produtos/comercios-grandes/historico`
-(`listarEstabelecimentosCotados`, um `DISTINCT ON (estabelecimento)` pegando o lote mais recente de cada
-um) alimenta um **grid** (`.cg-grade`) — nome do concorrente, "Último lançamento: dd/mm", quantidade de
-produtos e **"por <usuário>"** em destaque. Clicar num card → `GET .../lotes?estabelecimento=`
-(`listarLotesDoEstabelecimento`) lista o histórico de lançamentos daquele concorrente (data, qtd, quem);
-clicar num lançamento → `GET .../lotes/:id` (`loteDetalhe`) mostra a data, quem lançou e os produtos com
-preço (e o comparativo salvo na hora, se o match era `alta`). Tudo client-state na mesma página
-(`Estado` ganhou `"lotes"` e `"lote"`), sem rota nova por estabelecimento.
+`qtd_produtos` e `data`; `cotacao_concorrente.lote_id` referencia o lote de cada linha. "Meu histórico"
+num card → `GET .../lotes?estabelecimento=` (`listarLotesDoEstabelecimento`, ainda por empresa) →
+`GET .../lotes/:id` (`loteDetalhe`) — a data, quem lançou e os produtos com o comparativo salvo na hora
+(client-state na mesma página, `Estado` ganhou `"lotes"`/`"lote"`).
+
+**Virou compartilhado entre lojas (`db/36`)** — `GET /api/produtos/comercios-grandes/historico`
+(`listarEstabelecimentosCotados`) deixou de filtrar por `empresa_id`: um `DISTINCT ON (estabelecimento)`
+global pega o **lote mais recente de QUALQUER loja** por estabelecimento, junta com `empresa` pro nome +
+`empresaTemLogo`, e recalcula **pra quem está vendo** (nunca usa o `meu_preco` gravado, que é de quem
+lançou) quantos produtos daquele lote batem no catálogo do visitante (`acharMeuProduto`, exportado). O
+card (`.cg-card-rico`) mostra isso tudo de cara — logo (ou 🏬), "por `<empresa>`" (ou "por você"), data,
+produtos encontrados, **produtos que você vende** — sem precisar entrar em nada; um clique em **"Comparar
+preços"** abre um painel na própria página (`GET .../lotes/:id/comparar` → `compararLoteParaEmpresa`,
+mesma lógica recalculada) com o resumo ("N compatíveis — X mais caro, Y mais barato") e uma lista
+`.cg-item` em linhas separadas, nunca lado a lado. Ao registrar um lote, `notificarParceirosSobreCotacao`
+avisa (tipo `cotacao`, ícone 💹) todas as **outras** lojas `situacao='aprovada'` — exceto quem silenciou
+esse estabelecimento (`cotacao_silenciada (empresa_id, estabelecimento)`, toggle em `.cg-card-rico` via
+`POST .../silenciar`) — link `/produtos/comercios-grandes`, chave `cotacao:<loteId>` (idempotente).
+`empresa.logo`/`fornecedor_publico.logo` (data URL, fora do select comum → `tem_logo`) são editáveis em
+`/configuracoes` e `/fornecedor` (`<CampoFoto semCaptura>`, salva na hora via `PUT /api/empresa/logo` /
+`PUT /api/fornecedor/logo`); a logo de **qualquer** empresa é servida cross-tenant por
+`GET /api/empresas/:id/logo` (só precisa estar logado — é branding, não é dado sensível) — é o que o
+card do parceiro usa.
 
 ### Stock-by-video (`/produtos/estoque-video`)
 

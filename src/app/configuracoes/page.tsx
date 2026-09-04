@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
+import CampoFoto from "@/components/CampoFoto";
 import BotaoCopiar from "@/components/BotaoCopiar";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
@@ -41,6 +42,8 @@ export default function Configuracoes() {
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
+  const [logoPreview, setLogoPreview] = useState("");
+  const [salvandoLogo, setSalvandoLogo] = useState(false);
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -76,6 +79,7 @@ export default function Configuracoes() {
           pixChave: e.pix_chave ?? "",
           pixNome: e.pix_nome ?? "",
         });
+        if (e.tem_logo) setLogoPreview("/api/empresa/logo");
       } catch (e) {
         setErro(true);
         setAviso(e instanceof Error ? e.message : "Não foi possível carregar.");
@@ -84,6 +88,44 @@ export default function Configuracoes() {
       }
     })();
   }, []);
+
+  async function mudarLogo(dataUrl: string) {
+    setSalvandoLogo(true);
+    setErro(false);
+    try {
+      const r = await fetch("/api/empresa/logo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logo: dataUrl }),
+      });
+      if (!r.ok) throw new Error();
+      setLogoPreview(dataUrl);
+      setAviso("Logo salva.");
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível salvar a logo.");
+    } finally {
+      setSalvandoLogo(false);
+    }
+  }
+
+  async function removerLogo() {
+    setSalvandoLogo(true);
+    try {
+      const r = await fetch("/api/empresa/logo", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logo: "" }),
+      });
+      if (!r.ok) throw new Error();
+      setLogoPreview("");
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível remover a logo.");
+    } finally {
+      setSalvandoLogo(false);
+    }
+  }
 
   async function salvar() {
     setSalvando(true);
@@ -146,6 +188,24 @@ export default function Configuracoes() {
                 largo
                 {...comum("horario")}
               />
+            </div>
+
+            <div className="rotulo" style={{ marginTop: 12 }}>
+              <CampoFoto
+                rotulo={salvandoLogo ? "Logo da empresa (salvando…)" : "Logo da empresa"}
+                semCaptura
+                preview={logoPreview}
+                aoEscolher={mudarLogo}
+                aoRemover={logoPreview ? removerLogo : undefined}
+                aoErro={(m) => {
+                  setErro(true);
+                  setAviso(m);
+                }}
+              />
+              <p className="campo-foto-dica">
+                Aparece pros outros lojistas no módulo Comércios grandes, quando você compartilhar
+                um levantamento de preço.
+              </p>
             </div>
           </section>
 

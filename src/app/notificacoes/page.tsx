@@ -21,6 +21,7 @@ const ICONE: Record<string, string> = {
   pedido: "🧾",
   cadastro: "🏢",
   sistema: "🔔",
+  cotacao: "💹",
 };
 
 export default function Notificacoes() {

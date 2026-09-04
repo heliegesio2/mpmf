@@ -17,7 +17,13 @@ type Aviso = {
   lida: boolean;
   criado_em: string;
 };
-const ICONE_AVISO: Record<string, string> = { anotacao: "📝", pedido: "📦", cadastro: "🏢", sistema: "🔔" };
+const ICONE_AVISO: Record<string, string> = {
+  anotacao: "📝",
+  pedido: "📦",
+  cadastro: "🏢",
+  sistema: "🔔",
+  cotacao: "💹",
+};
 
 type Sessao = {
   nome: string;
