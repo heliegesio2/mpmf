@@ -14,6 +14,7 @@ type Anotacao = {
   concluida: boolean;
   criado_em: string;
   tem_foto: boolean;
+  de_admin: boolean;
 };
 
 const FILTROS = [
@@ -183,11 +184,12 @@ export default function Anotacoes() {
     if (!confirm("Excluir esta anotação? Essa ação não tem volta.")) return;
     try {
       const r = await fetch(`/api/anotacoes/${a.id}`, { method: "DELETE" });
-      if (!r.ok) throw new Error();
+      const dados = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível excluir.");
       await carregar(filtro);
-    } catch {
+    } catch (e) {
       setErro(true);
-      setAviso("Não foi possível excluir.");
+      setAviso(e instanceof Error ? e.message : "Não foi possível excluir.");
     }
   }
 
@@ -320,29 +322,46 @@ export default function Anotacoes() {
                 </span>
 
                 <span className="rotulo-item">
-                  <span className="anotacao-texto">{a.texto}</span>
+                  <span className="anotacao-texto">
+                    {a.de_admin && (
+                      <span className="selo" data-situacao="pendente">
+                        aviso da administração
+                      </span>
+                    )}{" "}
+                    {a.de_admin ? (
+                      <span className="html-aviso" dangerouslySetInnerHTML={{ __html: a.texto }} />
+                    ) : (
+                      a.texto
+                    )}
+                  </span>
                   <span className="sub anotacao-rodape">
                     {(sinal === "atrasado" || sinal === "hoje") && (
                       <span className="anotacao-alerta" data-sinal={sinal}>
                         {sinal === "atrasado" ? "⏰ atrasado" : "⏰ hoje"}
                       </span>
                     )}
-                    <label>
-                      alerta:{" "}
-                      <input
-                        type="date"
-                        className="anotacao-data"
-                        value={a.data_alerta ?? ""}
-                        onChange={(e) => mudarAlerta(a, e.target.value)}
-                        aria-label="Data do alerta"
-                      />
-                    </label>
+                    {a.de_admin ? (
+                      <span>alerta: {a.data_alerta ?? "—"}</span>
+                    ) : (
+                      <label>
+                        alerta:{" "}
+                        <input
+                          type="date"
+                          className="anotacao-data"
+                          value={a.data_alerta ?? ""}
+                          onChange={(e) => mudarAlerta(a, e.target.value)}
+                          aria-label="Data do alerta"
+                        />
+                      </label>
+                    )}
                   </span>
                 </span>
 
-                <button className="botao mini perigo" onClick={() => excluir(a)}>
-                  Excluir
-                </button>
+                {!a.de_admin && (
+                  <button className="botao mini perigo" onClick={() => excluir(a)}>
+                    Excluir
+                  </button>
+                )}
               </li>
             );
           })}

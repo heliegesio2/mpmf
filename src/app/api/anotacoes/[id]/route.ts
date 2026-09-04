@@ -46,8 +46,16 @@ export async function DELETE(_request: Request, { params }: Ctx) {
   }
 
   try {
-    const ok = await excluirAnotacao(empresaId, id);
-    if (!ok) return NextResponse.json({ erro: "Anotação não encontrada." }, { status: 404 });
+    const resultado = await excluirAnotacao(empresaId, id);
+    if (resultado === "nao_encontrada") {
+      return NextResponse.json({ erro: "Anotação não encontrada." }, { status: 404 });
+    }
+    if (resultado === "bloqueada") {
+      return NextResponse.json(
+        { erro: "Esse é um aviso da administração — só dá pra marcar como concluído." },
+        { status: 403 }
+      );
+    }
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("Falha ao excluir anotação:", e);

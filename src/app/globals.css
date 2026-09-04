@@ -1159,6 +1159,15 @@ html[data-fonte="grande"] { zoom: 1.5; }
   display: block;
   white-space: pre-wrap;
 }
+/* conteúdo HTML de um aviso do super admin — texto puro continua pre-wrap */
+.html-aviso {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+.html-aviso :first-child { margin-top: 0; }
+.html-aviso :last-child { margin-bottom: 0; }
+.html-aviso img { max-width: 100%; height: auto; border-radius: 8px; }
+.html-aviso a { color: var(--azul); }
 .anotacao-rodape {
   display: flex;
   flex-wrap: wrap;
@@ -1286,6 +1295,11 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .forma-card strong {
   font-family: "IBM Plex Mono", monospace;
   font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.forma-card-pct {
+  font-size: 11px;
+  color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
 .forma-card[data-forma="dinheiro"] { border-left-color: var(--ok); }

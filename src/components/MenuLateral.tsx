@@ -94,6 +94,7 @@ const GRUPO_ADMIN: GrupoMenu = {
   itens: [
     { href: "/admin/empresas", rotulo: "Empresas", descricao: "Aprovar ou reprovar" },
     { href: "/admin/fornecedores", rotulo: "Fornecedores", descricao: "Aprovar cadastros e bairros" },
+    { href: "/admin/avisos", rotulo: "Enviar notificação", descricao: "Aviso pra uma loja ou pra todas" },
   ],
 };
 

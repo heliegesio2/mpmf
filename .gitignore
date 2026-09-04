@@ -39,3 +39,6 @@ client_secret_*.json
 # certificados self-signed do `next dev --experimental-https`
 certificates/
 certificados/
+
+.vercel
+.env*

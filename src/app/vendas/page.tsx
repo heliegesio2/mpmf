@@ -46,8 +46,15 @@ function paraDataLocal(iso: string): Date {
   return new Date(a, m - 1, d);
 }
 
+/** data local de N dias atrás, no formato YYYY-MM-DD. */
+function haDiasISO(dias: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - dias);
+  return d.toLocaleDateString("en-CA");
+}
+
 export default function Vendas() {
-  const [de, setDe] = useState(hojeISO);
+  const [de, setDe] = useState(() => haDiasISO(7));
   const [ate, setAte] = useState(hojeISO);
   const [itens, setItens] = useState<Venda[]>([]);
   const [carregando, setCarregando] = useState(true);
@@ -133,6 +140,9 @@ export default function Vendas() {
                   <span className="forma-card-rotulo">{ROTULO_FORMA[f] ?? f}</span>
                 </span>
                 <strong>R$ {moeda.format(porForma[f])}</strong>
+                <span className="forma-card-pct">
+                  {total > 0 ? Math.round((porForma[f] / total) * 100) : 0}% do total
+                </span>
               </div>
             ))}
           </div>

@@ -12,6 +12,8 @@ type Aviso = {
   link: string | null;
   lida: boolean;
   criado_em: string;
+  /** `corpo` é um bloco de HTML (aviso do super admin) — renderiza como tal. */
+  html?: boolean;
 };
 
 const ICONE: Record<string, string> = {
@@ -106,7 +108,15 @@ export default function Notificacoes() {
                 </span>
                 <span className="aviso-texto">
                   <strong>{a.titulo}</strong>
-                  {a.corpo && <span className="sub">{a.corpo}</span>}
+                  {a.corpo &&
+                    (a.html ? (
+                      <span
+                        className="sub html-aviso"
+                        dangerouslySetInnerHTML={{ __html: a.corpo }}
+                      />
+                    ) : (
+                      <span className="sub">{a.corpo}</span>
+                    ))}
                   <span className="aviso-quando">{quando(a.criado_em)}</span>
                 </span>
               </button>

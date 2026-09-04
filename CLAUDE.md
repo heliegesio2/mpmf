@@ -424,10 +424,15 @@ RETURNING id, estoque, estoque_minimo` per line, never negative. The route retur
 receipt shows each item's remaining stock as a chip under its name — `.chip-estoque-venda`,
 solid red only when `critico`.
 
-**`/vendas`** — the sales history. Two `<input type="date">` (De / Até, both default to the
-local today), `GET /api/vendas?de=&ate=` → `listarVendas` (filters on `venda.data`, `json_agg`s
+**`/vendas`** — the sales history. Two `<input type="date">` (De defaults to **7 days before today**,
+Até defaults to today), `GET /api/vendas?de=&ate=` → `listarVendas` (filters on `venda.data`, `json_agg`s
 the payment parts), a period total, and a list: time + item count + `forma R$ valor + …` +
 total. In the **balcão** menu group, labeled "Vendas do dia" (distinct from `/venda`).
+
+**Payment-method cards** — `.formas-pagamento`/`.forma-card`, one per `forma` that has a nonzero total in
+the period (dinheiro/débito/crédito/pix/fiado, plus any other value found), each with an icon
+(`ICONE_FORMA`), the R$ total, and the **% of the period total** it represents. All computed client-side
+from the same `itens` the list already has — no separate endpoint.
 
 **Stock field gotcha:** the DB returns `numeric` as `"3.000"`. `FormularioProduto` must load
 `estoque`/`estoque_minimo` as `String(Number(p.estoque))` and send `estoque` back as **raw text**
@@ -607,6 +612,39 @@ lerFotoAnotacao.ts` → `POST /api/anotacoes/interpretar-foto` → `{nome}`): wr
 list becomes `- ` lines, a bare product becomes "marca + tipo + peso"; the result is appended to the
 note's `texto` (in the form via `<CampoFoto aoIdentificarNome>` + `urlIdentificar`; on the inline
 add-photo via a `PATCH`).
+
+**Aviso repetido a cada 2 dias (`db/33`)** — `sincronizarAvisosDeAnotacoes` (called at the top of `GET
+/api/notificacoes`) used to materialize an aviso once per anotação/usuário (idempotent by `chave`) and
+never again. Now it also **resurrects** it: `notificacao.lida_em` (set in `marcarNotificacaoLida`/
+`marcarTodasLidas`) lets a second query reset `lida=false, lida_em=NULL, criado_em=now()` on that same
+row when it's been read for **≥ 2 days** and the anotação is still open and due — so the bell pings again
+every 2 days until the shopkeeper marks the note `concluida` or deletes it (either stops the cycle: a
+concluded note drops out of the `WHERE NOT concluida` in both queries, and `excluirAnotacao` removes the
+`notificacao` rows too).
+
+**Avisos do super admin (`db/33`, `/admin/avisos`)** — "Enviar notificação": a super-admin-only screen
+(textarea + mic, `<CampoFoto semCaptura>` for an image, "Enviar para todos os clientes" checkbox
+(default on; unchecked shows a store search hitting `GET /api/empresas?situacao=aprovada&q=`) and
+"Aviso imediato" checkbox (default on; unchecked shows a date picker, min today)). `POST
+/api/admin/avisos` (`exigirSuperAdmin`) doesn't invent new delivery plumbing — `enviarAvisoAdmin` just
+calls `criarAnotacao(empresaId, texto, dataAlerta, foto, deAdmin=true)` once per target store (`empresaId`
+given, or every `situacao='aprovada'` store when "todos" is checked), reusing the entire existing
+anotação/aviso chain (bell badge, dropdown, `/notificacoes`, `/anotacoes`) — a "scheduled" send is just a
+future `data_alerta` that the existing due-date sync fires on its own.
+
+`anotacao.de_admin` marks these: the store **cannot edit or delete** them (`editarAnotacao` silently
+drops `texto`/`dataAlerta` changes when `de_admin`, `concluida` still works; `excluirAnotacao` returns
+`"bloqueada"` → 403) — the only action is the existing "concluir" checkbox. The `/anotacoes` list shows a
+`.selo` "aviso da administração" badge on them.
+
+**The message can be an HTML block** — `notificacao.html` (set to `de_admin`'s value when
+`sincronizarAvisosDeAnotacoes` materializes the row) tells `/notificacoes` to render `corpo` via
+`dangerouslySetInnerHTML` (`.html-aviso` class: resets nested margins, caps images, styles links)
+instead of plain text; `/anotacoes` does the same for `a.texto` whenever `de_admin` is true. Trust
+boundary: only `exigirSuperAdmin()` can create a `de_admin` anotação, so this is the platform operator's
+own broadcast content, not arbitrary user input — a regular store's own anotações are never rendered as
+HTML. The bell dropdown/`titulo` preview strips tags (`regexp_replace(texto, '<[^>]*>', '', 'g')`) since
+that's a plain-text-only surface.
 
 **Venda por foto (`/venda/foto`)** — a "📷 Foto do balcão" button on `/venda` opens it: the shopkeeper
 photographs the products the customer put on the counter, `src/lib/lerVendaFoto.ts` (vision, mirrors

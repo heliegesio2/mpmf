@@ -419,6 +419,10 @@ const MIGRACOES_IDEMPOTENTES = [
   "CREATE INDEX IF NOT EXISTS ix_cotacao_lote_empresa ON cotacao_lote (empresa_id, estabelecimento, data DESC)",
   "ALTER TABLE cotacao_concorrente ADD COLUMN IF NOT EXISTS lote_id bigint REFERENCES cotacao_lote(id) ON DELETE CASCADE",
   "CREATE INDEX IF NOT EXISTS ix_cotacao_conc_lote ON cotacao_concorrente (lote_id)",
+  // db/33 — avisos do super admin (viram anotação; loja só marca lida, não exclui) + reaviso a cada 2 dias
+  "ALTER TABLE anotacao ADD COLUMN IF NOT EXISTS de_admin boolean NOT NULL DEFAULT false",
+  "ALTER TABLE notificacao ADD COLUMN IF NOT EXISTS lida_em timestamptz",
+  "ALTER TABLE notificacao ADD COLUMN IF NOT EXISTS html boolean NOT NULL DEFAULT false",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1496,10 +1500,13 @@ export type Anotacao = {
   concluida: boolean;
   criado_em: string;
   tem_foto: boolean;
+  /** Veio de um aviso do super admin — a loja só pode marcar como concluída, não excluir. */
+  de_admin: boolean;
 };
 
 const CAMPOS_ANOTACAO =
-  "id, texto, data_alerta::text AS data_alerta, concluida, criado_em, (foto IS NOT NULL AND foto <> '') AS tem_foto";
+  "id, texto, data_alerta::text AS data_alerta, concluida, criado_em, " +
+  "(foto IS NOT NULL AND foto <> '') AS tem_foto, de_admin";
 
 export async function listarAnotacoes(empresaId: number, situacao?: string): Promise<Anotacao[]> {
   await garantirSchema();
@@ -1523,14 +1530,15 @@ export async function criarAnotacao(
   empresaId: number,
   texto: string,
   dataAlerta: string | null,
-  foto?: string
+  foto?: string,
+  deAdmin = false
 ): Promise<Anotacao> {
   await garantirSchema();
   const { rows } = await pool.query<Anotacao>(
-    `INSERT INTO anotacao (empresa_id, texto, data_alerta, foto)
-     VALUES ($1, $2, $3::date, NULLIF($4, ''))
+    `INSERT INTO anotacao (empresa_id, texto, data_alerta, foto, de_admin)
+     VALUES ($1, $2, $3::date, NULLIF($4, ''), $5)
      RETURNING ${CAMPOS_ANOTACAO}`,
-    [empresaId, texto, dataAlerta || null, foto ?? ""]
+    [empresaId, texto, dataAlerta || null, foto ?? "", deAdmin]
   );
   return rows[0];
 }
@@ -1557,24 +1565,35 @@ export async function atualizarFotoAnotacao(
   return (r.rowCount ?? 0) > 0;
 }
 
-/** Alterna concluida, ou (com `texto`/`dataAlerta`) edita o conteúdo. */
+/**
+ * Alterna concluida, ou (com `texto`/`dataAlerta`) edita o conteúdo. Um aviso
+ * do super admin (`de_admin`) só aceita `concluida` — a loja não edita o
+ * conteúdo, só marca como concluído.
+ */
 export async function editarAnotacao(
   empresaId: number,
   id: number,
   campos: { concluida?: boolean; texto?: string; dataAlerta?: string | null }
 ): Promise<Anotacao | null> {
   await garantirSchema();
+  const { rows: atual } = await pool.query<{ de_admin: boolean }>(
+    "SELECT de_admin FROM anotacao WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  if (!atual[0]) return null;
+  const bloqueado = atual[0].de_admin;
+
   const sets: string[] = [];
   const vals: unknown[] = [id, empresaId];
   if (campos.concluida !== undefined) {
     vals.push(campos.concluida);
     sets.push(`concluida = $${vals.length}`);
   }
-  if (campos.texto !== undefined) {
+  if (campos.texto !== undefined && !bloqueado) {
     vals.push(campos.texto);
     sets.push(`texto = $${vals.length}`);
   }
-  if (campos.dataAlerta !== undefined) {
+  if (campos.dataAlerta !== undefined && !bloqueado) {
     vals.push(campos.dataAlerta || null);
     sets.push(`data_alerta = $${vals.length}::date`);
   }
@@ -1595,10 +1614,21 @@ export async function editarAnotacao(
   return rows[0] ?? null;
 }
 
-export async function excluirAnotacao(empresaId: number, id: number): Promise<boolean> {
+/** "ok" | "bloqueada" (é um aviso do super admin — a loja não pode excluir) | "nao_encontrada" */
+export async function excluirAnotacao(
+  empresaId: number,
+  id: number
+): Promise<"ok" | "bloqueada" | "nao_encontrada"> {
   await garantirSchema();
-  const r = await pool.query("DELETE FROM anotacao WHERE id = $1 AND empresa_id = $2", [id, empresaId]);
-  return (r.rowCount ?? 0) > 0;
+  const { rows } = await pool.query<{ de_admin: boolean }>(
+    "SELECT de_admin FROM anotacao WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  if (!rows[0]) return "nao_encontrada";
+  if (rows[0].de_admin) return "bloqueada";
+  await pool.query("DELETE FROM anotacao WHERE id = $1 AND empresa_id = $2", [id, empresaId]);
+  await pool.query("DELETE FROM notificacao WHERE chave LIKE 'anotacao:' || $1 || ':%'", [id]);
+  return "ok";
 }
 
 /** Quantas anotações abertas já estão no dia do alerta (ou atrasadas). */
@@ -1611,6 +1641,34 @@ export async function anotacoesEmAlerta(empresaId: number): Promise<number> {
     [empresaId]
   );
   return Number(rows[0]?.total ?? 0);
+}
+
+/** ids das lojas aprovadas — pra disparar um aviso "pra todos os clientes". */
+export async function empresasAprovadasIds(): Promise<number[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ id: number }>(
+    "SELECT id FROM empresa WHERE situacao = 'aprovada'"
+  );
+  return rows.map((r) => r.id);
+}
+
+/**
+ * Aviso do super admin: vira uma anotação (`de_admin = true`) em cada loja
+ * alvo, com a data de alerta escolhida (hoje = imediato). Reusa toda a cadeia
+ * de aviso já existente (sino, /notificacoes, /anotacoes).
+ */
+export async function enviarAvisoAdmin(d: {
+  empresaId: number | null; // null = todas as lojas aprovadas
+  texto: string;
+  dataAlerta: string;
+  foto?: string;
+}): Promise<number> {
+  await garantirSchema();
+  const alvos = d.empresaId !== null ? [d.empresaId] : await empresasAprovadasIds();
+  for (const empresaId of alvos) {
+    await criarAnotacao(empresaId, d.texto, d.dataAlerta, d.foto, true);
+  }
+  return alvos.length;
 }
 
 // ---------- clientes ----------
@@ -2968,6 +3026,8 @@ export type Notificacao = {
   link: string | null;
   lida: boolean;
   criado_em: string;
+  /** `corpo` é um bloco de HTML (avisos do super admin) — renderizar como tal. */
+  html: boolean;
 };
 
 export type NovaNotificacao = {
@@ -2985,7 +3045,7 @@ function condDestino(d: Destino, base = 1): { where: string; params: unknown[] }
     : { where: `fornecedor_publico_id = $${base}`, params: [d.fornecedorId] };
 }
 
-const CAMPOS_NOTIF = "id, tipo, titulo, corpo, link, lida, criado_em";
+const CAMPOS_NOTIF = "id, tipo, titulo, corpo, link, lida, criado_em, html";
 
 /** Cria um aviso pro destinatário. `chave` presente = idempotente. */
 export async function notificar(d: Destino, n: NovaNotificacao): Promise<void> {
@@ -3054,7 +3114,7 @@ export async function marcarNotificacaoLida(d: Destino, id: number): Promise<voi
   await garantirSchema();
   const { where, params } = condDestino(d, 2);
   await pool.query(
-    `UPDATE notificacao SET lida = true WHERE id = $1 AND ${where}`,
+    `UPDATE notificacao SET lida = true, lida_em = now() WHERE id = $1 AND ${where} AND NOT lida`,
     [id, ...params]
   );
 }
@@ -3062,12 +3122,18 @@ export async function marcarNotificacaoLida(d: Destino, id: number): Promise<voi
 export async function marcarTodasLidas(d: Destino): Promise<void> {
   await garantirSchema();
   const { where, params } = condDestino(d);
-  await pool.query(`UPDATE notificacao SET lida = true WHERE ${where} AND NOT lida`, params);
+  await pool.query(
+    `UPDATE notificacao SET lida = true, lida_em = now() WHERE ${where} AND NOT lida`,
+    params
+  );
 }
 
 /**
  * Materializa, pro usuário dado, um aviso por anotação da empresa que está no
- * dia do alerta (ou atrasada) e ainda aberta. Idempotente pela `chave`.
+ * dia do alerta (ou atrasada) e ainda aberta. Idempotente pela `chave` na
+ * primeira vez; depois, se o aviso já foi lido e a anotação continua aberta e
+ * devida, "ressuscita" o mesmo aviso (volta a não lido) a cada 2 dias — só
+ * para de avisar quando o usuário concluir a anotação ou excluí-la.
  */
 export async function sincronizarAvisosDeAnotacoes(
   usuarioId: number,
@@ -3075,14 +3141,27 @@ export async function sincronizarAvisosDeAnotacoes(
 ): Promise<void> {
   await garantirSchema();
   await pool.query(
-    `INSERT INTO notificacao (usuario_id, tipo, titulo, corpo, link, chave)
+    `INSERT INTO notificacao (usuario_id, tipo, titulo, corpo, link, chave, html)
      SELECT $1::bigint, 'anotacao',
-            'Lembrete: ' || left(texto, 70),
-            texto, '/anotacoes', 'anotacao:' || id || ':' || $1::bigint
+            CASE WHEN de_admin THEN 'Aviso da administração: ' ELSE 'Lembrete: ' END ||
+              left(regexp_replace(texto, '<[^>]*>', '', 'g'), 70),
+            texto, '/anotacoes', 'anotacao:' || id || ':' || $1::bigint, de_admin
        FROM anotacao
       WHERE empresa_id = $2::bigint AND NOT concluida
         AND data_alerta IS NOT NULL AND data_alerta <= CURRENT_DATE
      ON CONFLICT (coalesce(usuario_id, 0), coalesce(fornecedor_publico_id, 0), chave) WHERE chave IS NOT NULL DO NOTHING`,
+    [usuarioId, empresaId]
+  );
+  await pool.query(
+    `UPDATE notificacao n
+        SET lida = false, lida_em = NULL, criado_em = now()
+       FROM anotacao a
+      WHERE n.usuario_id = $1::bigint
+        AND n.tipo = 'anotacao'
+        AND n.chave = 'anotacao:' || a.id || ':' || $1::bigint
+        AND n.lida AND n.lida_em IS NOT NULL AND n.lida_em <= now() - interval '2 days'
+        AND a.empresa_id = $2::bigint AND NOT a.concluida
+        AND a.data_alerta IS NOT NULL AND a.data_alerta <= CURRENT_DATE`,
     [usuarioId, empresaId]
   );
 }
