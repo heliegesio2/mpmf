@@ -423,6 +423,10 @@ const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE anotacao ADD COLUMN IF NOT EXISTS de_admin boolean NOT NULL DEFAULT false",
   "ALTER TABLE notificacao ADD COLUMN IF NOT EXISTS lida_em timestamptz",
   "ALTER TABLE notificacao ADD COLUMN IF NOT EXISTS html boolean NOT NULL DEFAULT false",
+  // db/34 — título opcional da anotação (aviso do super admin)
+  "ALTER TABLE anotacao ADD COLUMN IF NOT EXISTS titulo text",
+  // db/35 — link opcional da anotação (aviso do super admin aponta pro módulo ajustado)
+  "ALTER TABLE anotacao ADD COLUMN IF NOT EXISTS link text",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1495,6 +1499,7 @@ export async function excluirCasco(empresaId: number, id: number): Promise<boole
 
 export type Anotacao = {
   id: number;
+  titulo: string | null;
   texto: string;
   data_alerta: string | null;
   concluida: boolean;
@@ -1502,11 +1507,13 @@ export type Anotacao = {
   tem_foto: boolean;
   /** Veio de um aviso do super admin — a loja só pode marcar como concluída, não excluir. */
   de_admin: boolean;
+  /** Link pra dentro do sistema — o aviso aponta pra ele em vez de /anotacoes. */
+  link: string | null;
 };
 
 const CAMPOS_ANOTACAO =
-  "id, texto, data_alerta::text AS data_alerta, concluida, criado_em, " +
-  "(foto IS NOT NULL AND foto <> '') AS tem_foto, de_admin";
+  "id, titulo, texto, data_alerta::text AS data_alerta, concluida, criado_em, " +
+  "(foto IS NOT NULL AND foto <> '') AS tem_foto, de_admin, link";
 
 export async function listarAnotacoes(empresaId: number, situacao?: string): Promise<Anotacao[]> {
   await garantirSchema();
@@ -1531,14 +1538,16 @@ export async function criarAnotacao(
   texto: string,
   dataAlerta: string | null,
   foto?: string,
-  deAdmin = false
+  deAdmin = false,
+  titulo?: string | null,
+  link?: string | null
 ): Promise<Anotacao> {
   await garantirSchema();
   const { rows } = await pool.query<Anotacao>(
-    `INSERT INTO anotacao (empresa_id, texto, data_alerta, foto, de_admin)
-     VALUES ($1, $2, $3::date, NULLIF($4, ''), $5)
+    `INSERT INTO anotacao (empresa_id, texto, data_alerta, foto, de_admin, titulo, link)
+     VALUES ($1, $2, $3::date, NULLIF($4, ''), $5, $6, $7)
      RETURNING ${CAMPOS_ANOTACAO}`,
-    [empresaId, texto, dataAlerta || null, foto ?? "", deAdmin]
+    [empresaId, texto, dataAlerta || null, foto ?? "", deAdmin, titulo?.trim() || null, link?.trim() || null]
   );
   return rows[0];
 }
@@ -1659,16 +1668,22 @@ export async function empresasAprovadasIds(): Promise<number[]> {
  */
 export async function enviarAvisoAdmin(d: {
   empresaId: number | null; // null = todas as lojas aprovadas
+  titulo: string;
   texto: string;
   dataAlerta: string;
   foto?: string;
+  /** Link pra dentro do sistema (ex.: o módulo que mudou) — padrão /anotacoes. */
+  link?: string | null;
+  /** Loja do super admin que está enviando — sempre recebe uma cópia, pra conferir como ficou. */
+  remetenteEmpresaId?: number | null;
 }): Promise<number> {
   await garantirSchema();
-  const alvos = d.empresaId !== null ? [d.empresaId] : await empresasAprovadasIds();
+  const alvos = new Set<number>(d.empresaId !== null ? [d.empresaId] : await empresasAprovadasIds());
+  if (d.remetenteEmpresaId) alvos.add(d.remetenteEmpresaId);
   for (const empresaId of alvos) {
-    await criarAnotacao(empresaId, d.texto, d.dataAlerta, d.foto, true);
+    await criarAnotacao(empresaId, d.texto, d.dataAlerta, d.foto, true, d.titulo, d.link);
   }
-  return alvos.length;
+  return alvos.size;
 }
 
 // ---------- clientes ----------
@@ -3143,9 +3158,12 @@ export async function sincronizarAvisosDeAnotacoes(
   await pool.query(
     `INSERT INTO notificacao (usuario_id, tipo, titulo, corpo, link, chave, html)
      SELECT $1::bigint, 'anotacao',
-            CASE WHEN de_admin THEN 'Aviso da administração: ' ELSE 'Lembrete: ' END ||
-              left(regexp_replace(texto, '<[^>]*>', '', 'g'), 70),
-            texto, '/anotacoes', 'anotacao:' || id || ':' || $1::bigint, de_admin
+            CASE
+              WHEN de_admin AND titulo IS NOT NULL AND titulo <> '' THEN titulo
+              WHEN de_admin THEN 'Aviso da administração: ' || left(regexp_replace(texto, '<[^>]*>', '', 'g'), 70)
+              ELSE 'Lembrete: ' || left(regexp_replace(texto, '<[^>]*>', '', 'g'), 70)
+            END,
+            texto, coalesce(nullif(link, ''), '/anotacoes'), 'anotacao:' || id || ':' || $1::bigint, de_admin
        FROM anotacao
       WHERE empresa_id = $2::bigint AND NOT concluida
         AND data_alerta IS NOT NULL AND data_alerta <= CURRENT_DATE

@@ -12,29 +12,38 @@ function hojeISO(): string {
 }
 
 /**
- * POST /api/admin/avisos { texto, foto?, empresaId? (ausente/null = todos os
- * clientes), imediato: boolean, dataEnvio? }
+ * POST /api/admin/avisos { titulo, texto, foto?, link?, empresaId? (ausente/
+ * null = todos os clientes), imediato: boolean, dataEnvio? }
  *
  * Vira uma anotação (`de_admin = true`) em cada loja alvo — reusa toda a
  * cadeia de aviso (sino, /notificacoes, /anotacoes) que já existe.
  */
 export async function POST(request: Request) {
-  const { erro } = await exigirSuperAdmin();
+  const { sessao, erro } = await exigirSuperAdmin();
   if (erro) return erro;
 
   try {
     const c = (await request.json()) as {
+      titulo?: string;
       texto?: string;
       foto?: string;
+      link?: string;
       empresaId?: number | null;
       imediato?: boolean;
       dataEnvio?: string;
     };
+    const titulo = String(c.titulo ?? "").trim();
+    if (titulo.length < 2) {
+      return NextResponse.json({ erro: "Escreva o título do aviso." }, { status: 400 });
+    }
     const texto = String(c.texto ?? "").trim();
     if (texto.length < 2) {
       return NextResponse.json({ erro: "Escreva o texto da notificação." }, { status: 400 });
     }
     const foto = typeof c.foto === "string" && c.foto.startsWith("data:image/") ? c.foto : undefined;
+    // só caminho interno (começa com "/") — nunca um link externo
+    const linkBruto = String(c.link ?? "").trim();
+    const link = linkBruto.startsWith("/") ? linkBruto.slice(0, 200) : null;
     const empresaId =
       typeof c.empresaId === "number" && Number.isFinite(c.empresaId) ? c.empresaId : null;
 
@@ -50,9 +59,12 @@ export async function POST(request: Request) {
 
     const totalLojas = await enviarAvisoAdmin({
       empresaId,
+      titulo: titulo.slice(0, 200),
       texto: texto.slice(0, LIMITE_TEXTO),
       dataAlerta: dataEnvio,
       foto,
+      link,
+      remetenteEmpresaId: sessao.empresaId ?? null,
     });
 
     return NextResponse.json({ totalLojas, dataEnvio });

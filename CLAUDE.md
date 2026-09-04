@@ -636,20 +636,27 @@ every 2 days until the shopkeeper marks the note `concluida` or deletes it (eith
 concluded note drops out of the `WHERE NOT concluida` in both queries, and `excluirAnotacao` removes the
 `notificacao` rows too).
 
-**Avisos do super admin (`db/33`)** — "Enviar como aviso para lojas" lives **inside `/anotacoes`'s "Nova
-anotação" card itself**, not a separate flow to hunt for: a checkbox shown only when `GET
+**Avisos do super admin (`db/33`–`35`)** — "Enviar como aviso para lojas" lives **inside `/anotacoes`'s
+"Nova anotação" card itself**, not a separate flow to hunt for: a checkbox shown only when `GET
 /api/auth/sessao` says `papel === "super_admin"` (fetched client-side on mount) flips the same form
-(same `<CampoTextoRico>`, mic, `<CampoFoto>`, date field) into broadcast mode — "Enviar para todos os
-clientes" (default on; unchecked shows a store search hitting `GET /api/empresas?situacao=aprovada&q=`)
-and the existing date field becomes "Quando avisar (vazio = imediato)". Submitting in that mode posts to
-`POST /api/admin/avisos` instead of `POST /api/anotacoes`. **`/admin/avisos`** (Administração menu) is
-the same composer as its own standalone page — same components, same endpoint — for a super admin who
-navigates there directly instead; neither is more canonical, they just both exist. `POST
-/api/admin/avisos` (`exigirSuperAdmin`) doesn't invent new delivery plumbing — `enviarAvisoAdmin` just
-calls `criarAnotacao(empresaId, texto, dataAlerta, foto, deAdmin=true)` once per target store (`empresaId`
-given, or every `situacao='aprovada'` store when "todos" is checked), reusing the entire existing
-anotação/aviso chain (bell badge, dropdown, `/notificacoes`, `/anotacoes`) — a "scheduled" send is just a
-future `data_alerta` that the existing due-date sync fires on its own.
+(same `<CampoTextoRico>`, mic, `<CampoFoto>`, date field) into broadcast mode, adding two more required-
+ish fields: **título** (`<CampoVoz>`, required — becomes the notification's `titulo` instead of the
+auto "Aviso da administração: " + truncated text) and **link** (`<CampoVoz>`, optional path into the
+system, e.g. `/produtos/comercios-grandes` — becomes the notification's `link` instead of the default
+`/anotacoes`; server keeps only values starting with `/`, never an external URL). Plus "Enviar para
+todos os clientes" (default on; unchecked shows a store search hitting `GET
+/api/empresas?situacao=aprovada&q=`) and the existing date field becomes "Quando avisar (vazio =
+imediato)". Submitting in that mode posts to `POST /api/admin/avisos` instead of `POST /api/anotacoes`.
+**`/admin/avisos`** (Administração menu) is the same composer as its own standalone page — same
+components, same endpoint — for a super admin who navigates there directly instead; neither is more
+canonical, they just both exist. `POST /api/admin/avisos` (`exigirSuperAdmin`) doesn't invent new
+delivery plumbing — `enviarAvisoAdmin` just calls `criarAnotacao(empresaId, texto, dataAlerta, foto,
+deAdmin=true, titulo, link)` once per target store (`empresaId` given, or every `situacao='aprovada'`
+store when "todos" is checked, **plus always the sender's own `sessao.empresaId`** — a super admin
+running a store always gets a copy of their own broadcast, so they can check how it rendered before/
+after telling others), reusing the entire existing anotação/aviso chain (bell badge, dropdown,
+`/notificacoes`, `/anotacoes`) — a "scheduled" send is just a future `data_alerta` that the existing
+due-date sync fires on its own.
 
 `anotacao.de_admin` marks these: the store **cannot edit or delete** them (`editarAnotacao` silently
 drops `texto`/`dataAlerta` changes when `de_admin`, `concluida` still works; `excluirAnotacao` returns

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import CampoFoto from "@/components/CampoFoto";
 import CampoTextoRico from "@/components/CampoTextoRico";
+import { CampoVoz } from "@/components/CampoVoz";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
 import { comprimirParaDataURL } from "@/lib/imagemCliente";
 import { useVoz } from "@/lib/useVoz";
@@ -10,6 +11,7 @@ import { capitalizar } from "@/lib/voz";
 
 type Anotacao = {
   id: number;
+  titulo: string | null;
   texto: string;
   data_alerta: string | null;
   concluida: boolean;
@@ -46,6 +48,8 @@ export default function Anotacoes() {
   const [filtro, setFiltro] = useState("abertas");
   const [carregando, setCarregando] = useState(true);
   const [texto, setTexto] = useState("");
+  const [tituloAviso, setTituloAviso] = useState("");
+  const [linkAviso, setLinkAviso] = useState("");
   const [dataAlerta, setDataAlerta] = useState("");
   const [foto, setFoto] = useState("");
   const [fotoDoCard, setFotoDoCard] = useState<number | null>(null);
@@ -82,10 +86,17 @@ export default function Anotacoes() {
     return () => clearTimeout(t);
   }, [buscaLoja, paraTodos, lojaEscolhida, modoAviso]);
 
-  const { ouvir, parar, ouvindoCampo, disponivel } = useVoz({
+  const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (fala) => {
-      const trecho = escapeHtml(capitalizar(fala));
-      setTexto((t) => (t ? `${t} ${trecho}` : trecho));
+      const trecho = capitalizar(fala);
+      if (campoAtual.current === "titulo") {
+        setTituloAviso((t) => (t ? `${t} ${trecho}` : trecho));
+      } else if (campoAtual.current === "link") {
+        setLinkAviso((t) => (t ? `${t} ${trecho}` : trecho));
+      } else {
+        const escapado = escapeHtml(trecho);
+        setTexto((t) => (t ? `${t} ${escapado}` : escapado));
+      }
       setErro(false);
       setAviso("");
     },
@@ -120,6 +131,11 @@ export default function Anotacoes() {
 
   async function salvar() {
     if (textoVazio(texto)) return;
+    if (modoAviso && tituloAviso.trim().length < 2) {
+      setErro(true);
+      setAviso("Escreva o título do aviso.");
+      return;
+    }
     if (modoAviso && !paraTodos && !lojaEscolhida) {
       setErro(true);
       setAviso('Escolha a loja, ou marque "enviar para todos os clientes".');
@@ -133,8 +149,10 @@ export default function Anotacoes() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            titulo: tituloAviso.trim(),
             texto,
             foto: foto || undefined,
+            link: linkAviso.trim() || undefined,
             empresaId: paraTodos ? null : lojaEscolhida!.id,
             imediato: !dataAlerta,
             dataEnvio: dataAlerta || undefined,
@@ -143,8 +161,10 @@ export default function Anotacoes() {
         const dados = await r.json();
         if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível enviar.");
         setAviso(
-          `Aviso enviado para ${dados.totalLojas} loja(s)${dataAlerta ? ` — vai aparecer em ${dataAlerta.split("-").reverse().join("/")}` : " agora"}.`
+          `Aviso enviado para ${dados.totalLojas} loja(s)${dataAlerta ? ` — vai aparecer em ${dataAlerta.split("-").reverse().join("/")}` : " agora"} (você também recebe uma cópia pra conferir).`
         );
+        setTituloAviso("");
+        setLinkAviso("");
         setLojaEscolhida(null);
         setBuscaLoja("");
       } else {
@@ -278,6 +298,35 @@ export default function Anotacoes() {
             />{" "}
             📢 Enviar como aviso para lojas (em vez de anotação minha)
           </label>
+        )}
+
+        {modoAviso && (
+          <>
+            <CampoVoz
+              rotulo="Título do aviso"
+              campo="titulo"
+              valor={tituloAviso}
+              aoMudar={setTituloAviso}
+              placeholder="Ex.: Atualização do módulo de vendas"
+              ouvindo={ouvindoCampo === "titulo"}
+              temVoz={disponivel}
+              aoOuvir={ouvir}
+              aoParar={parar}
+              largo
+            />
+            <CampoVoz
+              rotulo="Link do sistema (opcional)"
+              campo="link"
+              valor={linkAviso}
+              aoMudar={setLinkAviso}
+              placeholder="Ex.: /produtos/comercios-grandes"
+              ouvindo={ouvindoCampo === "link"}
+              temVoz={disponivel}
+              aoOuvir={ouvir}
+              aoParar={parar}
+              largo
+            />
+          </>
         )}
 
         <div className="campo-anotacao">
@@ -467,7 +516,14 @@ export default function Anotacoes() {
                       <span className="selo" data-situacao="pendente">
                         aviso da administração
                       </span>
-                    )}{" "}
+                    )}
+                    {a.titulo && (
+                      <>
+                        <br />
+                        <strong>{a.titulo}</strong>
+                      </>
+                    )}
+                    <br />
                     <span dangerouslySetInnerHTML={{ __html: a.texto }} />
                   </span>
                   <span className="sub anotacao-rodape">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import CampoFoto from "@/components/CampoFoto";
 import CampoTextoRico from "@/components/CampoTextoRico";
+import { CampoVoz } from "@/components/CampoVoz";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -16,7 +17,9 @@ function escapeHtml(s: string): string {
 }
 
 export default function EnviarNotificacao() {
+  const [titulo, setTitulo] = useState("");
   const [texto, setTexto] = useState("");
+  const [link, setLink] = useState("");
   const [foto, setFoto] = useState("");
   const [paraTodos, setParaTodos] = useState(true);
   const [buscaLoja, setBuscaLoja] = useState("");
@@ -28,10 +31,17 @@ export default function EnviarNotificacao() {
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
 
-  const { ouvir, parar, ouvindoCampo, disponivel } = useVoz({
+  const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (fala) => {
-      const trecho = escapeHtml(capitalizar(fala));
-      setTexto((t) => (t ? `${t} ${trecho}` : trecho));
+      const trecho = capitalizar(fala);
+      if (campoAtual.current === "titulo") {
+        setTitulo((t) => (t ? `${t} ${trecho}` : trecho));
+      } else if (campoAtual.current === "link") {
+        setLink((t) => (t ? `${t} ${trecho}` : trecho));
+      } else {
+        const escapado = escapeHtml(trecho);
+        setTexto((t) => (t ? `${t} ${escapado}` : escapado));
+      }
       setErro(false);
       setAviso("");
     },
@@ -63,6 +73,11 @@ export default function EnviarNotificacao() {
 
   async function enviar() {
     if (textoVazio(texto)) return;
+    if (titulo.trim().length < 2) {
+      setErro(true);
+      setAviso("Escreva o título do aviso.");
+      return;
+    }
     if (!paraTodos && !lojaEscolhida) {
       setErro(true);
       setAviso("Escolha a loja, ou marque \"enviar para todos os clientes\".");
@@ -76,8 +91,10 @@ export default function EnviarNotificacao() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          titulo: titulo.trim(),
           texto,
           foto: foto || undefined,
+          link: link.trim() || undefined,
           empresaId: paraTodos ? null : lojaEscolhida!.id,
           imediato: enviarAgora,
           dataEnvio: enviarAgora ? undefined : dataEnvio,
@@ -88,9 +105,11 @@ export default function EnviarNotificacao() {
       setAviso(
         `Enviado para ${dados.totalLojas} loja(s)${
           enviarAgora ? " agora" : ` — vai aparecer em ${dataEnvio.split("-").reverse().join("/")}`
-        }.`
+        } (você também recebe uma cópia pra conferir).`
       );
+      setTitulo("");
       setTexto("");
+      setLink("");
       setFoto("");
       setLojaEscolhida(null);
       setBuscaLoja("");
@@ -108,7 +127,21 @@ export default function EnviarNotificacao() {
 
       <section className="cartao">
         <h2 className="titulo-cartao">Mensagem</h2>
-        <p className="ajuda-voz">
+
+        <CampoVoz
+          rotulo="Título do aviso"
+          campo="titulo"
+          valor={titulo}
+          aoMudar={setTitulo}
+          placeholder="Ex.: Atualização do módulo de vendas"
+          ouvindo={ouvindoCampo === "titulo"}
+          temVoz={disponivel}
+          aoOuvir={ouvir}
+          aoParar={parar}
+          largo
+        />
+
+        <p className="ajuda-voz" style={{ marginTop: 10 }}>
           Pode ser texto simples ou um bloco de HTML (negrito, link, lista…) — a loja recebe
           renderizado.
         </p>
@@ -148,6 +181,21 @@ export default function EnviarNotificacao() {
               setErro(true);
               setAviso(m);
             }}
+          />
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <CampoVoz
+            rotulo="Link do sistema (opcional)"
+            campo="link"
+            valor={link}
+            aoMudar={setLink}
+            placeholder="Ex.: /produtos/comercios-grandes"
+            ouvindo={ouvindoCampo === "link"}
+            temVoz={disponivel}
+            aoOuvir={ouvir}
+            aoParar={parar}
+            largo
           />
         </div>
       </section>
@@ -242,7 +290,7 @@ export default function EnviarNotificacao() {
         <button
           className="botao primario"
           onClick={enviar}
-          disabled={enviando || textoVazio(texto)}
+          disabled={enviando || textoVazio(texto) || titulo.trim().length < 2}
         >
           {enviando ? "Enviando…" : "Enviar notificação"}
         </button>
