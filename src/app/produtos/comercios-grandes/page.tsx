@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import { useVoz } from "@/lib/useVoz";
 import { extrairQuadros, type QuadroVideo } from "@/lib/quadrosDeVideo";
@@ -17,7 +17,9 @@ type Estado =
   | "extraindo"
   | "lendo"
   | "analisando"
-  | "resultado";
+  | "resultado"
+  | "lotes"
+  | "lote";
 
 type FonteReal = "video" | "foto" | "pdf";
 
@@ -44,7 +46,34 @@ type Analise = {
   itens: Resultado[];
 };
 
+type EstabelecimentoHistorico = {
+  estabelecimento: string;
+  loteId: number;
+  data: string;
+  qtdProdutos: number;
+  usuarioNome: string | null;
+  fonte: string;
+};
+
+type LoteResumo = {
+  id: number;
+  data: string;
+  qtdProdutos: number;
+  usuarioNome: string | null;
+  fonte: string;
+};
+
+type LoteDetalhe = {
+  id: number;
+  estabelecimento: string;
+  data: string;
+  usuarioNome: string | null;
+  fonte: string;
+  itens: { nome: string; preco: number; meuPreco: number | null }[];
+};
+
 const LOTE = 4;
+const ROTULO_FONTE: Record<string, string> = { video: "vídeo", foto: "foto", pdf: "PDF" };
 
 function dataBR(iso: string | null): string {
   if (!iso) return "";
@@ -83,13 +112,70 @@ export default function ComerciosGrandes() {
   const [analise, setAnalise] = useState<Analise | null>(null);
   const [erro, setErro] = useState("");
 
+  const [historico, setHistorico] = useState<EstabelecimentoHistorico[]>([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [estabSelecionado, setEstabSelecionado] = useState<string | null>(null);
+  const [lotesEstab, setLotesEstab] = useState<LoteResumo[]>([]);
+  const [loteAberto, setLoteAberto] = useState<LoteDetalhe | null>(null);
+  const [carregandoLote, setCarregandoLote] = useState(false);
+
+  async function carregarHistorico() {
+    setCarregandoHistorico(true);
+    try {
+      const r = await fetch("/api/produtos/comercios-grandes/historico");
+      const d = await r.json();
+      setHistorico(r.ok && Array.isArray(d.itens) ? d.itens : []);
+    } catch {
+      /* histórico é só um bônus visual — falha aqui não impede o resto */
+    } finally {
+      setCarregandoHistorico(false);
+    }
+  }
+  useEffect(() => {
+    carregarHistorico();
+  }, []);
+
+  async function abrirEstabelecimento(nome: string) {
+    setEstabSelecionado(nome);
+    setLotesEstab([]);
+    setEstado("lotes");
+    try {
+      const r = await fetch(
+        `/api/produtos/comercios-grandes/lotes?estabelecimento=${encodeURIComponent(nome)}`
+      );
+      const d = await r.json();
+      setLotesEstab(r.ok && Array.isArray(d.itens) ? d.itens : []);
+    } catch {
+      setErro("Não foi possível carregar os lançamentos.");
+    }
+  }
+
+  async function abrirLote(id: number) {
+    setEstado("lote");
+    setLoteAberto(null);
+    setCarregandoLote(true);
+    try {
+      const r = await fetch(`/api/produtos/comercios-grandes/lotes/${id}`);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.erro ?? "Não foi possível carregar.");
+      setLoteAberto(d.item as LoteDetalhe);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível carregar o lançamento.");
+      setEstado("lotes");
+    } finally {
+      setCarregandoLote(false);
+    }
+  }
+
   const { ouvir, parar, ouvindoCampo, disponivel } = useVoz({
     aoFinalizar: (texto) => setEstabelecimento((e) => (e ? `${e} ${texto}` : texto).trim()),
     aoErrar: (m) => setErro(m),
   });
 
   const nomeOk = estabelecimento.trim().length >= 2;
-  const emProcesso = estado !== "parado" && estado !== "resultado";
+  const emProcesso = (
+    ["rasterizando", "extraindo", "lendo", "analisando"] as Estado[]
+  ).includes(estado);
 
   const passos = useMemo(() => {
     if (fonteExibida === "video") {
@@ -140,6 +226,7 @@ export default function ComerciosGrandes() {
     }));
     setAnalise({ ...(d as Analise), itens });
     setEstado("resultado");
+    carregarHistorico(); // "sempre que eu cadastrar uma nova lista" — atualiza o grid
   }
 
   async function usarVideo(arquivo: File | undefined) {
@@ -267,11 +354,45 @@ export default function ComerciosGrandes() {
     setEstado("parado");
   }
 
+  function voltarAoHistorico() {
+    setErro("");
+    setEstabSelecionado(null);
+    setLotesEstab([]);
+    setLoteAberto(null);
+    setEstado("parado");
+  }
+
   return (
     <main className="tela">
       <header className="marca">
         Comércios grandes <span>•</span> preços dos concorrentes
       </header>
+
+      {estado === "parado" && historico.length > 0 && (
+        <section className="cartao">
+          <h2 className="titulo-cartao">Concorrentes já analisados</h2>
+          <div className="cg-grade">
+            {historico.map((h) => (
+              <button
+                type="button"
+                className="cg-grade-item"
+                key={h.estabelecimento}
+                onClick={() => abrirEstabelecimento(h.estabelecimento)}
+              >
+                <strong>{h.estabelecimento}</strong>
+                <span>Último lançamento: {dataBR(h.data)}</span>
+                <span>
+                  {h.qtdProdutos} produto(s) · {ROTULO_FONTE[h.fonte] ?? h.fonte}
+                </span>
+                <span className="cg-grade-usuario">por {h.usuarioNome ?? "—"}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+      {estado === "parado" && carregandoHistorico && historico.length === 0 && (
+        <p className="dica">Carregando histórico…</p>
+      )}
 
       {estado === "parado" && (
         <section className="cartao">
@@ -445,6 +566,96 @@ export default function ComerciosGrandes() {
               Nova análise
             </button>
           </div>
+        </>
+      )}
+
+      {estado === "lotes" && (
+        <>
+          <section className="cartao">
+            <button type="button" className="botao mini neutro" onClick={voltarAoHistorico}>
+              ← Voltar
+            </button>
+            <h2 className="titulo-cartao">{estabSelecionado}</h2>
+            <p className="dica">Lançamentos anteriores — toque num pra ver os produtos.</p>
+          </section>
+
+          {lotesEstab.length === 0 ? (
+            <p className="vazio">Nenhum lançamento encontrado.</p>
+          ) : (
+            <ul className="lista">
+              {lotesEstab.map((l) => (
+                <li
+                  key={l.id}
+                  className="lista-clicavel"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => abrirLote(l.id)}
+                  onKeyDown={(e) => e.key === "Enter" && abrirLote(l.id)}
+                >
+                  <span className="rotulo-item">
+                    {dataBR(l.data)}
+                    <span className="sub">
+                      {l.qtdProdutos} produto(s) · {ROTULO_FONTE[l.fonte] ?? l.fonte} · por{" "}
+                      {l.usuarioNome ?? "—"}
+                    </span>
+                  </span>
+                  <span aria-hidden="true">›</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      {estado === "lote" && (
+        <>
+          <section className="cartao">
+            <button
+              type="button"
+              className="botao mini neutro"
+              onClick={() => setEstado("lotes")}
+            >
+              ← Voltar
+            </button>
+            <h2 className="titulo-cartao">{loteAberto?.estabelecimento ?? estabSelecionado}</h2>
+            {loteAberto && (
+              <p className="dica">
+                {dataBR(loteAberto.data)} · <strong>{loteAberto.itens.length}</strong> produto(s) ·{" "}
+                {ROTULO_FONTE[loteAberto.fonte] ?? loteAberto.fonte} · lançado por{" "}
+                <strong>{loteAberto.usuarioNome ?? "—"}</strong>
+              </p>
+            )}
+          </section>
+
+          {carregandoLote ? (
+            <p className="vazio">Carregando…</p>
+          ) : (
+            <ul className="lista cg-lista">
+              {(loteAberto?.itens ?? []).map((it, i) => {
+                const dif =
+                  it.meuPreco !== null ? Math.round((it.preco - it.meuPreco) * 100) / 100 : null;
+                const sinal = dif === null ? "" : dif < 0 ? "barato" : dif > 0 ? "caro" : "igual";
+                return (
+                  <li className="cg-item" key={i}>
+                    <div className="cg-item-topo">
+                      <strong>{it.nome}</strong>
+                      <span className="cg-preco">R$ {paraMoeda(it.preco)}</span>
+                    </div>
+                    {it.meuPreco !== null && (
+                      <div className="cg-comparado" data-sinal={sinal}>
+                        Você vendia a R$ {paraMoeda(it.meuPreco)} —{" "}
+                        {dif! < 0
+                          ? `R$ ${paraMoeda(Math.abs(dif!))} mais barato lá`
+                          : dif! > 0
+                            ? `R$ ${paraMoeda(dif!)} mais caro lá`
+                            : "mesmo preço"}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </>
       )}
     </main>

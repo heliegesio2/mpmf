@@ -403,6 +403,22 @@ const MIGRACOES_IDEMPOTENTES = [
    )`,
   "CREATE UNIQUE INDEX IF NOT EXISTS ux_cotacao_conc_dia ON cotacao_concorrente (empresa_id, estabelecimento, nome_norm, data)",
   "CREATE INDEX IF NOT EXISTS ix_cotacao_conc_hist ON cotacao_concorrente (empresa_id, estabelecimento, nome_norm, data DESC)",
+  // db/32 — comércios grandes: lote (lançamento) agrupando uma análise por estabelecimento/dia
+  `CREATE TABLE IF NOT EXISTS cotacao_lote (
+     id              bigserial PRIMARY KEY,
+     empresa_id      bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     estabelecimento text NOT NULL,
+     usuario_id      bigint REFERENCES usuario(id) ON DELETE SET NULL,
+     usuario_nome    text,
+     fonte           text NOT NULL DEFAULT 'foto',
+     qtd_produtos    integer NOT NULL DEFAULT 0,
+     data            date NOT NULL DEFAULT CURRENT_DATE,
+     criado_em       timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE UNIQUE INDEX IF NOT EXISTS ux_cotacao_lote_dia ON cotacao_lote (empresa_id, estabelecimento, data)",
+  "CREATE INDEX IF NOT EXISTS ix_cotacao_lote_empresa ON cotacao_lote (empresa_id, estabelecimento, data DESC)",
+  "ALTER TABLE cotacao_concorrente ADD COLUMN IF NOT EXISTS lote_id bigint REFERENCES cotacao_lote(id) ON DELETE CASCADE",
+  "CREATE INDEX IF NOT EXISTS ix_cotacao_conc_lote ON cotacao_concorrente (lote_id)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -1049,32 +1065,177 @@ export async function compararCotacoes(
   );
 }
 
-/** Grava as leituras do dia — uma linha por produto/estabelecimento/dia. */
+/**
+ * Grava as leituras do dia — uma linha por produto/estabelecimento/dia — dentro
+ * de um "lote" (o lançamento): um por estabelecimento/dia, guardando quem fez e
+ * quantos produtos, pra listar no grid do módulo.
+ */
 export async function registrarCotacoes(
   empresaId: number,
   estabelecimento: string,
   fonte: string,
-  itens: ResultadoCotacao[]
-): Promise<number> {
+  itens: ResultadoCotacao[],
+  autor: { usuarioId: number | null; usuarioNome: string }
+): Promise<{ loteId: number }> {
   await garantirSchema();
   const est = estabelecimento.trim();
   const f = ["video", "foto", "pdf"].includes(fonte) ? fonte : "foto";
+
+  const { rows: loteRows } = await pool.query<{ id: number }>(
+    `INSERT INTO cotacao_lote
+       (empresa_id, estabelecimento, usuario_id, usuario_nome, fonte, qtd_produtos, data)
+     VALUES ($1, $2, $3, $4, $5, $6, CURRENT_DATE)
+     ON CONFLICT (empresa_id, estabelecimento, data)
+     DO UPDATE SET usuario_id = EXCLUDED.usuario_id, usuario_nome = EXCLUDED.usuario_nome,
+                   fonte = EXCLUDED.fonte, qtd_produtos = EXCLUDED.qtd_produtos, criado_em = now()
+     RETURNING id`,
+    [empresaId, est, autor.usuarioId, autor.usuarioNome, f, itens.length]
+  );
+  const loteId = loteRows[0].id;
+
   for (const it of itens) {
     // só amarra o produto quando o match é confiável
     const prodId = it.confianca === "alta" ? it.produtoId : null;
     const meuPreco = it.confianca === "alta" ? it.meuPreco : null;
     await pool.query(
       `INSERT INTO cotacao_concorrente
-         (empresa_id, estabelecimento, nome_produto, nome_norm, preco, produto_id, meu_preco, fonte)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (empresa_id, estabelecimento, nome_produto, nome_norm, preco, produto_id, meu_preco, fonte, lote_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT (empresa_id, estabelecimento, nome_norm, data)
        DO UPDATE SET preco = EXCLUDED.preco, nome_produto = EXCLUDED.nome_produto,
                      produto_id = EXCLUDED.produto_id, meu_preco = EXCLUDED.meu_preco,
-                     fonte = EXCLUDED.fonte, criado_em = now()`,
-      [empresaId, est, it.nome, _normNome(it.nome), it.preco, prodId, meuPreco, f]
+                     fonte = EXCLUDED.fonte, lote_id = EXCLUDED.lote_id, criado_em = now()`,
+      [empresaId, est, it.nome, _normNome(it.nome), it.preco, prodId, meuPreco, f, loteId]
     );
   }
-  return itens.length;
+  return { loteId };
+}
+
+export type EstabelecimentoCotado = {
+  estabelecimento: string;
+  loteId: number;
+  data: string;
+  qtdProdutos: number;
+  usuarioNome: string | null;
+  fonte: string;
+};
+
+/** Um card por estabelecimento — o lançamento mais recente de cada um. */
+export async function listarEstabelecimentosCotados(
+  empresaId: number
+): Promise<EstabelecimentoCotado[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<{
+    estabelecimento: string;
+    lote_id: number;
+    usuario_nome: string | null;
+    fonte: string;
+    qtd_produtos: number;
+    data: string;
+  }>(
+    `SELECT estabelecimento, id AS lote_id, usuario_nome, fonte, qtd_produtos,
+            to_char(data, 'YYYY-MM-DD') AS data
+       FROM (
+         SELECT DISTINCT ON (estabelecimento) *
+           FROM cotacao_lote
+          WHERE empresa_id = $1
+          ORDER BY estabelecimento, data DESC, criado_em DESC
+       ) mais_recente
+      ORDER BY data DESC, mais_recente.criado_em DESC`,
+    [empresaId]
+  );
+  return rows.map((r) => ({
+    estabelecimento: r.estabelecimento,
+    loteId: r.lote_id,
+    data: r.data,
+    qtdProdutos: r.qtd_produtos,
+    usuarioNome: r.usuario_nome,
+    fonte: r.fonte,
+  }));
+}
+
+export type LoteResumo = {
+  id: number;
+  data: string;
+  qtdProdutos: number;
+  usuarioNome: string | null;
+  fonte: string;
+};
+
+/** Histórico de lançamentos de UM estabelecimento, mais novo primeiro. */
+export async function listarLotesDoEstabelecimento(
+  empresaId: number,
+  estabelecimento: string
+): Promise<LoteResumo[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<{
+    id: number;
+    usuario_nome: string | null;
+    fonte: string;
+    qtd_produtos: number;
+    data: string;
+  }>(
+    `SELECT id, usuario_nome, fonte, qtd_produtos, to_char(data, 'YYYY-MM-DD') AS data
+       FROM cotacao_lote
+      WHERE empresa_id = $1 AND estabelecimento = $2
+      ORDER BY data DESC, criado_em DESC`,
+    [empresaId, estabelecimento.trim()]
+  );
+  return rows.map((r) => ({
+    id: r.id,
+    data: r.data,
+    qtdProdutos: r.qtd_produtos,
+    usuarioNome: r.usuario_nome,
+    fonte: r.fonte,
+  }));
+}
+
+export type LoteDetalhe = {
+  id: number;
+  estabelecimento: string;
+  data: string;
+  usuarioNome: string | null;
+  fonte: string;
+  itens: { nome: string; preco: number; meuPreco: number | null }[];
+};
+
+/** Um lançamento: a data, quem fez e a lista de produtos com preço. */
+export async function loteDetalhe(empresaId: number, loteId: number): Promise<LoteDetalhe | null> {
+  await garantirSchema();
+  const { rows: lotes } = await pool.query<{
+    id: number;
+    estabelecimento: string;
+    usuario_nome: string | null;
+    fonte: string;
+    data: string;
+  }>(
+    `SELECT id, estabelecimento, usuario_nome, fonte, to_char(data, 'YYYY-MM-DD') AS data
+       FROM cotacao_lote WHERE id = $1 AND empresa_id = $2`,
+    [loteId, empresaId]
+  );
+  const lote = lotes[0];
+  if (!lote) return null;
+  const { rows: itens } = await pool.query<{
+    nome_produto: string;
+    preco: string;
+    meu_preco: string | null;
+  }>(
+    `SELECT nome_produto, preco, meu_preco FROM cotacao_concorrente
+      WHERE lote_id = $1 ORDER BY nome_produto`,
+    [loteId]
+  );
+  return {
+    id: lote.id,
+    estabelecimento: lote.estabelecimento,
+    data: lote.data,
+    usuarioNome: lote.usuario_nome,
+    fonte: lote.fonte,
+    itens: itens.map((i) => ({
+      nome: i.nome_produto,
+      preco: Number(i.preco),
+      meuPreco: i.meu_preco === null ? null : Number(i.meu_preco),
+    })),
+  };
 }
 
 export type UsuarioResumo = {

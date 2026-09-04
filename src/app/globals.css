@@ -2441,6 +2441,32 @@ a.botao { display: block; text-align: center; text-decoration: none; }
 }
 
 /* ============ comércios grandes: cotação dos concorrentes ============ */
+.cg-grade {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.cg-grade-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.cg-grade-item:hover { border-color: var(--azul); }
+.cg-grade-item span { font-size: 0.82rem; color: var(--ink-dim); }
+.cg-grade-usuario { font-weight: 600; color: var(--azul-ink) !important; }
+
+.lista-clicavel { cursor: pointer; }
+.lista-clicavel:hover { border-color: var(--azul); }
+
 .cg-lista { gap: 8px; }
 .cg-item {
   padding: 10px 12px;

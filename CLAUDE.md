@@ -259,6 +259,19 @@ o comparativo com o meu (`.cg-comparado` — barato/caro/igual/provável/sem mat
 (`.cg-tendencia`). Custo: ~alguns centavos de visão Opus por análise. Sem `ANTHROPIC_API_KEY` → 500
 amigável.
 
+**Virou um CRUD (`db/32`)** — cada análise é agrupada num **lote** (`cotacao_lote`: um por
+`estabelecimento`+dia, `ON CONFLICT ... DO UPDATE` — reanálise no mesmo dia atualiza o lote em vez de
+duplicar), guardando `usuario_id`/`usuario_nome` (snapshot, de `exigirEmpresa().sessao`), `fonte`,
+`qtd_produtos` e `data`; `cotacao_concorrente.lote_id` referencia o lote de cada linha. Ao entrar na
+tela (e depois de toda análise nova), `GET /api/produtos/comercios-grandes/historico`
+(`listarEstabelecimentosCotados`, um `DISTINCT ON (estabelecimento)` pegando o lote mais recente de cada
+um) alimenta um **grid** (`.cg-grade`) — nome do concorrente, "Último lançamento: dd/mm", quantidade de
+produtos e **"por <usuário>"** em destaque. Clicar num card → `GET .../lotes?estabelecimento=`
+(`listarLotesDoEstabelecimento`) lista o histórico de lançamentos daquele concorrente (data, qtd, quem);
+clicar num lançamento → `GET .../lotes/:id` (`loteDetalhe`) mostra a data, quem lançou e os produtos com
+preço (e o comparativo salvo na hora, se o match era `alta`). Tudo client-state na mesma página
+(`Estado` ganhou `"lotes"` e `"lote"`), sem rota nova por estabelecimento.
+
 ### Stock-by-video (`/produtos/estoque-video`)
 
 The shopkeeper **records** (in-app camera, not a file pick) a short video walking the shelf and

@@ -19,7 +19,7 @@ type Entrada = {
  * devolve o resumo + a lista comparada.
  */
 export async function POST(request: Request) {
-  const { empresaId, erro } = await exigirEmpresa();
+  const { empresaId, sessao, erro } = await exigirEmpresa();
   if (erro) return erro;
 
   try {
@@ -51,8 +51,13 @@ export async function POST(request: Request) {
     const comPreco = todos.filter((t): t is { nome: string; preco: number } => t.preco !== null);
 
     const comparados = await compararCotacoes(empresaId, estabelecimento, comPreco);
+    let loteId: number | null = null;
     if (comparados.length > 0) {
-      await registrarCotacoes(empresaId, estabelecimento, fonte, comparados);
+      const registrado = await registrarCotacoes(empresaId, estabelecimento, fonte, comparados, {
+        usuarioId: sessao.usuarioId || null,
+        usuarioNome: sessao.nome,
+      });
+      loteId = registrado.loteId;
     }
 
     // mais barato lá primeiro (mais relevante), depois os sem match
@@ -65,6 +70,7 @@ export async function POST(request: Request) {
       registradoEm: new Date().toISOString().slice(0, 10),
       resumo: { total: todos.length, comPreco: comparados.length },
       itens: comparados,
+      loteId,
     });
   } catch (e) {
     console.error("Falha ao analisar a cotação:", e);
