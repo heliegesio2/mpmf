@@ -26,6 +26,8 @@ export default function PainelPix({ valor, txid, confirmado, aoConfirmar }: Prop
   const [imagem, setImagem] = useState<string | null>(null);
   const [erro, setErro] = useState("");
   const [copiado, setCopiado] = useState(false);
+  /** Só quando a loja tem Mercado Pago conectado — habilita a confirmação automática. */
+  const [paymentId, setPaymentId] = useState<number | string | null>(null);
 
   useEffect(() => {
     let cancelado = false;
@@ -45,6 +47,7 @@ export default function PainelPix({ valor, txid, confirmado, aoConfirmar }: Prop
         }
         if (cancelado) return;
         setCopiaECola(dados.copiaECola);
+        setPaymentId(dados.paymentId ?? null);
         setImagem(await QRCode.toDataURL(dados.copiaECola, { width: 320, margin: 1 }));
       } catch (e) {
         if (!cancelado) setErro(e instanceof Error ? e.message : "Falha ao gerar o Pix.");
@@ -54,6 +57,21 @@ export default function PainelPix({ valor, txid, confirmado, aoConfirmar }: Prop
       cancelado = true;
     };
   }, [valor, txid]);
+
+  // confirmação automática: só existe quando o pagamento veio do Mercado Pago
+  useEffect(() => {
+    if (!paymentId || confirmado) return;
+    const t = setInterval(async () => {
+      try {
+        const r = await fetch(`/api/pix/status?id=${paymentId}`);
+        const d = await r.json();
+        if (r.ok && d.status === "approved") aoConfirmar();
+      } catch {
+        /* tenta de novo no próximo tique */
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [paymentId, confirmado, aoConfirmar]);
 
   async function copiar() {
     if (!copiaECola) return;
@@ -76,6 +94,8 @@ export default function PainelPix({ valor, txid, confirmado, aoConfirmar }: Prop
 
         {confirmado ? (
           <p className="pix-status aprovado">Pix recebido</p>
+        ) : paymentId ? (
+          <p className="pix-status manual">Aguardando o pagamento confirmar sozinho…</p>
         ) : (
           <p className="pix-status manual">
             Confira o comprovante no seu app antes de marcar como recebido.
@@ -88,7 +108,7 @@ export default function PainelPix({ valor, txid, confirmado, aoConfirmar }: Prop
 
         {!confirmado && (
           <button type="button" className="botao primario" onClick={aoConfirmar}>
-            Recebi o Pix
+            {paymentId ? "Já recebi (confirmar na mão)" : "Recebi o Pix"}
           </button>
         )}
       </div>

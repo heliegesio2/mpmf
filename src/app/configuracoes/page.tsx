@@ -44,6 +44,10 @@ export default function Configuracoes() {
   const [erro, setErro] = useState(false);
   const [logoPreview, setLogoPreview] = useState("");
   const [salvandoLogo, setSalvandoLogo] = useState(false);
+  const [mpConectado, setMpConectado] = useState<boolean | null>(null);
+  const [mpAtivo, setMpAtivo] = useState(false);
+  const [desconectandoMp, setDesconectandoMp] = useState(false);
+  const [salvandoMpAtivo, setSalvandoMpAtivo] = useState(false);
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -88,6 +92,58 @@ export default function Configuracoes() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    fetch("/api/mercadopago")
+      .then((r) => r.json())
+      .then((d) => {
+        setMpConectado(Boolean(d?.conectado));
+        setMpAtivo(Boolean(d?.ativo));
+      })
+      .catch(() => setMpConectado(false));
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("mp") === "conectado") {
+      setAviso("Mercado Pago conectado — o Pix agora confirma sozinho.");
+      setErro(false);
+    } else if (params.get("mpErro")) {
+      setErro(true);
+      setAviso("Não foi possível conectar o Mercado Pago. Tente de novo.");
+    }
+  }, []);
+
+  async function desconectarMp() {
+    if (!confirm("Desconectar o Mercado Pago? O Pix volta a ser confirmado na mão.")) return;
+    setDesconectandoMp(true);
+    try {
+      await fetch("/api/mercadopago", { method: "DELETE" });
+      setMpConectado(false);
+      setMpAtivo(false);
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível desconectar.");
+    } finally {
+      setDesconectandoMp(false);
+    }
+  }
+
+  async function alternarMpAtivo(ativo: boolean) {
+    setSalvandoMpAtivo(true);
+    setMpAtivo(ativo);
+    try {
+      await fetch("/api/mercadopago", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ativo }),
+      });
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível salvar a escolha do Pix.");
+      setMpAtivo(!ativo);
+    } finally {
+      setSalvandoMpAtivo(false);
+    }
+  }
 
   async function mudarLogo(dataUrl: string) {
     setSalvandoLogo(true);
@@ -231,6 +287,55 @@ export default function Configuracoes() {
                 {...comum("pixNome")}
               />
             </div>
+          </section>
+
+          <section className="cartao">
+            <h2 className="titulo-cartao">Pix automático</h2>
+            <p className="ajuda-voz">
+              Conecte sua conta Mercado Pago pra o Pix da venda confirmar sozinho — o
+              dinheiro cai direto na SUA conta, não passa pela plataforma.
+            </p>
+            {mpConectado === null ? (
+              <p className="vazio">Carregando…</p>
+            ) : mpConectado ? (
+              <>
+                <div className="acoes" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                  <button
+                    type="button"
+                    className="botao pagamento"
+                    data-escolhido={mpAtivo}
+                    disabled={salvandoMpAtivo}
+                    onClick={() => alternarMpAtivo(true)}
+                  >
+                    Via Mercado Pago — confirma sozinho, cobra taxa
+                  </button>
+                  <button
+                    type="button"
+                    className="botao pagamento"
+                    data-escolhido={!mpAtivo}
+                    disabled={salvandoMpAtivo}
+                    onClick={() => alternarMpAtivo(false)}
+                  >
+                    Pix direto — sem taxa, confirmação manual
+                  </button>
+                </div>
+                <div className="acoes">
+                  <span className="selo" data-situacao="aprovada">Conectado</span>
+                  <button
+                    type="button"
+                    className="botao neutro"
+                    onClick={desconectarMp}
+                    disabled={desconectandoMp}
+                  >
+                    {desconectandoMp ? "Desconectando…" : "Desconectar"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <a href="/api/mercadopago/conectar" className="botao primario">
+                Conectar Mercado Pago
+              </a>
+            )}
           </section>
 
           <div className="acoes">

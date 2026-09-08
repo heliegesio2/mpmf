@@ -447,6 +447,17 @@ const MIGRACOES_IDEMPOTENTES = [
      novo           boolean NOT NULL DEFAULT false
    )`,
   "CREATE INDEX IF NOT EXISTS ix_compra_nota_item_nota ON compra_nota_item (compra_nota_id)",
+  // db/38 — Pix automático: cada loja conecta a própria conta Mercado Pago (OAuth)
+  `CREATE TABLE IF NOT EXISTS empresa_mercadopago (
+     empresa_id     bigint PRIMARY KEY REFERENCES empresa(id) ON DELETE CASCADE,
+     mp_user_id     text NOT NULL,
+     access_token   text NOT NULL,
+     refresh_token  text NOT NULL,
+     expira_em      timestamptz NOT NULL,
+     ativo          boolean NOT NULL DEFAULT true,
+     conectado_em   timestamptz NOT NULL DEFAULT now(),
+     atualizado_em  timestamptz NOT NULL DEFAULT now()
+   )`,
 ];
 
 let _schema: Promise<void> | null = null;
@@ -954,6 +965,74 @@ export async function atualizarLogoEmpresa(empresaId: number, logo: string): Pro
     logo,
   ]);
   return (r.rowCount ?? 0) > 0;
+}
+
+// ---------- mercado pago (Pix automático por loja, via OAuth Connect — db/38) ----------
+// Cada empresa conecta a PRÓPRIA conta Mercado Pago; o dinheiro do Pix cai
+// direto nela. Nunca existe um token "da plataforma" usado pra cobrar em
+// nome de outra loja.
+
+export type MercadoPagoEmpresa = {
+  empresaId: number;
+  mpUserId: string;
+  accessToken: string;
+  refreshToken: string;
+  expiraEm: Date;
+  /** false = mesmo conectada, a loja escolheu usar o Pix direto (chave, manual). */
+  ativo: boolean;
+};
+
+export async function mercadoPagoDaEmpresa(empresaId: number): Promise<MercadoPagoEmpresa | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{
+    empresa_id: number;
+    mp_user_id: string;
+    access_token: string;
+    refresh_token: string;
+    expira_em: Date;
+    ativo: boolean;
+  }>(
+    "SELECT empresa_id, mp_user_id, access_token, refresh_token, expira_em, ativo FROM empresa_mercadopago WHERE empresa_id = $1",
+    [empresaId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    empresaId: r.empresa_id,
+    mpUserId: r.mp_user_id,
+    accessToken: r.access_token,
+    refreshToken: r.refresh_token,
+    expiraEm: r.expira_em,
+    ativo: r.ativo,
+  };
+}
+
+export async function atualizarAtivoMercadoPago(empresaId: number, ativo: boolean): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    "UPDATE empresa_mercadopago SET ativo = $2, atualizado_em = now() WHERE empresa_id = $1",
+    [empresaId, ativo]
+  );
+}
+
+export async function salvarMercadoPagoEmpresa(
+  empresaId: number,
+  d: { mpUserId: string; accessToken: string; refreshToken: string; expiraEm: Date }
+): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    `INSERT INTO empresa_mercadopago (empresa_id, mp_user_id, access_token, refresh_token, expira_em)
+          VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (empresa_id) DO UPDATE
+          SET mp_user_id = $2, access_token = $3, refresh_token = $4, expira_em = $5,
+              atualizado_em = now()`,
+    [empresaId, d.mpUserId, d.accessToken, d.refreshToken, d.expiraEm]
+  );
+}
+
+export async function desconectarMercadoPagoEmpresa(empresaId: number): Promise<void> {
+  await garantirSchema();
+  await pool.query("DELETE FROM empresa_mercadopago WHERE empresa_id = $1", [empresaId]);
 }
 
 // ---------- importar compra (margem de lucro + notas já processadas) ----------
