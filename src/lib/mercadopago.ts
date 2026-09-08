@@ -18,6 +18,12 @@ const CLIENT_ID = process.env.MP_CLIENT_ID;
 const CLIENT_SECRET = process.env.MP_ACCESS_TOKEN;
 
 export function configuradoMP(): boolean {
+  console.log("[mercadopago] configurado?", {
+    temClientId: Boolean(CLIENT_ID),
+    tamClientId: CLIENT_ID?.length ?? 0,
+    temAccessToken: Boolean(CLIENT_SECRET),
+    tamAccessToken: CLIENT_SECRET?.length ?? 0,
+  });
   return Boolean(CLIENT_ID && CLIENT_SECRET);
 }
 
