@@ -4,11 +4,16 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AjusteFonte from "@/components/AjusteFonte";
+import { CampoVoz } from "@/components/CampoVoz";
 import Logo from "@/components/Logo";
 import PainelPix from "@/components/PainelPix";
 import { esquecerCarrinho, useCarrinho } from "@/lib/carrinho";
-import { mascararMoeda, moedaParaNumero } from "@/lib/moeda";
+import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
 import { quando } from "@/lib/pedido";
+import { numeroFalado } from "@/lib/voz";
+import { useVoz } from "@/lib/useVoz";
+
+const TECLAS_NUMERICAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0", "C"] as const;
 
 type FormaDireta = "pix" | "debito" | "credito";
 const FORMAS_DIRETAS: { valor: FormaDireta; rotulo: string }[] = [
@@ -160,6 +165,12 @@ export default function MenuLateral() {
   const [concluidoDireto, setConcluidoDireto] = useState(false);
   const [erroDireto, setErroDireto] = useState("");
   const [txidDireto, setTxidDireto] = useState("");
+  const { ouvir: ouvirDireto, parar: pararDireto, ouvindoCampo: ouvindoDireto, disponivel: vozDisponivel } = useVoz({
+    aoFinalizar: (texto) => {
+      const n = numeroFalado(texto);
+      if (n !== null) setValorDireto(paraMoeda(n));
+    },
+  });
   const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(
     () => new Set(["balcao", grupoDoCaminho(caminho)].filter(Boolean) as string[])
   );
@@ -228,6 +239,20 @@ export default function MenuLateral() {
   }
 
   const valorDiretoNumero = moedaParaNumero(valorDireto);
+
+  function teclaDireta(tecla: (typeof TECLAS_NUMERICAS)[number]) {
+    if (ouvindoDireto) pararDireto();
+    if (tecla === "C") {
+      setValorDireto("");
+      return;
+    }
+    const digitos = valorDireto.replace(/\D/g, "");
+    if (tecla === "⌫") {
+      setValorDireto(mascararMoeda(digitos.slice(0, -1)));
+      return;
+    }
+    setValorDireto(mascararMoeda(digitos + tecla));
+  }
 
   async function registrarVendaDireta(forma: FormaDireta) {
     setEnviandoDireto(true);
@@ -423,19 +448,33 @@ export default function MenuLateral() {
               </div>
             ) : (
               <div className="venda-direta-corpo">
-                <label className="rotulo largo">
-                  Valor da venda
-                  <span className="entrada" data-moeda="true">
-                    <span className="prefixo">R$</span>
-                    <input
-                      value={valorDireto}
-                      inputMode="decimal"
-                      placeholder="0,00"
-                      autoFocus
-                      onChange={(e) => setValorDireto(mascararMoeda(e.target.value))}
-                    />
-                  </span>
-                </label>
+                <CampoVoz
+                  rotulo="Valor da venda"
+                  campo="valorDireto"
+                  valor={valorDireto}
+                  aoMudar={setValorDireto}
+                  placeholder="0,00"
+                  moeda
+                  largo
+                  ouvindo={ouvindoDireto === "valorDireto"}
+                  temVoz={vozDisponivel}
+                  aoOuvir={ouvirDireto}
+                  aoParar={pararDireto}
+                />
+
+                <div className="teclado-numerico" role="group" aria-label="Teclado numérico do valor">
+                  {TECLAS_NUMERICAS.map((tecla) => (
+                    <button
+                      key={tecla}
+                      type="button"
+                      className="tecla-numerica"
+                      onClick={() => teclaDireta(tecla)}
+                      aria-label={tecla === "⌫" ? "Apagar" : tecla === "C" ? "Limpar valor" : tecla}
+                    >
+                      {tecla}
+                    </button>
+                  ))}
+                </div>
 
                 <p className="rotulo-pagamento">Forma de pagamento</p>
                 <div className="pagamentos">

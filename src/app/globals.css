@@ -265,6 +265,27 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .venda-direta-corpo .pix-qr { width: 100%; height: auto; max-width: 200px; margin: 0 auto; }
 .venda-direta-corpo .pix-valor { font-size: 22px; }
 
+/* teclado numerico grande do valor da venda direta — pensado pra baixa visao */
+.teclado-numerico {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.tecla-numerica {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 26px;
+  font-weight: 700;
+  padding: 16px 0;
+  cursor: pointer;
+}
+.tecla-numerica:hover { border-color: var(--line-strong); background: var(--surface); }
+.tecla-numerica:active { background: var(--azul-wash); border-color: var(--azul); }
+.tecla-numerica:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+
 /* ---- menu de conta (canto superior direito, com a foto do usuário) ---- */
 .conta-topo {
   position: fixed;
