@@ -20,6 +20,11 @@ type Config = {
   horario: string;
   pixChave: string;
   pixNome: string;
+  inscricaoEstadual: string;
+  regimeTributario: string;
+  numero: string;
+  complemento: string;
+  uf: string;
 };
 
 const VAZIO: Config = {
@@ -34,7 +39,19 @@ const VAZIO: Config = {
   horario: "",
   pixChave: "",
   pixNome: "",
+  inscricaoEstadual: "",
+  regimeTributario: "",
+  numero: "",
+  complemento: "",
+  uf: "",
 };
+
+const REGIMES_TRIBUTARIOS = [
+  { valor: "1", rotulo: "Simples Nacional" },
+  { valor: "2", rotulo: "Simples Nacional — excesso de sublimite" },
+  { valor: "3", rotulo: "Regime normal (Lucro Presumido/Real)" },
+  { valor: "4", rotulo: "MEI" },
+];
 
 export default function Configuracoes() {
   const [form, setForm] = useState<Config>(VAZIO);
@@ -48,6 +65,14 @@ export default function Configuracoes() {
   const [mpAtivo, setMpAtivo] = useState(false);
   const [desconectandoMp, setDesconectandoMp] = useState(false);
   const [salvandoMpAtivo, setSalvandoMpAtivo] = useState(false);
+  const [fnConectado, setFnConectado] = useState<boolean | null>(null);
+  const [fnAmbiente, setFnAmbiente] = useState<"producao" | "homologacao">("homologacao");
+  const [fnTemProducao, setFnTemProducao] = useState(false);
+  const [certificado, setCertificado] = useState<File | null>(null);
+  const [senhaCertificado, setSenhaCertificado] = useState("");
+  const [conectandoFn, setConectandoFn] = useState(false);
+  const [desconectandoFn, setDesconectandoFn] = useState(false);
+  const [salvandoAmbiente, setSalvandoAmbiente] = useState(false);
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -82,6 +107,11 @@ export default function Configuracoes() {
           horario: e.horario ?? "",
           pixChave: e.pix_chave ?? "",
           pixNome: e.pix_nome ?? "",
+          inscricaoEstadual: e.inscricao_estadual ?? "",
+          regimeTributario: e.regime_tributario ? String(e.regime_tributario) : "",
+          numero: e.numero ?? "",
+          complemento: e.complemento ?? "",
+          uf: e.uf ?? "",
         });
         if (e.tem_logo) setLogoPreview("/api/empresa/logo");
       } catch (e) {
@@ -111,6 +141,78 @@ export default function Configuracoes() {
       setAviso("Não foi possível conectar o Mercado Pago. Tente de novo.");
     }
   }, []);
+
+  useEffect(() => {
+    fetch("/api/notafiscal")
+      .then((r) => r.json())
+      .then((d) => {
+        setFnConectado(Boolean(d?.conectado));
+        setFnAmbiente(d?.ambiente === "producao" ? "producao" : "homologacao");
+        setFnTemProducao(Boolean(d?.temProducao));
+      })
+      .catch(() => setFnConectado(false));
+  }, []);
+
+  async function conectarFocusNFe() {
+    if (!certificado) {
+      setErro(true);
+      setAviso("Escolha o arquivo do certificado (.pfx ou .p12).");
+      return;
+    }
+    setConectandoFn(true);
+    setErro(false);
+    try {
+      const dados = new FormData();
+      dados.append("certificado", certificado);
+      dados.append("senha", senhaCertificado);
+      const r = await fetch("/api/notafiscal/conectar", { method: "POST", body: dados });
+      const d = await r.json();
+      if (!r.ok) throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — ") || "Não foi possível conectar.");
+      setFnConectado(true);
+      setCertificado(null);
+      setSenhaCertificado("");
+      setAviso("Focus NFe conectado — comece testando em homologação.");
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível conectar.");
+    } finally {
+      setConectandoFn(false);
+    }
+  }
+
+  async function desconectarFn() {
+    if (!confirm("Desconectar o Focus NFe? Você para de conseguir emitir NFC-e até reconectar.")) return;
+    setDesconectandoFn(true);
+    try {
+      await fetch("/api/notafiscal", { method: "DELETE" });
+      setFnConectado(false);
+    } catch {
+      setErro(true);
+      setAviso("Não foi possível desconectar.");
+    } finally {
+      setDesconectandoFn(false);
+    }
+  }
+
+  async function alternarAmbienteFn(ambiente: "producao" | "homologacao") {
+    setSalvandoAmbiente(true);
+    setErro(false);
+    try {
+      const r = await fetch("/api/notafiscal", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ambiente }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.erro || "Não foi possível trocar o ambiente.");
+      setFnAmbiente(ambiente);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível trocar o ambiente.");
+    } finally {
+      setSalvandoAmbiente(false);
+    }
+  }
 
   async function desconectarMp() {
     if (!confirm("Desconectar o Mercado Pago? O Pix volta a ser confirmado na mão.")) return;
@@ -266,6 +368,42 @@ export default function Configuracoes() {
           </section>
 
           <section className="cartao">
+            <h2 className="titulo-cartao">Dados fiscais</h2>
+            <p className="ajuda-voz">
+              Usados pra emitir NFC-e. Número e complemento completam o endereço acima
+              (que aqui vira a rua/logradouro).
+            </p>
+            <div className="grade-form">
+              <CampoVoz rotulo="Inscrição Estadual" placeholder="Só números" {...comum("inscricaoEstadual")} />
+              <label className="rotulo">
+                Regime tributário
+                <select
+                  value={form.regimeTributario}
+                  onChange={(e) => setForm((f) => ({ ...f, regimeTributario: e.target.value }))}
+                >
+                  <option value="">Selecione</option>
+                  {REGIMES_TRIBUTARIOS.map((r) => (
+                    <option key={r.valor} value={r.valor}>
+                      {r.rotulo}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <CampoVoz rotulo="Número" placeholder="123" {...comum("numero")} />
+              <CampoVoz rotulo="Complemento" placeholder="Loja 2, fundos…" {...comum("complemento")} />
+              <label className="rotulo">
+                UF
+                <input
+                  value={form.uf}
+                  maxLength={2}
+                  placeholder="SP"
+                  onChange={(e) => setForm((f) => ({ ...f, uf: e.target.value.toUpperCase() }))}
+                />
+              </label>
+            </div>
+          </section>
+
+          <section className="cartao">
             <h2 className="titulo-cartao">Pix</h2>
             <p className="ajuda-voz">
               A chave abaixo gera o QR na tela de venda. Pode ser CPF/CNPJ, celular
@@ -335,6 +473,82 @@ export default function Configuracoes() {
               <a href="/api/mercadopago/conectar" className="botao primario">
                 Conectar Mercado Pago
               </a>
+            )}
+          </section>
+
+          <section className="cartao">
+            <h2 className="titulo-cartao">Nota fiscal (NFC-e)</h2>
+            <p className="ajuda-voz">
+              Emite a nota do consumidor pelo Focus NFe, usando o certificado digital da
+              SUA empresa — preencha os dados fiscais acima antes de conectar.
+            </p>
+            {fnConectado === null ? (
+              <p className="vazio">Carregando…</p>
+            ) : fnConectado ? (
+              <>
+                <div className="acoes" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                  <button
+                    type="button"
+                    className="botao pagamento"
+                    data-escolhido={fnAmbiente === "homologacao"}
+                    disabled={salvandoAmbiente}
+                    onClick={() => alternarAmbienteFn("homologacao")}
+                  >
+                    Testando (homologação) — não emite nota de verdade
+                  </button>
+                  <button
+                    type="button"
+                    className="botao pagamento"
+                    data-escolhido={fnAmbiente === "producao"}
+                    disabled={salvandoAmbiente || !fnTemProducao}
+                    onClick={() => alternarAmbienteFn("producao")}
+                    title={fnTemProducao ? undefined : "Aguardando liberação das credenciais de produção no Focus NFe"}
+                  >
+                    Produção — emite nota de verdade
+                  </button>
+                </div>
+                <div className="acoes">
+                  <span className="selo" data-situacao="aprovada">Conectado</span>
+                  <button
+                    type="button"
+                    className="botao neutro"
+                    onClick={desconectarFn}
+                    disabled={desconectandoFn}
+                  >
+                    {desconectandoFn ? "Desconectando…" : "Desconectar"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="grade-form">
+                <label className="rotulo largo">
+                  Certificado digital (.pfx ou .p12)
+                  <input
+                    type="file"
+                    accept=".pfx,.p12"
+                    onChange={(e) => setCertificado(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <label className="rotulo">
+                  Senha do certificado
+                  <input
+                    type="password"
+                    value={senhaCertificado}
+                    autoComplete="new-password"
+                    onChange={(e) => setSenhaCertificado(e.target.value)}
+                  />
+                </label>
+                <div className="acoes" style={{ gridColumn: "1 / -1" }}>
+                  <button
+                    type="button"
+                    className="botao primario"
+                    onClick={conectarFocusNFe}
+                    disabled={conectandoFn}
+                  >
+                    {conectandoFn ? "Conectando…" : "Conectar Focus NFe"}
+                  </button>
+                </div>
+              </div>
             )}
           </section>
 

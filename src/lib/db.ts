@@ -458,6 +458,40 @@ const MIGRACOES_IDEMPOTENTES = [
      conectado_em   timestamptz NOT NULL DEFAULT now(),
      atualizado_em  timestamptz NOT NULL DEFAULT now()
    )`,
+  // db/39 — NFC-e via Focus NFe: cada loja com o próprio cadastro/token lá
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS inscricao_estadual text",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS regime_tributario smallint",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS numero text",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS complemento text",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS uf text",
+  `CREATE TABLE IF NOT EXISTS empresa_focusnfe (
+     empresa_id          bigint PRIMARY KEY REFERENCES empresa(id) ON DELETE CASCADE,
+     focusnfe_empresa_id integer NOT NULL,
+     token_producao       text,
+     token_homologacao    text NOT NULL,
+     ambiente             text NOT NULL DEFAULT 'homologacao' CHECK (ambiente IN ('homologacao', 'producao')),
+     conectado_em         timestamptz NOT NULL DEFAULT now(),
+     atualizado_em        timestamptz NOT NULL DEFAULT now()
+   )`,
+  "ALTER TABLE produto ADD COLUMN IF NOT EXISTS ncm text",
+  "ALTER TABLE produto ADD COLUMN IF NOT EXISTS cfop text",
+  "ALTER TABLE produto ADD COLUMN IF NOT EXISTS icms_origem text NOT NULL DEFAULT '0'",
+  "ALTER TABLE produto ADD COLUMN IF NOT EXISTS icms_situacao_tributaria text",
+  `CREATE TABLE IF NOT EXISTS venda_nota (
+     id             bigserial PRIMARY KEY,
+     venda_id       bigint NOT NULL REFERENCES venda(id) ON DELETE CASCADE,
+     ref            text NOT NULL UNIQUE,
+     status         text NOT NULL DEFAULT 'processando',
+     chave_nfe      text,
+     numero         text,
+     serie          text,
+     caminho_danfe  text,
+     caminho_xml    text,
+     mensagem_sefaz text,
+     criado_em      timestamptz NOT NULL DEFAULT now(),
+     atualizado_em  timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS ix_venda_nota_venda ON venda_nota (venda_id)",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -492,6 +526,10 @@ export type Produto = {
   preco_embalagem: string | null;
   tem_foto?: boolean;
   score?: number;
+  /** Classificação fiscal (NFC-e) — sem isso não dá pra emitir nota desse produto. */
+  ncm: string | null;
+  cfop: string | null;
+  icms_situacao_tributaria: string | null;
 };
 
 export type ProdutoEntrada = {
@@ -514,13 +552,17 @@ export type ProdutoEntrada = {
    * `""` = remove a foto; `"data:image/..."` = grava essa.
    */
   foto?: string;
+  ncm?: string | null;
+  cfop?: string | null;
+  icmsSituacaoTributaria?: string | null;
 };
 
 // a coluna `foto` (data URL, pode ter centenas de KB) fica fora daqui de
 // propósito — as listas só precisam saber se existe uma foto (tem_foto).
 const CAMPOS =
   "id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque, " +
-  "estoque_minimo, estoque_minimo_embalagem, preco_embalagem, (foto IS NOT NULL) AS tem_foto";
+  "estoque_minimo, estoque_minimo_embalagem, preco_embalagem, (foto IS NOT NULL) AS tem_foto, " +
+  "ncm, cfop, icms_situacao_tributaria";
 
 export async function buscarProduto(
   empresaId: number,
@@ -578,13 +620,14 @@ export async function criarProduto(
   const { rows } = await pool.query<Produto>(
     `INSERT INTO produto
        (empresa_id, nome, categoria, local, unidade, tipo_venda, preco, preco_compra, estoque,
-        estoque_minimo, estoque_minimo_embalagem, foto, preco_embalagem)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        estoque_minimo, estoque_minimo_embalagem, foto, preco_embalagem, ncm, cfop, icms_situacao_tributaria)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
      RETURNING ${CAMPOS}`,
     [
       empresaId, p.nome, p.categoria ?? null, p.local ?? null, p.unidade ?? "unidade",
       p.tipoVenda, p.preco, p.precoCompra, p.estoque,
       p.estoqueMinimo ?? null, p.estoqueMinimoEmbalagem ?? null, foto, p.precoEmbalagem ?? null,
+      p.ncm ?? null, p.cfop ?? null, p.icmsSituacaoTributaria ?? null,
     ]
   );
   return rows[0];
@@ -604,6 +647,7 @@ export async function atualizarProduto(
         SET nome = $3, categoria = $4, local = $5, unidade = $6,
             tipo_venda = $7, preco = $8, preco_compra = $9, estoque = $10,
             estoque_minimo = $12, estoque_minimo_embalagem = $13, preco_embalagem = $14,
+            ncm = $15, cfop = $16, icms_situacao_tributaria = $17,
             foto = CASE
                      WHEN $11::text IS NULL THEN foto
                      WHEN $11 = '' THEN NULL
@@ -616,6 +660,7 @@ export async function atualizarProduto(
       id, empresaId, p.nome, p.categoria ?? null, p.local ?? null,
       p.unidade ?? "unidade", p.tipoVenda, p.preco, p.precoCompra, p.estoque, foto,
       p.estoqueMinimo ?? null, p.estoqueMinimoEmbalagem ?? null, p.precoEmbalagem ?? null,
+      p.ncm ?? null, p.cfop ?? null, p.icmsSituacaoTributaria ?? null,
     ]
   );
   return rows[0] ?? null;
@@ -778,6 +823,78 @@ export async function listarVendas(
   return rows;
 }
 
+export type ItemVendaFiscal = {
+  produtoId: number | null;
+  nome: string;
+  quantidade: number;
+  precoUnit: number;
+  unidade: string;
+  ncm: string | null;
+  cfop: string | null;
+  icmsOrigem: string;
+  icmsSituacaoTributaria: string | null;
+};
+
+export type VendaFiscal = {
+  id: number;
+  cpfCliente: string | null;
+  itens: ItemVendaFiscal[];
+  pagamentos: { forma: string; valor: number }[];
+};
+
+/** Venda com os dados fiscais de cada produto (pra emitir NFC-e). Só da própria empresa. */
+export async function vendaParaNotaFiscal(empresaId: number, vendaId: number): Promise<VendaFiscal | null> {
+  await garantirSchema();
+  const { rows: vendas } = await pool.query<{ id: number }>(
+    "SELECT id FROM venda WHERE id = $1 AND empresa_id = $2",
+    [vendaId, empresaId]
+  );
+  if (!vendas[0]) return null;
+
+  const { rows: itens } = await pool.query<{
+    produto_id: number | null;
+    nome: string;
+    quantidade: string;
+    preco_unit: string;
+    unidade: string | null;
+    ncm: string | null;
+    cfop: string | null;
+    icms_origem: string;
+    icms_situacao_tributaria: string | null;
+  }>(
+    `SELECT vi.produto_id, vi.nome, vi.quantidade, vi.preco_unit,
+            COALESCE(p.unidade, 'un') AS unidade, p.ncm, p.cfop, COALESCE(p.icms_origem, '0') AS icms_origem,
+            p.icms_situacao_tributaria
+       FROM venda_item vi
+       LEFT JOIN produto p ON p.id = vi.produto_id
+      WHERE vi.venda_id = $1
+      ORDER BY vi.id`,
+    [vendaId]
+  );
+
+  const { rows: pagamentos } = await pool.query<{ forma: string; valor: string }>(
+    "SELECT forma, valor FROM venda_pagamento WHERE venda_id = $1 ORDER BY id",
+    [vendaId]
+  );
+
+  return {
+    id: vendaId,
+    cpfCliente: null,
+    itens: itens.map((i) => ({
+      produtoId: i.produto_id,
+      nome: i.nome,
+      quantidade: Number(i.quantidade),
+      precoUnit: Number(i.preco_unit),
+      unidade: i.unidade ?? "un",
+      ncm: i.ncm,
+      cfop: i.cfop,
+      icmsOrigem: i.icms_origem,
+      icmsSituacaoTributaria: i.icms_situacao_tributaria,
+    })),
+    pagamentos: pagamentos.map((p) => ({ forma: p.forma, valor: Number(p.valor) })),
+  };
+}
+
 /** Data URL da foto do produto, ou null. Fora de CAMPOS por ser pesada. */
 export async function fotoProduto(empresaId: number, id: number): Promise<string | null> {
   await garantirSchema();
@@ -901,6 +1018,12 @@ export type EmpresaConfig = {
   pix_chave: string | null;
   pix_nome: string | null;
   tem_logo: boolean;
+  /** Dados fiscais (NFC-e) — endereco/cidade/bairro/cep acima cobrem logradouro/municipio. */
+  inscricao_estadual: string | null;
+  regime_tributario: number | null;
+  numero: string | null;
+  complemento: string | null;
+  uf: string | null;
 };
 
 export type EmpresaConfigEntrada = {
@@ -915,10 +1038,16 @@ export type EmpresaConfigEntrada = {
   horario: string | null;
   pixChave: string | null;
   pixNome: string | null;
+  inscricaoEstadual: string | null;
+  regimeTributario: number | null;
+  numero: string | null;
+  complemento: string | null;
+  uf: string | null;
 };
 
 const CAMPOS_EMPRESA_CONFIG =
   "id, nome, documento, telefone, telefone_whatsapp, cidade, bairro, cep, endereco, horario, pix_chave, pix_nome, " +
+  "inscricao_estadual, regime_tributario, numero, complemento, uf, " +
   "(logo IS NOT NULL AND logo <> '') AS tem_logo";
 
 export async function configEmpresa(empresaId: number): Promise<EmpresaConfig | null> {
@@ -938,12 +1067,15 @@ export async function salvarConfigEmpresa(
   const { rows } = await pool.query<EmpresaConfig>(
     `UPDATE empresa
         SET nome = $2, documento = $3, telefone = $4, telefone_whatsapp = $5, cidade = $6, cep = $7,
-            endereco = $8, horario = $9, pix_chave = $10, pix_nome = $11, bairro = $12
+            endereco = $8, horario = $9, pix_chave = $10, pix_nome = $11, bairro = $12,
+            inscricao_estadual = $13, regime_tributario = $14, numero = $15, complemento = $16, uf = $17
       WHERE id = $1
       RETURNING ${CAMPOS_EMPRESA_CONFIG}`,
     [
       empresaId, d.nome, d.documento, d.telefone, d.telefoneWhatsapp, d.cidade, d.cep,
       d.endereco, d.horario, d.pixChave, d.pixNome, d.bairro ?? null,
+      d.inscricaoEstadual || null, d.regimeTributario ?? null, d.numero || null,
+      d.complemento || null, d.uf || null,
     ]
   );
   return rows[0] ?? null;
@@ -1033,6 +1165,147 @@ export async function salvarMercadoPagoEmpresa(
 export async function desconectarMercadoPagoEmpresa(empresaId: number): Promise<void> {
   await garantirSchema();
   await pool.query("DELETE FROM empresa_mercadopago WHERE empresa_id = $1", [empresaId]);
+}
+
+// ---------- nota fiscal (NFC-e via Focus NFe — db/39) ----------
+// Cada empresa cadastra a PRÓPRIA empresa no Focus NFe (com o certificado
+// digital dela) e ganha um token só dela — nunca um token da plataforma
+// emitindo em nome de outra loja.
+
+export type FocusNFeEmpresa = {
+  focusnfeEmpresaId: number;
+  tokenProducao: string | null;
+  tokenHomologacao: string;
+  ambiente: "producao" | "homologacao";
+};
+
+export async function focusNFeDaEmpresa(empresaId: number): Promise<FocusNFeEmpresa | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{
+    focusnfe_empresa_id: number;
+    token_producao: string | null;
+    token_homologacao: string;
+    ambiente: "producao" | "homologacao";
+  }>(
+    "SELECT focusnfe_empresa_id, token_producao, token_homologacao, ambiente FROM empresa_focusnfe WHERE empresa_id = $1",
+    [empresaId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    focusnfeEmpresaId: r.focusnfe_empresa_id,
+    tokenProducao: r.token_producao,
+    tokenHomologacao: r.token_homologacao,
+    ambiente: r.ambiente,
+  };
+}
+
+export async function salvarFocusNFeEmpresa(
+  empresaId: number,
+  d: { focusnfeEmpresaId: number; tokenProducao: string | null; tokenHomologacao: string }
+): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    `INSERT INTO empresa_focusnfe (empresa_id, focusnfe_empresa_id, token_producao, token_homologacao)
+          VALUES ($1, $2, $3, $4)
+     ON CONFLICT (empresa_id) DO UPDATE
+          SET focusnfe_empresa_id = $2, token_producao = $3, token_homologacao = $4,
+              atualizado_em = now()`,
+    [empresaId, d.focusnfeEmpresaId, d.tokenProducao, d.tokenHomologacao]
+  );
+}
+
+export async function atualizarAmbienteFocusNFe(
+  empresaId: number,
+  ambiente: "producao" | "homologacao"
+): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    "UPDATE empresa_focusnfe SET ambiente = $2, atualizado_em = now() WHERE empresa_id = $1",
+    [empresaId, ambiente]
+  );
+}
+
+export async function desconectarFocusNFeEmpresa(empresaId: number): Promise<void> {
+  await garantirSchema();
+  await pool.query("DELETE FROM empresa_focusnfe WHERE empresa_id = $1", [empresaId]);
+}
+
+export type NotaFiscalVenda = {
+  vendaId: number;
+  ref: string;
+  status: string;
+  chaveNfe: string | null;
+  numero: string | null;
+  serie: string | null;
+  caminhoDanfe: string | null;
+  caminhoXml: string | null;
+  mensagemSefaz: string | null;
+};
+
+export async function notaFiscalDaVenda(vendaId: number): Promise<NotaFiscalVenda | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{
+    venda_id: number;
+    ref: string;
+    status: string;
+    chave_nfe: string | null;
+    numero: string | null;
+    serie: string | null;
+    caminho_danfe: string | null;
+    caminho_xml: string | null;
+    mensagem_sefaz: string | null;
+  }>(
+    "SELECT venda_id, ref, status, chave_nfe, numero, serie, caminho_danfe, caminho_xml, mensagem_sefaz FROM venda_nota WHERE venda_id = $1",
+    [vendaId]
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    vendaId: r.venda_id,
+    ref: r.ref,
+    status: r.status,
+    chaveNfe: r.chave_nfe,
+    numero: r.numero,
+    serie: r.serie,
+    caminhoDanfe: r.caminho_danfe,
+    caminhoXml: r.caminho_xml,
+    mensagemSefaz: r.mensagem_sefaz,
+  };
+}
+
+export async function salvarNotaFiscalVenda(
+  vendaId: number,
+  d: {
+    ref: string;
+    status: string;
+    chaveNfe?: string | null;
+    numero?: string | null;
+    serie?: string | null;
+    caminhoDanfe?: string | null;
+    caminhoXml?: string | null;
+    mensagemSefaz?: string | null;
+  }
+): Promise<void> {
+  await garantirSchema();
+  await pool.query(
+    `INSERT INTO venda_nota (venda_id, ref, status, chave_nfe, numero, serie, caminho_danfe, caminho_xml, mensagem_sefaz)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     ON CONFLICT (ref) DO UPDATE
+          SET status = $3, chave_nfe = $4, numero = $5, serie = $6, caminho_danfe = $7,
+              caminho_xml = $8, mensagem_sefaz = $9, atualizado_em = now()`,
+    [
+      vendaId,
+      d.ref,
+      d.status,
+      d.chaveNfe ?? null,
+      d.numero ?? null,
+      d.serie ?? null,
+      d.caminhoDanfe ?? null,
+      d.caminhoXml ?? null,
+      d.mensagemSefaz ?? null,
+    ]
+  );
 }
 
 // ---------- importar compra (margem de lucro + notas já processadas) ----------

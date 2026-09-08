@@ -48,6 +48,11 @@ export async function PUT(request: Request) {
       horario: texto(c.horario),
       pixChave: texto(c.pixChave),
       pixNome: texto(c.pixNome),
+      inscricaoEstadual: texto(c.inscricaoEstadual),
+      regimeTributario: [1, 2, 3, 4].includes(Number(c.regimeTributario)) ? Number(c.regimeTributario) : null,
+      numero: texto(c.numero),
+      complemento: texto(c.complemento),
+      uf: texto(c.uf)?.slice(0, 2).toUpperCase() ?? null,
     });
     return NextResponse.json({ item });
   } catch (e) {

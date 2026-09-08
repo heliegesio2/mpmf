@@ -26,6 +26,9 @@ type Produto = {
   estoque_minimo_embalagem: string | null;
   preco_embalagem: string | null;
   tem_foto?: boolean;
+  ncm: string | null;
+  cfop: string | null;
+  icms_situacao_tributaria: string | null;
 };
 
 type Formulario = {
@@ -40,6 +43,9 @@ type Formulario = {
   estoque: string;
   estoqueMinimo: string;
   estoqueMinimoEmbalagem: string;
+  ncm: string;
+  cfop: string;
+  icmsSituacaoTributaria: string;
 };
 
 const VAZIO: Formulario = {
@@ -54,6 +60,9 @@ const VAZIO: Formulario = {
   estoque: "",
   estoqueMinimo: "",
   estoqueMinimoEmbalagem: "unidade",
+  ncm: "",
+  cfop: "",
+  icmsSituacaoTributaria: "",
 };
 
 /** foto tirada na lista ("Novo produto por foto") e passada pra cá. */
@@ -156,6 +165,9 @@ export default function FormularioProduto({ id }: { id?: number }) {
             estoque: p.estoque != null ? String(Number(p.estoque)) : "",
             estoqueMinimo: p.estoque_minimo ? String(Number(p.estoque_minimo)) : "",
             estoqueMinimoEmbalagem: p.estoque_minimo_embalagem || "unidade",
+            ncm: p.ncm ?? "",
+            cfop: p.cfop ?? "",
+            icmsSituacaoTributaria: p.icms_situacao_tributaria ?? "",
           });
           setFotoPreview(p.tem_foto ? `/api/produtos/${p.id}/foto?t=${Date.now()}` : "");
         } catch (e) {
@@ -339,6 +351,17 @@ export default function FormularioProduto({ id }: { id?: number }) {
 
             <CampoVoz rotulo="Categoria" placeholder="Salgadinho" {...comum("categoria")} />
             <CampoVoz rotulo="Local na loja" placeholder="Balcão vitrine - 2a fila" largo {...comum("local")} />
+
+            <p className="ajuda-voz largo-linha">
+              Dados fiscais — só precisa preencher se a loja emite NFC-e (nota do consumidor).
+            </p>
+            <CampoVoz rotulo="NCM" placeholder="Ex.: 22030000" numerico {...comum("ncm")} />
+            <CampoVoz rotulo="CFOP" placeholder="Ex.: 5102" numerico {...comum("cfop")} />
+            <CampoVoz
+              rotulo="CST/CSOSN (ICMS)"
+              placeholder="Ex.: 102"
+              {...comum("icmsSituacaoTributaria")}
+            />
           </div>
 
           {temMargem && (

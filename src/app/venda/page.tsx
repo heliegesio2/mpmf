@@ -101,6 +101,15 @@ export default function Venda() {
   const novoAberto = useRef(false);
   /** Identificador desta venda, usado no Pix. */
   const [txid] = useState(() => `V${Date.now().toString(36).toUpperCase()}`);
+  /** Se a loja tem Focus NFe conectado — só aí faz sentido perguntar sobre a nota. */
+  const [nfConectado, setNfConectado] = useState(false);
+  const [emitirNota, setEmitirNota] = useState(false);
+  const [emitindoNota, setEmitindoNota] = useState(false);
+  const [notaResultado, setNotaResultado] = useState<{
+    ok: boolean;
+    mensagem: string;
+    danfe?: string;
+  } | null>(null);
 
   const reconhecimento = useRef<any>(null);
   /** Para onde vai o que for falado. */
@@ -361,6 +370,13 @@ export default function Venda() {
     }
   }
 
+  useEffect(() => {
+    fetch("/api/notafiscal")
+      .then((r) => r.json())
+      .then((d) => setNfConectado(Boolean(d?.conectado)))
+      .catch(() => setNfConectado(false));
+  }, []);
+
   // ---------- reconhecimento de fala (um item por vez) ----------
   // Igual à tela de consulta de preço: cada toque no microfone ouve uma frase
   // só e para. Falar item por item deixa a transcrição e a busca bem mais
@@ -546,6 +562,8 @@ export default function Venda() {
     setRecebido("");
     escolhaAberta.current = false;
     setEscolha(null);
+    setEmitirNota(false);
+    setNotaResultado(null);
     fecharNovo();
   }
 
@@ -573,6 +591,7 @@ export default function Venda() {
       // grava a venda (aparece em /vendas) e dá baixa no estoque — a venda já
       // foi cobrada, então uma falha aqui não a desfaz (o servidor loga)
       let estoques: Record<number, { estoque: number; critico: boolean }> = {};
+      let vendaId: number | null = null;
       try {
         const r = await fetch("/api/venda/concluir", {
           method: "POST",
@@ -591,6 +610,7 @@ export default function Venda() {
         });
         const d = await r.json().catch(() => ({}));
         if (r.ok && d?.estoques) estoques = d.estoques;
+        if (r.ok && Number.isInteger(d?.vendaId)) vendaId = d.vendaId;
       } catch (e) {
         console.error("Não foi possível concluir a venda no servidor:", e);
       }
@@ -600,6 +620,29 @@ export default function Venda() {
       setFinalizada({ itens: [...itens], partes: [...partes], estoques });
       limparCarrinho();
       setFechada(true);
+
+      if (emitirNota && vendaId) {
+        setEmitindoNota(true);
+        try {
+          const r = await fetch("/api/notafiscal/emitir", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ vendaId }),
+          });
+          const d = await r.json().catch(() => ({}));
+          if (r.ok) {
+            setNotaResultado({ ok: true, mensagem: "Nota fiscal emitida.", danfe: d?.nota?.caminhoDanfe });
+          } else {
+            setNotaResultado({ ok: false, mensagem: d?.erro || "Não foi possível emitir a nota." });
+          }
+        } catch {
+          setNotaResultado({ ok: false, mensagem: "Não foi possível emitir a nota." });
+        } finally {
+          setEmitindoNota(false);
+        }
+      } else {
+        setNotaResultado(null);
+      }
     } catch (e) {
       setErro(true);
       setAviso(e instanceof Error ? e.message : "Não foi possível finalizar.");
@@ -668,6 +711,21 @@ export default function Venda() {
               </div>
             )}
           </section>
+        )}
+
+        {emitindoNota && <p className="dica">Emitindo a nota fiscal…</p>}
+        {notaResultado && (
+          <p className="dica" data-erro={!notaResultado.ok}>
+            {notaResultado.mensagem}
+            {notaResultado.danfe && (
+              <>
+                {" — "}
+                <a href={notaResultado.danfe} target="_blank" rel="noreferrer">
+                  Ver nota
+                </a>
+              </>
+            )}
+          </p>
         )}
 
         <button className="botao primario grande" onClick={novaVenda}>
@@ -1169,6 +1227,17 @@ export default function Venda() {
                 </>
               )}
             </div>
+          )}
+
+          {nfConectado && (
+            <label className="check-whatsapp">
+              <input
+                type="checkbox"
+                checked={emitirNota}
+                onChange={(e) => setEmitirNota(e.target.checked)}
+              />
+              Emitir nota fiscal (NFC-e) dessa venda
+            </label>
           )}
 
           <div className="acoes">

@@ -79,6 +79,11 @@ export function validar(corpo: unknown): { dados?: ProdutoEntrada; erro?: string
       estoqueMinimo,
       estoqueMinimoEmbalagem,
       precoEmbalagem,
+      ncm: c.ncm ? String(c.ncm).trim().replace(/\D/g, "") || null : null,
+      cfop: c.cfop ? String(c.cfop).trim().replace(/\D/g, "") || null : null,
+      icmsSituacaoTributaria: c.icmsSituacaoTributaria
+        ? String(c.icmsSituacaoTributaria).trim() || null
+        : null,
       ...(foto !== undefined ? { foto } : {}),
     },
   };
