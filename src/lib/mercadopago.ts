@@ -14,16 +14,9 @@ const TOKEN_URL = "https://api.mercadopago.com/oauth/token";
 const PAGAMENTOS_URL = "https://api.mercadopago.com/v1/payments";
 
 const CLIENT_ID = process.env.MP_CLIENT_ID;
-// O Mercado Pago usa o Access Token da aplicação como client_secret do OAuth.
-const CLIENT_SECRET = process.env.MP_ACCESS_TOKEN;
+const CLIENT_SECRET = process.env.MP_CLIENT_SECRET;
 
 export function configuradoMP(): boolean {
-  console.log("[mercadopago] configurado?", {
-    temClientId: Boolean(CLIENT_ID),
-    tamClientId: CLIENT_ID?.length ?? 0,
-    temAccessToken: Boolean(CLIENT_SECRET),
-    tamAccessToken: CLIENT_SECRET?.length ?? 0,
-  });
   return Boolean(CLIENT_ID && CLIENT_SECRET);
 }
 
