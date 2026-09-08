@@ -239,6 +239,11 @@ html[data-fonte="grande"] { zoom: 1.5; }
 }
 .atalho-busca:focus-visible,
 .atalho-venda-direta:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+.atalho-venda-direta-cifrao {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 13px;
+  font-weight: 700;
+}
 
 .venda-direta-menu {
   position: fixed;
