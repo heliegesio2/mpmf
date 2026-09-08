@@ -252,11 +252,12 @@ html[data-fonte="grande"] { zoom: 1.5; }
   z-index: 36;
   width: 320px;
   max-width: calc(100vw - 28px);
+  max-height: calc(100vh - 80px);
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: 0 14px 40px rgba(19, 40, 64, 0.18);
-  overflow: hidden;
+  overflow: hidden auto;
 }
 .venda-direta-corpo { padding: 14px; display: grid; gap: 12px; }
 .venda-direta-ok { padding: 18px 14px; display: grid; gap: 12px; text-align: center; }
@@ -286,8 +287,18 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .tecla-numerica:active { background: var(--azul-wash); border-color: var(--azul); }
 .tecla-numerica:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
 .tecla-numerica:disabled { opacity: 0.4; cursor: not-allowed; }
-.tecla-operador { font-size: 16px; background: var(--nav-surface); }
-.tecla-operador[data-marcado="true"] { background: var(--azul); color: #fff; border-color: var(--azul); }
+.tecla-operador {
+  font-size: 20px;
+  background: var(--azul);
+  color: #fff;
+  border-color: var(--azul);
+}
+.tecla-operador:hover { background: var(--azul-ink); border-color: var(--azul-ink); }
+.tecla-operador[data-marcado="true"] {
+  background: var(--azul-ink);
+  border-color: var(--ambar);
+  box-shadow: inset 0 0 0 2px var(--ambar);
+}
 
 .venda-direta-total {
   display: flex;
