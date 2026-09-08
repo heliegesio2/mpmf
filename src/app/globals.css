@@ -285,6 +285,21 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .tecla-numerica:hover { border-color: var(--line-strong); background: var(--surface); }
 .tecla-numerica:active { background: var(--azul-wash); border-color: var(--azul); }
 .tecla-numerica:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+.tecla-numerica:disabled { opacity: 0.4; cursor: not-allowed; }
+.tecla-operador { font-size: 16px; background: var(--nav-surface); }
+.tecla-operador[data-marcado="true"] { background: var(--azul); color: #fff; border-color: var(--azul); }
+
+.venda-direta-total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--azul-wash);
+  border: 1px solid var(--azul);
+}
+.venda-direta-total span { font-size: 12px; font-weight: 700; color: var(--nav-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.venda-direta-total strong { font-family: "IBM Plex Mono", monospace; font-size: 20px; color: var(--azul-ink); }
 
 /* ---- menu de conta (canto superior direito, com a foto do usuário) ---- */
 .conta-topo {
