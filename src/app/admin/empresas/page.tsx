@@ -687,6 +687,7 @@ export default function Empresas() {
                                   value={novaSenha}
                                   onChange={(ev) => setNovaSenha(ev.target.value)}
                                   placeholder="Nova senha (mín. 8 caracteres)"
+                                  autoComplete="new-password"
                                   autoFocus
                                 />
                                 <button
