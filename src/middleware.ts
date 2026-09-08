@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { COOKIE_SESSAO, lerToken } from "@/lib/auth";
+import { COOKIE_SESSAO, lerToken, renovarToken } from "@/lib/auth";
 
 /** Paginas que qualquer um alcanca sem estar logado. */
 const LIVRES = ["/login", "/cadastro", "/landing.html"];
@@ -29,23 +29,34 @@ export async function middleware(request: NextRequest) {
   }
 
   // area de empresas: so o super admin
+  let resposta: NextResponse;
   if (pathname.startsWith("/admin") && sessao.papel !== "super_admin") {
-    return NextResponse.redirect(new URL(sessao.papel === "fornecedor" ? "/fornecedor" : "/", request.url));
-  }
-
-  // area do fornecedor = exatamente /fornecedor e /fornecedor/... (não /fornecedores)
-  const naAreaFornecedor = pathname === "/fornecedor" || pathname.startsWith("/fornecedor/");
-  // telas compartilhadas (loja + fornecedor)
-  const compartilhada = pathname === "/notificacoes";
-  if (sessao.papel === "fornecedor") {
-    if (!naAreaFornecedor && !compartilhada) {
-      return NextResponse.redirect(new URL("/fornecedor", request.url));
+    resposta = NextResponse.redirect(new URL(sessao.papel === "fornecedor" ? "/fornecedor" : "/", request.url));
+  } else {
+    // area do fornecedor = exatamente /fornecedor e /fornecedor/... (não /fornecedores)
+    const naAreaFornecedor = pathname === "/fornecedor" || pathname.startsWith("/fornecedor/");
+    // telas compartilhadas (loja + fornecedor)
+    const compartilhada = pathname === "/notificacoes";
+    if (sessao.papel === "fornecedor" && !naAreaFornecedor && !compartilhada) {
+      resposta = NextResponse.redirect(new URL("/fornecedor", request.url));
+    } else if (sessao.papel !== "fornecedor" && naAreaFornecedor) {
+      resposta = NextResponse.redirect(new URL("/", request.url));
+    } else {
+      resposta = NextResponse.next();
     }
-  } else if (naAreaFornecedor) {
-    return NextResponse.redirect(new URL("/", request.url));
   }
 
-  return NextResponse.next();
+  // sessao rolante: toda navegacao autenticada adia o vencimento do cookie
+  const { token, expiraEm } = await renovarToken(sessao);
+  resposta.cookies.set(COOKIE_SESSAO, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    expires: expiraEm,
+  });
+
+  return resposta;
 }
 
 export const config = {

@@ -27,7 +27,10 @@ export type Sessao = {
   exp: number;
 };
 
-const DURACAO_HORAS = 12;
+// Sessão rolante: dura DURACAO_HORAS sem uso, mas cada uso (ver renovarToken,
+// chamado em toda leitura de sessão) reemite o token com essa duração a
+// partir de agora — então só expira depois de 5 dias seguidos sem acesso.
+const DURACAO_HORAS = 24 * 5;
 export const COOKIE_SESSAO = "sessao";
 
 function segredo(): string {
@@ -82,6 +85,15 @@ export async function criarToken(
     token: `${corpo}.${paraBase64Url(new Uint8Array(assinatura))}`,
     expiraEm: new Date(exp * 1000),
   };
+}
+
+/** Reemite o token com expiração de DURACAO_HORAS a partir de agora — usada
+ * para tornar a sessão "rolante": cada uso adia o vencimento. */
+export async function renovarToken(
+  sessao: Sessao
+): Promise<{ token: string; expiraEm: Date }> {
+  const { exp: _exp, ...dados } = sessao;
+  return criarToken(dados);
 }
 
 export async function lerToken(token?: string | null): Promise<Sessao | null> {

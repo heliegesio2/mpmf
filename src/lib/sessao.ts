@@ -1,11 +1,28 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { COOKIE_SESSAO, lerToken, type Sessao } from "./auth";
+import { COOKIE_SESSAO, lerToken, renovarToken, type Sessao } from "./auth";
 
-/** Sessao do pedido atual, ou null se nao estiver logado. */
+/**
+ * Sessao do pedido atual, ou null se nao estiver logado. Toda chamada com
+ * sessao valida reemite o cookie (sessao rolante — ver renovarToken em
+ * auth.ts), adiando o vencimento; funciona porque isto so e chamado a
+ * partir de Route Handlers, onde cookies() permite escrita.
+ */
 export async function sessaoAtual(): Promise<Sessao | null> {
   const c = await cookies();
-  return lerToken(c.get(COOKIE_SESSAO)?.value);
+  const sessao = await lerToken(c.get(COOKIE_SESSAO)?.value);
+  if (!sessao) return null;
+
+  const { token, expiraEm } = await renovarToken(sessao);
+  c.set(COOKIE_SESSAO, token, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    expires: expiraEm,
+  });
+
+  return sessao;
 }
 
 /**
