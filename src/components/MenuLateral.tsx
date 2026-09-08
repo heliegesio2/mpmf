@@ -5,8 +5,17 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import AjusteFonte from "@/components/AjusteFonte";
 import Logo from "@/components/Logo";
+import PainelPix from "@/components/PainelPix";
 import { esquecerCarrinho, useCarrinho } from "@/lib/carrinho";
+import { mascararMoeda, moedaParaNumero } from "@/lib/moeda";
 import { quando } from "@/lib/pedido";
+
+type FormaDireta = "pix" | "debito" | "credito";
+const FORMAS_DIRETAS: { valor: FormaDireta; rotulo: string }[] = [
+  { valor: "pix", rotulo: "Pix" },
+  { valor: "debito", rotulo: "Débito" },
+  { valor: "credito", rotulo: "Crédito" },
+];
 
 type Aviso = {
   id: number;
@@ -143,6 +152,14 @@ export default function MenuLateral() {
   const [avisosNaoLidos, setAvisosNaoLidos] = useState(0);
   const [avisosAberto, setAvisosAberto] = useState(false);
   const [avisosLista, setAvisosLista] = useState<Aviso[]>([]);
+  const [vendaDiretaAberto, setVendaDiretaAberto] = useState(false);
+  const [valorDireto, setValorDireto] = useState("");
+  const [formaDireta, setFormaDireta] = useState<FormaDireta | null>(null);
+  const [pixOkDireto, setPixOkDireto] = useState(false);
+  const [enviandoDireto, setEnviandoDireto] = useState(false);
+  const [concluidoDireto, setConcluidoDireto] = useState(false);
+  const [erroDireto, setErroDireto] = useState("");
+  const [txidDireto, setTxidDireto] = useState("");
   const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(
     () => new Set(["balcao", grupoDoCaminho(caminho)].filter(Boolean) as string[])
   );
@@ -152,6 +169,7 @@ export default function MenuLateral() {
     setAberto(false);
     setContaAberta(false);
     setAvisosAberto(false);
+    setVendaDiretaAberto(false);
     // abre o grupo que contém a tela atual (sem fechar os outros)
     const id = grupoDoCaminho(caminho);
     if (id) setGruposAbertos((s) => (s.has(id) ? s : new Set(s).add(id)));
@@ -161,6 +179,7 @@ export default function MenuLateral() {
     const abrindo = !avisosAberto;
     setAvisosAberto(abrindo);
     setContaAberta(false);
+    setVendaDiretaAberto(false);
     if (abrindo) {
       try {
         const d = await fetch("/api/notificacoes").then((r) => r.json());
@@ -190,6 +209,68 @@ export default function MenuLateral() {
     setAvisosLista((xs) => xs.map((x) => ({ ...x, lida: true })));
     setAvisosNaoLidos(0);
     await fetch("/api/notificacoes/marcar-todas", { method: "POST" }).catch(() => {});
+  }
+
+  function abrirVendaDireta() {
+    const abrindo = !vendaDiretaAberto;
+    setVendaDiretaAberto(abrindo);
+    setContaAberta(false);
+    setAvisosAberto(false);
+    if (abrindo) {
+      setValorDireto("");
+      setFormaDireta(null);
+      setPixOkDireto(false);
+      setConcluidoDireto(false);
+      setErroDireto("");
+      setEnviandoDireto(false);
+      setTxidDireto(`V${Date.now().toString(36).toUpperCase()}`);
+    }
+  }
+
+  const valorDiretoNumero = moedaParaNumero(valorDireto);
+
+  async function registrarVendaDireta(forma: FormaDireta) {
+    setEnviandoDireto(true);
+    setErroDireto("");
+    try {
+      const hoje = new Date();
+      const data = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(
+        hoje.getDate()
+      ).padStart(2, "0")}`;
+      const r = await fetch("/api/venda/concluir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data,
+          itens: [
+            { nome: "Venda direta", quantidade: 1, precoUnit: valorDiretoNumero, tipoVenda: "unidade" },
+          ],
+          partes: [{ forma, valor: valorDiretoNumero }],
+        }),
+      });
+      if (!r.ok) throw new Error("Não foi possível registrar a venda.");
+      setConcluidoDireto(true);
+    } catch (e) {
+      setErroDireto(e instanceof Error ? e.message : "Não foi possível registrar a venda.");
+      setFormaDireta(null);
+    } finally {
+      setEnviandoDireto(false);
+    }
+  }
+
+  function escolherFormaDireta(forma: FormaDireta) {
+    if (valorDiretoNumero <= 0) {
+      setErroDireto("Informe o valor da venda.");
+      return;
+    }
+    setErroDireto("");
+    setFormaDireta(forma);
+    if (forma !== "pix") registrarVendaDireta(forma);
+  }
+
+  function confirmarPixDireto() {
+    setPixOkDireto(true);
+    registrarVendaDireta("pix");
   }
 
   useEffect(() => {
@@ -279,6 +360,114 @@ export default function MenuLateral() {
 
       {temLoja && (
         <Link
+          href="/"
+          className="atalho-busca"
+          data-ativo={caminho === "/"}
+          aria-label="Consultar preço de um produto"
+          title="Consultar preço"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+            <path d="M21 21l-4.35-4.35" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        </Link>
+      )}
+
+      {temLoja && (
+        <button
+          type="button"
+          className="atalho-venda-direta"
+          onClick={abrirVendaDireta}
+          aria-label="Venda direta — informar valor e forma de pagamento"
+          aria-expanded={vendaDiretaAberto}
+          title="Venda direta"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="2.5" y="6" width="19" height="12" rx="2.5" stroke="currentColor" strokeWidth="2" />
+            <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="2" />
+          </svg>
+        </button>
+      )}
+
+      {vendaDiretaAberto && (
+        <>
+          <div className="fundo-conta" onClick={() => setVendaDiretaAberto(false)} />
+          <div className="venda-direta-menu" role="menu">
+            <div className="avisos-menu-cabeca">
+              <strong>Venda direta</strong>
+              <button type="button" onClick={() => setVendaDiretaAberto(false)}>
+                Fechar
+              </button>
+            </div>
+
+            {concluidoDireto ? (
+              <div className="venda-direta-ok">
+                <p>
+                  Venda de R$ {valorDireto || "0,00"} em {FORMAS_DIRETAS.find((f) => f.valor === formaDireta)?.rotulo}{" "}
+                  registrada.
+                </p>
+                <button type="button" className="botao primario" onClick={() => setVendaDiretaAberto(false)}>
+                  Fechar
+                </button>
+              </div>
+            ) : formaDireta === "pix" ? (
+              <div className="venda-direta-corpo">
+                <PainelPix
+                  valor={valorDiretoNumero}
+                  txid={txidDireto}
+                  confirmado={pixOkDireto}
+                  aoConfirmar={confirmarPixDireto}
+                />
+                {erroDireto && (
+                  <p className="dica" data-erro="true">
+                    {erroDireto}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="venda-direta-corpo">
+                <label className="rotulo largo">
+                  Valor da venda
+                  <span className="entrada" data-moeda="true">
+                    <span className="prefixo">R$</span>
+                    <input
+                      value={valorDireto}
+                      inputMode="decimal"
+                      placeholder="0,00"
+                      autoFocus
+                      onChange={(e) => setValorDireto(mascararMoeda(e.target.value))}
+                    />
+                  </span>
+                </label>
+
+                <p className="rotulo-pagamento">Forma de pagamento</p>
+                <div className="pagamentos">
+                  {FORMAS_DIRETAS.map((f) => (
+                    <button
+                      key={f.valor}
+                      type="button"
+                      className="botao pagamento"
+                      disabled={enviandoDireto}
+                      onClick={() => escolherFormaDireta(f.valor)}
+                    >
+                      {f.rotulo}
+                    </button>
+                  ))}
+                </div>
+
+                {erroDireto && (
+                  <p className="dica" data-erro="true">
+                    {erroDireto}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {temLoja && (
+        <Link
           href="/venda"
           className="atalho-venda"
           data-ativo={caminho === "/venda"}
@@ -310,7 +499,11 @@ export default function MenuLateral() {
       <button
         type="button"
         className="conta-topo"
-        onClick={() => setContaAberta((v) => !v)}
+        onClick={() => {
+          setContaAberta((v) => !v);
+          setAvisosAberto(false);
+          setVendaDiretaAberto(false);
+        }}
         aria-label="Menu da conta"
         aria-expanded={contaAberta}
       >

@@ -211,6 +211,55 @@ html[data-fonte="grande"] { zoom: 1.5; }
   text-align: center;
 }
 
+/* ---- atalhos de busca e venda direta na barra superior ---- */
+.atalho-busca,
+.atalho-venda-direta {
+  position: fixed;
+  top: 14px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.atalho-busca { right: 164px; }
+.atalho-venda-direta { right: 114px; }
+.atalho-busca:hover,
+.atalho-venda-direta:hover { border-color: var(--line-strong); }
+.atalho-busca[data-ativo="true"],
+.atalho-venda-direta[aria-expanded="true"] {
+  background: var(--azul);
+  color: #fff;
+  border-color: var(--azul);
+}
+.atalho-busca:focus-visible,
+.atalho-venda-direta:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+
+.venda-direta-menu {
+  position: fixed;
+  top: 62px;
+  right: 14px;
+  z-index: 36;
+  width: 320px;
+  max-width: calc(100vw - 28px);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 14px 40px rgba(19, 40, 64, 0.18);
+  overflow: hidden;
+}
+.venda-direta-corpo { padding: 14px; display: grid; gap: 12px; }
+.venda-direta-ok { padding: 18px 14px; display: grid; gap: 12px; text-align: center; }
+.venda-direta-ok p { margin: 0; font-size: 14px; }
+.venda-direta-corpo .pix { flex-direction: column; align-items: stretch; padding: 12px; gap: 12px; }
+.venda-direta-corpo .pix-qr { width: 100%; height: auto; max-width: 200px; margin: 0 auto; }
+.venda-direta-corpo .pix-valor { font-size: 22px; }
+
 /* ---- menu de conta (canto superior direito, com a foto do usuário) ---- */
 .conta-topo {
   position: fixed;
@@ -2916,6 +2965,8 @@ a.botao { display: block; text-align: center; text-decoration: none; }
 .conteudo:has(.pf-pagina) { margin-left: 0; }
 body:has(.pf-pagina) .conta-topo,
 body:has(.pf-pagina) .atalho-venda,
+body:has(.pf-pagina) .atalho-busca,
+body:has(.pf-pagina) .atalho-venda-direta,
 body:has(.pf-pagina) .ajuste-fonte { display: none; }
 
 .pf-pagina {
