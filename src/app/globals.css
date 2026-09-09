@@ -300,17 +300,22 @@ html[data-fonte="grande"] { zoom: 1.5; }
   box-shadow: inset 0 0 0 2px var(--ambar);
 }
 
-.venda-direta-total {
+.calc-visor {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 10px 12px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 14px 12px;
   border-radius: 10px;
   background: var(--azul-wash);
   border: 1px solid var(--azul);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--azul-ink);
+  word-break: break-all;
 }
-.venda-direta-total span { font-size: 12px; font-weight: 700; color: var(--nav-dim); text-transform: uppercase; letter-spacing: 0.06em; }
-.venda-direta-total strong { font-family: "IBM Plex Mono", monospace; font-size: 20px; color: var(--azul-ink); }
+.calc-visor-pendente { font-size: 13px; font-weight: 600; color: var(--nav-dim); }
 
 /* ---- menu de conta (canto superior direito, com a foto do usuário) ---- */
 .conta-topo {

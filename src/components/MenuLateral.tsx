@@ -17,32 +17,20 @@ const TECLAS_NUMERICAS = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "⌫", "0
 
 type OperadorDireto = "×" | "÷" | "+" | "−";
 const OPERADORES_DIRETOS: OperadorDireto[] = ["×", "÷", "+", "−"];
+/** Teclado da calculadora avulsa — número puro, sem máscara de centavos. */
+const TECLAS_CALCULADORA = ["7", "8", "9", "4", "5", "6", "1", "2", "3", ",", "0", "⌫"] as const;
 
-/**
- * "dois vezes três" -> 6, "dez mais cinco" -> 15... Sem separador conhecido,
- * cai pro número falado simples ("dez reais" -> 10). Devolve null se não
- * entender nada.
- */
-function interpretarExpressaoFalada(texto: string): number | null {
-  const t = texto.toLowerCase();
-  const padroes: [RegExp, (a: number, b: number) => number][] = [
-    [/\bvezes\b/, (a, b) => a * b],
-    [/\bdividido(?:\s+por)?\b/, (a, b) => (b !== 0 ? a / b : a)],
-    [/\bmais\b/, (a, b) => a + b],
-    [/\bmenos\b/, (a, b) => a - b],
-  ];
-  for (const [separador, calcular] of padroes) {
-    const partes = t.split(separador);
-    if (partes.length === 2) {
-      const bruto1 = numeroFalado(partes[0].trim());
-      const bruto2 = numeroFalado(partes[1].trim());
-      if (bruto1 !== null && bruto2 !== null) {
-        return calcular(moedaParaNumero(bruto1), moedaParaNumero(bruto2));
-      }
-    }
+function aplicarOperadorCalc(a: number, operador: OperadorDireto, b: number): number {
+  switch (operador) {
+    case "×":
+      return a * b;
+    case "÷":
+      return b !== 0 ? a / b : a;
+    case "+":
+      return a + b;
+    case "−":
+      return a - b;
   }
-  const bruto = numeroFalado(texto);
-  return bruto !== null ? moedaParaNumero(bruto) : null;
 }
 
 type FormaDireta = "pix" | "debito" | "credito";
@@ -195,18 +183,19 @@ export default function MenuLateral() {
   const [concluidoDireto, setConcluidoDireto] = useState(false);
   const [erroDireto, setErroDireto] = useState("");
   const [txidDireto, setTxidDireto] = useState("");
-  /** Soma acumulada da calculadora do teclado — some com o valor digitado ao apertar "+". */
-  const [somaDireta, setSomaDireta] = useState(0);
-  /** 1º número + operador de uma conta em andamento (×, ÷, +, −), aguardando o "=". */
-  const [calcPendente, setCalcPendente] = useState<{ operando1: number; operador: OperadorDireto } | null>(
-    null
-  );
   const { ouvir: ouvirDireto, parar: pararDireto, ouvindoCampo: ouvindoDireto, disponivel: vozDisponivel } = useVoz({
     aoFinalizar: (texto) => {
-      const n = interpretarExpressaoFalada(texto);
+      const n = numeroFalado(texto);
       if (n !== null) setValorDireto(paraMoeda(n));
     },
   });
+  /** Calculadora avulsa (número puro, sem máscara de centavos) — só entra no
+   *  valor da venda quando o caixa aperta "Concluir valor". */
+  const [calculadoraAberta, setCalculadoraAberta] = useState(false);
+  const [calcVisor, setCalcVisor] = useState("");
+  const [calcPendenteCalc, setCalcPendenteCalc] = useState<{ operando1: number; operador: OperadorDireto } | null>(
+    null
+  );
   const [gruposAbertos, setGruposAbertos] = useState<Set<string>>(
     () => new Set(["balcao", grupoDoCaminho(caminho)].filter(Boolean) as string[])
   );
@@ -271,21 +260,16 @@ export default function MenuLateral() {
       setErroDireto("");
       setEnviandoDireto(false);
       setTxidDireto(`V${Date.now().toString(36).toUpperCase()}`);
-      setSomaDireta(0);
-      setCalcPendente(null);
+      fecharCalculadora();
     }
   }
 
   const valorDiretoNumero = moedaParaNumero(valorDireto);
-  /** Soma parcial (Adicionar/Remover valor) + o que estiver digitado agora — é o que vai cobrado. */
-  const totalFinalDireto = Math.round((somaDireta + valorDiretoNumero) * 100) / 100;
 
   function teclaDireta(tecla: (typeof TECLAS_NUMERICAS)[number]) {
     if (ouvindoDireto) pararDireto();
     if (tecla === "C") {
       setValorDireto("");
-      setSomaDireta(0);
-      setCalcPendente(null);
       return;
     }
     const digitos = valorDireto.replace(/\D/g, "");
@@ -296,52 +280,69 @@ export default function MenuLateral() {
     setValorDireto(mascararMoeda(digitos + tecla));
   }
 
-  function aplicarOperador(a: number, operador: OperadorDireto, b: number): number {
-    switch (operador) {
-      case "×":
-        return a * b;
-      case "÷":
-        return b !== 0 ? a / b : a;
-      case "+":
-        return a + b;
-      case "−":
-        return a - b;
+  // ---------- calculadora avulsa (número puro — "3" fica "3", não "3,00") ----------
+
+  function abrirCalculadora() {
+    setCalcVisor("");
+    setCalcPendenteCalc(null);
+    setCalculadoraAberta(true);
+  }
+
+  function fecharCalculadora() {
+    setCalculadoraAberta(false);
+    setCalcVisor("");
+    setCalcPendenteCalc(null);
+  }
+
+  function numeroDoVisor(texto: string): number {
+    return Number(texto.replace(",", ".")) || 0;
+  }
+
+  function tituloDoVisor(n: number): string {
+    return (Math.round(n * 100) / 100).toString().replace(".", ",");
+  }
+
+  function teclaCalculadora(tecla: (typeof TECLAS_CALCULADORA)[number]) {
+    if (tecla === "⌫") {
+      setCalcVisor((v) => v.slice(0, -1));
+      return;
     }
+    if (tecla === ",") {
+      setCalcVisor((v) => (v.includes(",") ? v : (v || "0") + ","));
+      return;
+    }
+    setCalcVisor((v) => v + tecla);
+  }
+
+  function limparCalculadora() {
+    setCalcVisor("");
+    setCalcPendenteCalc(null);
   }
 
   /** ×, +, −, ÷: fecha a conta pendente (se houver) e guarda o 1º número da próxima. */
-  function operadorDireto(operador: OperadorDireto) {
-    if (ouvindoDireto) pararDireto();
-    setCalcPendente((pendente) => ({
-      operando1: pendente ? aplicarOperador(pendente.operando1, pendente.operador, valorDiretoNumero) : valorDiretoNumero,
+  function operadorCalculadora(operador: OperadorDireto) {
+    setCalcPendenteCalc((pendente) => ({
+      operando1: pendente
+        ? aplicarOperadorCalc(pendente.operando1, pendente.operador, numeroDoVisor(calcVisor))
+        : numeroDoVisor(calcVisor),
       operador,
     }));
-    setValorDireto("");
+    setCalcVisor("");
   }
 
-  /** = : calcula a conta pendente e mostra o resultado no campo. */
-  function igualDireto() {
-    if (ouvindoDireto) pararDireto();
-    if (!calcPendente) return;
-    const resultado = aplicarOperador(calcPendente.operando1, calcPendente.operador, valorDiretoNumero);
+  /** = : calcula a conta pendente e mostra o resultado no visor. */
+  function igualCalculadora() {
+    if (!calcPendenteCalc) return;
+    const resultado = aplicarOperadorCalc(calcPendenteCalc.operando1, calcPendenteCalc.operador, numeroDoVisor(calcVisor));
+    setCalcVisor(tituloDoVisor(resultado));
+    setCalcPendenteCalc(null);
+  }
+
+  /** Concluir valor: manda o resultado da calculadora pro campo "Valor da venda". */
+  function concluirValorCalculadora() {
+    const resultado = numeroDoVisor(calcVisor);
     setValorDireto(resultado > 0 ? paraMoeda(resultado) : "");
-    setCalcPendente(null);
-  }
-
-  /** Soma o valor digitado (ou já calculado) à conta parcial e limpa o campo pro próximo número. */
-  function adicionarValorDireto() {
-    if (ouvindoDireto) pararDireto();
-    setSomaDireta((s) => Math.round((s + valorDiretoNumero) * 100) / 100);
-    setValorDireto("");
-    setCalcPendente(null);
-  }
-
-  /** Tira o valor digitado da conta parcial — pra corrigir um item somado errado. */
-  function removerValorDireto() {
-    if (ouvindoDireto) pararDireto();
-    setSomaDireta((s) => Math.max(0, Math.round((s - valorDiretoNumero) * 100) / 100));
-    setValorDireto("");
-    setCalcPendente(null);
+    fecharCalculadora();
   }
 
   async function registrarVendaDireta(forma: FormaDireta) {
@@ -358,9 +359,9 @@ export default function MenuLateral() {
         body: JSON.stringify({
           data,
           itens: [
-            { nome: "Venda direta", quantidade: 1, precoUnit: totalFinalDireto, tipoVenda: "unidade" },
+            { nome: "Venda direta", quantidade: 1, precoUnit: valorDiretoNumero, tipoVenda: "unidade" },
           ],
-          partes: [{ forma, valor: totalFinalDireto }],
+          partes: [{ forma, valor: valorDiretoNumero }],
         }),
       });
       if (!r.ok) throw new Error("Não foi possível registrar a venda.");
@@ -374,7 +375,7 @@ export default function MenuLateral() {
   }
 
   function escolherFormaDireta(forma: FormaDireta) {
-    if (totalFinalDireto <= 0) {
+    if (valorDiretoNumero <= 0) {
       setErroDireto("Informe o valor da venda.");
       return;
     }
@@ -515,17 +516,78 @@ export default function MenuLateral() {
             {concluidoDireto ? (
               <div className="venda-direta-ok">
                 <p>
-                  Venda de R$ {totalFinalDireto.toFixed(2).replace(".", ",")} em{" "}
-                  {FORMAS_DIRETAS.find((f) => f.valor === formaDireta)?.rotulo} registrada.
+                  Venda de R$ {valorDireto || "0,00"} em {FORMAS_DIRETAS.find((f) => f.valor === formaDireta)?.rotulo}{" "}
+                  registrada.
                 </p>
                 <button type="button" className="botao primario" onClick={() => setVendaDiretaAberto(false)}>
                   Fechar
                 </button>
               </div>
+            ) : calculadoraAberta ? (
+              <div className="venda-direta-corpo">
+                <div className="calc-visor">
+                  {calcPendenteCalc && (
+                    <span className="calc-visor-pendente">
+                      {tituloDoVisor(calcPendenteCalc.operando1)} {calcPendenteCalc.operador}
+                    </span>
+                  )}
+                  {calcVisor || "0"}
+                </div>
+
+                <div className="teclado-numerico" role="group" aria-label="Teclado da calculadora">
+                  {TECLAS_CALCULADORA.map((tecla) => (
+                    <button
+                      key={tecla}
+                      type="button"
+                      className="tecla-numerica"
+                      onClick={() => teclaCalculadora(tecla)}
+                      aria-label={tecla === "⌫" ? "Apagar" : tecla === "," ? "Vírgula" : tecla}
+                    >
+                      {tecla}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="teclado-numerico" role="group" aria-label="Operações da calculadora">
+                  {OPERADORES_DIRETOS.map((op) => (
+                    <button
+                      key={op}
+                      type="button"
+                      className="tecla-numerica tecla-operador"
+                      data-marcado={calcPendenteCalc?.operador === op}
+                      onClick={() => operadorCalculadora(op)}
+                      aria-label={`Operação ${op}`}
+                    >
+                      {op}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="tecla-numerica tecla-operador"
+                    onClick={igualCalculadora}
+                    disabled={!calcPendenteCalc}
+                    aria-label="Calcular resultado"
+                  >
+                    =
+                  </button>
+                </div>
+
+                <div className="acoes" style={{ flexDirection: "column", alignItems: "stretch" }}>
+                  <button type="button" className="botao primario" onClick={concluirValorCalculadora}>
+                    Concluir valor
+                  </button>
+                  <button type="button" className="botao neutro" onClick={limparCalculadora}>
+                    Limpar
+                  </button>
+                  <button type="button" className="botao neutro" onClick={fecharCalculadora}>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
             ) : formaDireta === "pix" ? (
               <div className="venda-direta-corpo">
                 <PainelPix
-                  valor={totalFinalDireto}
+                  valor={valorDiretoNumero}
                   txid={txidDireto}
                   confirmado={pixOkDireto}
                   aoConfirmar={confirmarPixDireto}
@@ -539,7 +601,7 @@ export default function MenuLateral() {
             ) : (
               <div className="venda-direta-corpo">
                 <CampoVoz
-                  rotulo={calcPendente ? `${calcPendente.operando1.toFixed(2).replace(".", ",")} ${calcPendente.operador}` : "Valor da venda"}
+                  rotulo="Valor da venda"
                   campo="valorDireto"
                   valor={valorDireto}
                   aoMudar={setValorDireto}
@@ -566,53 +628,9 @@ export default function MenuLateral() {
                   ))}
                 </div>
 
-                <div className="teclado-numerico" role="group" aria-label="Operações da calculadora">
-                  {OPERADORES_DIRETOS.map((op) => (
-                    <button
-                      key={op}
-                      type="button"
-                      className="tecla-numerica tecla-operador"
-                      data-marcado={calcPendente?.operador === op}
-                      onClick={() => operadorDireto(op)}
-                      aria-label={`Operação ${op}`}
-                    >
-                      {op}
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="tecla-numerica tecla-operador"
-                    onClick={igualDireto}
-                    disabled={!calcPendente}
-                    aria-label="Calcular resultado"
-                  >
-                    =
-                  </button>
-                </div>
-
-                <div className="venda-direta-total">
-                  <span>Valor total</span>
-                  <strong>R$ {totalFinalDireto.toFixed(2).replace(".", ",")}</strong>
-                </div>
-
-                <div className="teclado-numerico">
-                  <button
-                    type="button"
-                    className="tecla-numerica tecla-operador"
-                    onClick={adicionarValorDireto}
-                    style={{ gridColumn: "span 2" }}
-                  >
-                    + Adicionar valor
-                  </button>
-                  <button
-                    type="button"
-                    className="tecla-numerica tecla-operador"
-                    onClick={removerValorDireto}
-                    disabled={somaDireta <= 0}
-                  >
-                    − Remover
-                  </button>
-                </div>
+                <button type="button" className="botao neutro" onClick={abrirCalculadora} style={{ width: "100%" }}>
+                  🧮 Calculadora
+                </button>
 
                 <p className="rotulo-pagamento">Forma de pagamento</p>
                 <div className="pagamentos">
