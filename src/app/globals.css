@@ -287,35 +287,6 @@ html[data-fonte="grande"] { zoom: 1.5; }
 .tecla-numerica:active { background: var(--azul-wash); border-color: var(--azul); }
 .tecla-numerica:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
 .tecla-numerica:disabled { opacity: 0.4; cursor: not-allowed; }
-.tecla-operador {
-  font-size: 20px;
-  background: var(--azul);
-  color: #fff;
-  border-color: var(--azul);
-}
-.tecla-operador:hover { background: var(--azul-ink); border-color: var(--azul-ink); }
-.tecla-operador[data-marcado="true"] {
-  background: var(--azul-ink);
-  border-color: var(--ambar);
-  box-shadow: inset 0 0 0 2px var(--ambar);
-}
-
-.calc-visor {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  padding: 14px 12px;
-  border-radius: 10px;
-  background: var(--azul-wash);
-  border: 1px solid var(--azul);
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--azul-ink);
-  word-break: break-all;
-}
-.calc-visor-pendente { font-size: 13px; font-weight: 600; color: var(--nav-dim); }
 
 /* ---- menu de conta (canto superior direito, com a foto do usuário) ---- */
 .conta-topo {

@@ -99,7 +99,10 @@ export async function renovarToken(
 export async function lerToken(token?: string | null): Promise<Sessao | null> {
   if (!token) return null;
   const [corpo, assinatura] = token.split(".");
-  if (!corpo || !assinatura) return null;
+  if (!corpo || !assinatura) {
+    console.warn("[sessao] cookie sem o formato corpo.assinatura — token truncado ou corrompido");
+    return null;
+  }
 
   try {
     const valida = await crypto.subtle.verify(
@@ -108,14 +111,25 @@ export async function lerToken(token?: string | null): Promise<Sessao | null> {
       deBase64Url(assinatura),
       new TextEncoder().encode(corpo)
     );
-    if (!valida) return null;
+    if (!valida) {
+      // Ou o token foi adulterado, ou foi assinado com um SESSION_SECRET
+      // diferente do atual (ex.: mudou a variável de ambiente).
+      console.warn("[sessao] assinatura inválida — token corrompido ou SESSION_SECRET diferente do que assinou");
+      return null;
+    }
 
     const sessao: Sessao = JSON.parse(
       new TextDecoder().decode(deBase64Url(corpo))
     );
-    if (sessao.exp * 1000 < Date.now()) return null;
+    if (sessao.exp * 1000 < Date.now()) {
+      console.warn(
+        `[sessao] expirada: usuarioId=${sessao.usuarioId} venceu em ${new Date(sessao.exp * 1000).toISOString()}`
+      );
+      return null;
+    }
     return sessao;
-  } catch {
+  } catch (erro) {
+    console.warn("[sessao] erro ao decodificar o cookie de sessão", erro);
     return null;
   }
 }
