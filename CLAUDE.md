@@ -232,6 +232,11 @@ voice-input component (`CampoVoz`/`useVoz`) used on the Produtos screen. The new
 `compra × 1.38` (`MARGEM_VENDA = 0.38`, same rule as "Importar compra"), still editable; the confirm route
 requires both and passes `precoCompra` to `criarProduto`.
 
+The route's catch-all used to always answer with a hardcoded "tire fotos mais nítidas" message regardless
+of the real failure (vision API error, bad JSON, DB error, etc.) — misdiagnosed as a photo-quality problem
+when it almost never was. It now returns the real error in `detalhe` (same convention as everywhere else,
+see the Produtos section) instead of guessing a cause.
+
 ### Comércios grandes — cotação de preço dos concorrentes (`/produtos/comercios-grandes`)
 
 Módulo "Comércios grandes": **não cadastra produtos** — lê os preços de um concorrente e compara com
@@ -301,9 +306,9 @@ card do parceiro usa.
 
 ### Stock-by-video (`/produtos/estoque-video`)
 
-The shopkeeper **records** (in-app camera, not a file pick) a short video walking the shelf and
+The shopkeeper **records** (in-app camera, not a file pick) a short video walking the shelf, optionally
 **narrating** "name, quantity" per item ("Batata Mix, 12 pacotes"), optionally with a price too
-("…, R$ 10"). Audio-first, not vision:
+("…, R$ 10"). Audio-first, with a vision fallback when there's no narration:
 - `<GravadorVideo>` (`src/components/GravadorVideo.tsx`) — `getUserMedia({video:{facingMode:"environment"},
   audio:true})` + `MediaRecorder`, live preview, Gravar/Parar, auto-stops at `MAX_SEGUNDOS` (140). While
   recording it grabs a **canvas frame every 1.5 s** (`{t, dataUrl}`), so no seeking a webm blob later.
@@ -317,6 +322,13 @@ The shopkeeper **records** (in-app camera, not a file pick) a short video walkin
   `claude-sonnet-5`, text only) → `[{nome, quantidade|null, preco|null, generico, segundos}]`. It splits the
   spoken numbers: "R$/reais/centavos/a dúzia" → price, a bare count/"pacotes"/"dúzia"(=12) → quantity.
   **`generico: true`** when the name was garbled and Claude guessed. `buscarProduto` matches to the catalog.
+  **If the transcript yields zero items** (silent video, or speech Whisper/Claude couldn't parse), the route
+  falls back to vision: the client already sends up to 8 of `<GravadorVideo>`'s captured frames (evenly
+  sampled, `quadros` form field, data URLs) alongside the audio, and `lerEstoqueDosQuadros` reuses
+  `extrairEstoqueDasFotos` (the same shelf-photo vision call from `lerEstoqueFoto.ts`) to read product name +
+  visible quantity straight from the frames — no narration needed. The response carries `origem: "fala" |
+  "video"` so the client can say which path produced the results; vision-origin items have no `preco`/
+  `segundos` (price isn't visible on a shelf count, thumbnail just falls back to the first sampled frame).
 - The client picks the recorded frame nearest `segundos + 1` as the product photo (editable per row via
   `<CampoFoto>`).
 - `POST /api/produtos/estoque-video/confirmar`: matched → `atualizarEstoqueProduto` and/or

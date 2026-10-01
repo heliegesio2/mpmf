@@ -11,6 +11,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { extrairEstoqueDasFotos, type ImagemEntrada } from "@/lib/lerEstoqueFoto";
 
 const anthropic = new Anthropic();
 const MODELO = process.env.ANTHROPIC_MODEL_VIDEO || "claude-sonnet-5";
@@ -188,4 +189,21 @@ export async function lerEstoqueDoVideo(
   const { texto, segmentos } = await transcreverAudio(audio);
   const itens = await interpretarTranscricao(segmentos, texto);
   return { transcricao: texto, itens };
+}
+
+/**
+ * Alternativa sem narração: quando o lojista não fala nada (ou a fala não deu
+ * pra entender), usa os quadros já capturados durante a gravação e lê os
+ * produtos e a quantidade visível direto da imagem — mesma visão usada em
+ * "estoque por foto" (`lerEstoqueFoto.ts`), só que os quadros vêm do vídeo.
+ */
+export async function lerEstoqueDosQuadros(imagens: ImagemEntrada[]): Promise<ItemEstoqueVideo[]> {
+  const itens = await extrairEstoqueDasFotos(imagens);
+  return itens.map((i) => ({
+    nome: i.descricao,
+    quantidade: i.quantidadeEstimada,
+    preco: null,
+    generico: false,
+    segundos: -1,
+  }));
 }

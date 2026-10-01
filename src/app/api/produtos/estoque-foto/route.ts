@@ -64,8 +64,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ itens });
   } catch (erro) {
     console.error("Falha ao ler estoque por foto:", erro);
+    const detalhe = erro instanceof Error ? erro.message : String(erro);
     return NextResponse.json(
-      { erro: "Não foi possível ler as fotos. Tente fotos mais nítidas." },
+      { erro: "Não foi possível ler as fotos.", detalhe },
       { status: 500 }
     );
   }

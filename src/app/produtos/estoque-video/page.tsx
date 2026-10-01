@@ -40,6 +40,15 @@ type Linha = {
   foto: string;
 };
 
+const MAX_QUADROS_ENVIADOS = 8;
+
+/** Escolhe até `max` quadros espalhados uniformemente pela gravação. */
+function amostrarQuadros(quadros: Quadro[], max: number): Quadro[] {
+  if (quadros.length <= max) return quadros;
+  const passo = quadros.length / max;
+  return Array.from({ length: max }, (_, i) => quadros[Math.floor(i * passo)]);
+}
+
 /** Quadro mais perto do segundo em que o produto foi falado. */
 function fotoDoItem(item: ItemProposto, quadros: Quadro[]): string {
   if (!quadros.length) return "";
@@ -114,6 +123,7 @@ export default function EstoquePorVideo() {
       setAviso("Transcrevendo a fala e lendo os produtos…");
       const corpo = new FormData();
       corpo.append("audio", wav, "audio.wav");
+      amostrarQuadros(quadros, MAX_QUADROS_ENVIADOS).forEach((q) => corpo.append("quadros", q.dataUrl));
       const r = await fetch("/api/produtos/estoque-video", { method: "POST", body: corpo });
       const dados = await r.json();
       if (!r.ok) {
@@ -124,9 +134,11 @@ export default function EstoquePorVideo() {
 
       setTranscricao(dados.transcricao ?? "");
       const itens: ItemProposto[] = dados.itens ?? [];
+      const origem: "fala" | "video" = dados.origem ?? "fala";
       if (itens.length === 0) {
         setAviso(
-          "Não entendi nenhum produto na fala. Fale pausado: nome, quantidade (e o preço, se quiser)."
+          "Não entendi nenhum produto, nem na fala nem na imagem do vídeo. Tente apontar a câmera" +
+            " mais de perto pros produtos, com boa luz."
         );
         return;
       }
@@ -138,7 +150,9 @@ export default function EstoquePorVideo() {
       const genericos = itens.filter((i) => i.generico).length;
       const comPreco = itens.filter((i) => i.precoDetectado !== null).length;
       setAviso(
-        `${itens.length} produtos lidos` +
+        (origem === "video"
+          ? `${itens.length} produtos identificados pela imagem do vídeo (sem narração)`
+          : `${itens.length} produtos lidos`) +
           (cortado ? ` (só os primeiros ${MAX_SEGUNDOS} s)` : "") +
           (comPreco ? ` · ${comPreco} com preço falado` : "") +
           (novos ? ` · ${novos} não estão no catálogo` : "") +
@@ -219,9 +233,10 @@ export default function EstoquePorVideo() {
       <section className="cartao">
         <h2 className="titulo-cartao">Gravar a contagem</h2>
         <p className="ajuda-voz">
-          Toque em <strong>Gravar vídeo</strong>, aponte a câmera pros produtos e vá falando, um por
-          um: <strong>nome e quantidade</strong> — “Batata Mix, 12 pacotes”. Se falar o preço junto
-          (“…, R$ 10”), o preço também é atualizado. Até {MAX_SEGUNDOS}s. Precisa de internet.
+          Toque em <strong>Gravar vídeo</strong> e aponte a câmera pros produtos. Se for falando, um
+          por um, <strong>nome e quantidade</strong> — “Batata Mix, 12 pacotes” — e opcionalmente o
+          preço (“…, R$ 10”), eu uso a fala. Se preferir só filmar sem falar nada, eu reconheço os
+          produtos e a quantidade pela imagem. Até {MAX_SEGUNDOS}s. Precisa de internet.
         </p>
 
         <GravadorVideo

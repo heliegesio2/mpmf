@@ -127,7 +127,10 @@ export default function EstoquePorFoto() {
 
       const r = await fetch("/api/produtos/estoque-foto", { method: "POST", body: corpo });
       const dados = await r.json();
-      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível ler as fotos.");
+      if (!r.ok)
+        throw new Error(
+          [dados?.erro, dados?.detalhe].filter(Boolean).join(" — ") || "Não foi possível ler as fotos."
+        );
 
       const itens: ItemProposto[] = dados.itens;
       if (itens.length === 0) {
