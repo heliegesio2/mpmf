@@ -12,7 +12,9 @@ export const maxDuration = 60;
 const LIMIAR_SUGESTAO = 0.5;
 
 const TIPOS_MIDIA = new Set(["image/jpeg", "image/png", "image/webp"]);
-const MAX_QUADROS_CUPOM = 8;
+/** Poucas imagens pra caber no tempo limite da função serverless — mais
+ * quadros deixa a chamada de visão lenta demais e a Vercel mata a função. */
+const MAX_QUADROS_CUPOM = 5;
 
 type ItemLido = {
   descricao: string;
@@ -162,7 +164,15 @@ export async function POST(request: Request) {
   const { empresaId, erro: negado } = await exigirEmpresa();
   if (negado) return negado;
 
-  const dados = await request.formData();
+  let dados: FormData;
+  try {
+    dados = await request.formData();
+  } catch (erro) {
+    console.error("Falha ao ler o corpo da requisição de importar compra:", erro);
+    const detalhe = erro instanceof Error ? erro.message : String(erro);
+    return NextResponse.json({ erro: "Não foi possível ler o envio.", detalhe }, { status: 400 });
+  }
+
   const foto = dados.get("foto");
   if (foto instanceof File) return importarDeFoto(foto, empresaId);
 

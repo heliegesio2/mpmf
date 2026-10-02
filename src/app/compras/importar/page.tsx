@@ -14,7 +14,8 @@ type Estado = "lista" | "nova";
 type ModoCaptura = "foto" | "video";
 
 const MAX_SEGUNDOS_VIDEO_CUPOM = 45;
-const MAX_QUADROS_CUPOM = 8;
+/** Poucas imagens pra caber no tempo limite da função serverless. */
+const MAX_QUADROS_CUPOM = 5;
 
 /** Escolhe até `max` quadros espalhados uniformemente pela gravação. */
 function amostrarQuadros(quadros: Quadro[], max: number): Quadro[] {
@@ -266,8 +267,20 @@ export default function ImportarCompra() {
     setNota(null);
     try {
       const r = await fetch("/api/importar-compra", { method: "POST", body: corpo });
-      const dados = await r.json();
-      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível ler o cupom.");
+      const texto = await r.text();
+      let dados: any;
+      try {
+        dados = texto ? JSON.parse(texto) : {};
+      } catch {
+        throw new Error(
+          "O servidor demorou demais ou teve um erro inesperado. Tente de novo com um vídeo mais curto."
+        );
+      }
+      if (!r.ok) {
+        throw new Error(
+          [dados?.erro, dados?.detalhe].filter(Boolean).join(" — ") || "Não foi possível ler o cupom."
+        );
+      }
 
       if (dados.jaProcessada) {
         setJaProcessada(dados.aviso ?? "Essa nota já foi processada.");
