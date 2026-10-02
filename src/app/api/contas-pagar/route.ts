@@ -56,6 +56,23 @@ export async function POST(request: Request) {
     // categoria: um valor da lista padrão ou um texto livre (até 40 chars)
     const categoria = String(c.categoria ?? "").trim().slice(0, 40) || null;
 
+    const recorrente = Boolean(c.recorrente);
+    const recorrenteParcelas = Number.isInteger(Number(c.recorrenteParcelas))
+      ? Number(c.recorrenteParcelas)
+      : null;
+    if (recorrente && !vencimento) {
+      return NextResponse.json(
+        { erro: "Conta recorrente precisa de um vencimento." },
+        { status: 400 }
+      );
+    }
+    if (recorrente && (!recorrenteParcelas || recorrenteParcelas < 1)) {
+      return NextResponse.json(
+        { erro: "Informe quantas parcelas manter geradas (1 ou mais)." },
+        { status: 400 }
+      );
+    }
+
     const item = await criarContaPagar(empresaId, {
       fornecedorId,
       categoria,
@@ -63,7 +80,8 @@ export async function POST(request: Request) {
       valor: Math.round(valor * 100) / 100,
       vencimento,
       foto,
-      recorrente: Boolean(c.recorrente),
+      recorrente,
+      recorrenteParcelas: recorrente ? recorrenteParcelas : null,
       pago: Boolean(c.pago),
     });
     return NextResponse.json({ item }, { status: 201 });

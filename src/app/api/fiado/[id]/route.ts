@@ -17,9 +17,9 @@ export async function PATCH(_request: Request, { params }: Ctx) {
   }
 
   try {
-    const ok = await marcarFiadoPago(empresaId, id);
-    if (!ok) return NextResponse.json({ erro: "Lançamento não encontrado ou já pago." }, { status: 404 });
-    return NextResponse.json({ ok: true });
+    const r = await marcarFiadoPago(empresaId, id);
+    if (!r.ok) return NextResponse.json({ erro: "Lançamento não encontrado ou já pago." }, { status: 404 });
+    return NextResponse.json({ ok: true, parcelasGeradas: r.parcelasGeradas });
   } catch (e) {
     console.error("Falha ao quitar fiado:", e);
     return NextResponse.json({ erro: "Não foi possível salvar." }, { status: 500 });

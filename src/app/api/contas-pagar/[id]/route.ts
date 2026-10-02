@@ -30,7 +30,7 @@ export async function PATCH(request: Request, { params }: Ctx) {
 
   const r = await marcarContaPagarPaga(empresaId, id);
   if (!r.ok) return NextResponse.json({ erro: "Conta não encontrada ou já nesse estado." }, { status: 404 });
-  return NextResponse.json({ ok: true, proximaVencimento: r.proximaVencimento });
+  return NextResponse.json({ ok: true, parcelasGeradas: r.parcelasGeradas });
 }
 
 /** DELETE /api/contas-pagar/:id */

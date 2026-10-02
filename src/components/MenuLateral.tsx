@@ -37,6 +37,7 @@ const ICONE_AVISO: Record<string, string> = {
   cadastro: "🏢",
   sistema: "🔔",
   cotacao: "💹",
+  conta: "💰",
 };
 
 type Sessao = {
@@ -550,17 +551,29 @@ export default function MenuLateral() {
           <img src="/api/auth/foto" alt="" onError={() => setSemFoto(true)} />
         )}
       </button>
-      {avisosNaoLidos > 0 && (
-        <button
-          type="button"
-          className="conta-badge"
-          onClick={abrirAvisos}
-          aria-label={`${avisosNaoLidos} aviso(s) não lido(s)`}
-          aria-expanded={avisosAberto}
-        >
-          {avisosNaoLidos > 9 ? "9+" : avisosNaoLidos}
-        </button>
-      )}
+
+      {/* sino de avisos — independente da foto, mais fácil de tocar */}
+      <button
+        type="button"
+        className="sino-avisos"
+        onClick={abrirAvisos}
+        aria-label={avisosNaoLidos > 0 ? `${avisosNaoLidos} aviso(s) não lido(s)` : "Avisos"}
+        aria-expanded={avisosAberto}
+        title="Avisos"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M12 3a6 6 0 0 0-6 6v3.5c0 .7-.26 1.37-.74 1.89L4 16h16l-1.26-1.61a2.5 2.5 0 0 1-.74-1.89V9a6 6 0 0 0-6-6Z"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          <path d="M9.5 19a2.5 2.5 0 0 0 5 0" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        {avisosNaoLidos > 0 && (
+          <span className="sino-avisos-contador">{avisosNaoLidos > 9 ? "9+" : avisosNaoLidos}</span>
+        )}
+      </button>
 
       {avisosAberto && (
         <>

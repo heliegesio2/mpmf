@@ -317,24 +317,43 @@ html[data-fonte="grande"] { zoom: 1.5; }
   font-size: 14px;
 }
 
-/* bolinha de avisos não lidos, no canto da foto da conta */
-.conta-badge {
+/* sino de avisos — independente da foto da conta, mesmo padrão dos outros atalhos fixos */
+.sino-avisos {
   position: fixed;
-  top: 8px;
-  right: 8px;
-  z-index: 31;
+  top: 14px;
+  right: 214px;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+.sino-avisos:hover { border-color: var(--line-strong); }
+.sino-avisos[aria-expanded="true"] {
+  background: var(--azul);
+  color: #fff;
+  border-color: var(--azul);
+}
+.sino-avisos:focus-visible { outline: 2px solid var(--azul); outline-offset: 2px; }
+.sino-avisos-contador {
+  position: absolute;
+  top: -6px;
+  right: -6px;
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
   border-radius: 9px;
   background: var(--perigo);
   color: #fff;
-  border: 2px solid var(--bg);
   font-size: 11px;
   font-weight: 900;
-  line-height: 15px;
+  line-height: 18px;
   text-align: center;
-  text-decoration: none;
 }
 
 .fundo-conta { position: fixed; inset: 0; z-index: 34; }
@@ -2995,6 +3014,7 @@ body:has(.pf-pagina) .conta-topo,
 body:has(.pf-pagina) .atalho-venda,
 body:has(.pf-pagina) .atalho-busca,
 body:has(.pf-pagina) .atalho-venda-direta,
+body:has(.pf-pagina) .sino-avisos,
 body:has(.pf-pagina) .ajuste-fonte { display: none; }
 
 .pf-pagina {

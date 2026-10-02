@@ -492,6 +492,15 @@ const MIGRACOES_IDEMPOTENTES = [
      atualizado_em  timestamptz NOT NULL DEFAULT now()
    )`,
   "CREATE INDEX IF NOT EXISTS ix_venda_nota_venda ON venda_nota (venda_id)",
+  // db/40 — contas a pagar/receber recorrentes com buffer de parcelas futuras
+  "ALTER TABLE conta_pagar ADD COLUMN IF NOT EXISTS recorrente_parcelas integer",
+  "ALTER TABLE conta_pagar ADD COLUMN IF NOT EXISTS serie_id bigint",
+  "CREATE INDEX IF NOT EXISTS idx_conta_pagar_serie ON conta_pagar (serie_id) WHERE serie_id IS NOT NULL",
+  "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS vencimento date",
+  "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS recorrente boolean NOT NULL DEFAULT false",
+  "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS recorrente_parcelas integer",
+  "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS serie_id bigint",
+  "CREATE INDEX IF NOT EXISTS idx_fiado_serie ON fiado (serie_id) WHERE serie_id IS NOT NULL",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -2442,10 +2451,15 @@ export type Fiado = {
   cliente_nome: string;
   valor: string;
   descricao: string | null;
+  vencimento: string | null;
+  recorrente: boolean;
   pago: boolean;
   pago_em: string | null;
   criado_em: string;
 };
+
+const CAMPOS_FIADO = `f.id, f.cliente_id, cl.nome AS cliente_nome, f.valor, f.descricao,
+       to_char(f.vencimento, 'YYYY-MM-DD') AS vencimento, f.recorrente, f.pago, f.pago_em, f.criado_em`;
 
 export async function listarFiado(
   empresaId: number,
@@ -2457,8 +2471,7 @@ export async function listarFiado(
     : situacao === "pagas" ? "AND f.pago = true"
     : "";
   const { rows } = await pool.query<Fiado>(
-    `SELECT f.id, f.cliente_id, cl.nome AS cliente_nome, f.valor, f.descricao,
-            f.pago, f.pago_em, f.criado_em
+    `SELECT ${CAMPOS_FIADO}
        FROM fiado f
        JOIN cliente cl ON cl.id = f.cliente_id
       WHERE f.empresa_id = $1 ${filtro}
@@ -2468,32 +2481,101 @@ export async function listarFiado(
   return rows;
 }
 
+/**
+ * Garante que a serie recorrente de fiado tenha pelo menos `recorrente_parcelas`
+ * lancamentos pendentes, gerando os que faltarem a partir do ultimo vencimento
+ * conhecido da serie (mesmo padrao de `garantirParcelasContaPagar`).
+ */
+export async function garantirParcelasFiado(
+  empresaId: number,
+  serieId: number
+): Promise<{ geradas: number }> {
+  await garantirSchema();
+  const { rows } = await pool.query<{
+    pendentes: number;
+    alvo: number | null;
+    ultimo_vencimento: string | null;
+    cliente_id: number | null;
+    descricao: string | null;
+    valor: string | null;
+  }>(
+    `SELECT
+       count(*) FILTER (WHERE NOT pago)::int AS pendentes,
+       max(recorrente_parcelas) AS alvo,
+       to_char(max(vencimento), 'YYYY-MM-DD') AS ultimo_vencimento,
+       (array_agg(cliente_id ORDER BY id DESC))[1] AS cliente_id,
+       (array_agg(descricao ORDER BY id DESC))[1] AS descricao,
+       (array_agg(valor ORDER BY id DESC))[1]::text AS valor
+     FROM fiado
+     WHERE empresa_id = $1 AND serie_id = $2 AND recorrente`,
+    [empresaId, serieId]
+  );
+  const r = rows[0];
+  if (!r || !r.alvo || !r.ultimo_vencimento) return { geradas: 0 };
+
+  const faltam = r.alvo - r.pendentes;
+  if (faltam <= 0) return { geradas: 0 };
+
+  for (let i = 1; i <= faltam; i++) {
+    await pool.query(
+      `INSERT INTO fiado (empresa_id, cliente_id, valor, descricao, vencimento, recorrente, recorrente_parcelas, serie_id)
+       VALUES ($1, $2, $3, $4, ($5::date + ($6::int * interval '1 month'))::date, true, $7, $8)`,
+      [empresaId, r.cliente_id, r.valor, r.descricao, r.ultimo_vencimento, i, r.alvo, serieId]
+    );
+  }
+  return { geradas: faltam };
+}
+
 export async function criarFiado(
   empresaId: number,
   clienteId: number,
   valor: number,
-  descricao: string | null
+  descricao: string | null,
+  vencimento: string | null = null,
+  recorrente = false,
+  recorrenteParcelas: number | null = null
 ): Promise<Fiado | null> {
   await garantirSchema();
   // cliente_id checado contra a empresa da sessao pra nao lancar em cliente alheio
-  const { rows } = await pool.query<Fiado>(
-    `INSERT INTO fiado (empresa_id, cliente_id, valor, descricao)
-     SELECT $1, cl.id, $3, $4 FROM cliente cl
+  const { rows } = await pool.query<{ id: number }>(
+    `INSERT INTO fiado (empresa_id, cliente_id, valor, descricao, vencimento, recorrente, recorrente_parcelas)
+     SELECT $1, cl.id, $3, $4, $5, $6, $7 FROM cliente cl
       WHERE cl.id = $2 AND cl.empresa_id = $1
-     RETURNING id, cliente_id, (SELECT nome FROM cliente WHERE id = cliente_id) AS cliente_nome,
-               valor, descricao, pago, pago_em, criado_em`,
-    [empresaId, clienteId, valor, descricao]
+     RETURNING id`,
+    [empresaId, clienteId, valor, descricao, vencimento, recorrente, recorrenteParcelas]
   );
-  return rows[0] ?? null;
+  const novoId = rows[0]?.id;
+  if (!novoId) return null;
+
+  if (recorrente) {
+    await pool.query("UPDATE fiado SET serie_id = id WHERE id = $1", [novoId]);
+    await garantirParcelasFiado(empresaId, novoId);
+  }
+
+  const criado = await pool.query<Fiado>(
+    `SELECT ${CAMPOS_FIADO} FROM fiado f JOIN cliente cl ON cl.id = f.cliente_id WHERE f.id = $1`,
+    [novoId]
+  );
+  return criado.rows[0] ?? null;
 }
 
-export async function marcarFiadoPago(empresaId: number, id: number): Promise<boolean> {
+export async function marcarFiadoPago(
+  empresaId: number,
+  id: number
+): Promise<{ ok: boolean; parcelasGeradas: number }> {
   await garantirSchema();
-  const r = await pool.query(
-    "UPDATE fiado SET pago = true, pago_em = now() WHERE id = $1 AND empresa_id = $2 AND pago = false",
+  const { rows } = await pool.query<{ serie_id: string | null; recorrente: boolean }>(
+    `UPDATE fiado SET pago = true, pago_em = now()
+      WHERE id = $1 AND empresa_id = $2 AND pago = false
+      RETURNING serie_id, recorrente`,
     [id, empresaId]
   );
-  return (r.rowCount ?? 0) > 0;
+  const f = rows[0];
+  if (!f) return { ok: false, parcelasGeradas: 0 };
+  if (!f.recorrente || !f.serie_id) return { ok: true, parcelasGeradas: 0 };
+
+  const { geradas } = await garantirParcelasFiado(empresaId, Number(f.serie_id));
+  return { ok: true, parcelasGeradas: geradas };
 }
 
 export async function quitarFiadoDoCliente(empresaId: number, clienteId: number): Promise<number> {
@@ -2668,8 +2750,10 @@ export type ContaPagarEntrada = {
   valor: number;
   vencimento: string | null;
   foto: string | null;
-  /** Repete todo mês — ao quitar, o sistema já lança a do mês seguinte. */
+  /** Repete todo mês — mantém sempre `recorrenteParcelas` lançamentos pendentes gerados à frente. */
   recorrente: boolean;
+  /** Quantas parcelas futuras manter sempre geradas (obrigatório quando recorrente). */
+  recorrenteParcelas: number | null;
   /** Já entra quitada (checkbox "conta já paga" no cadastro). */
   pago: boolean;
 };
@@ -2678,6 +2762,55 @@ const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, f
        c.categoria, c.descricao, c.valor,
        to_char(c.vencimento, 'YYYY-MM-DD') AS vencimento, c.recorrente, (c.foto IS NOT NULL) AS tem_foto,
        c.pago, c.pago_em, c.criado_em`;
+
+/**
+ * Garante que a serie recorrente de conta_pagar tenha pelo menos
+ * `recorrente_parcelas` lancamentos pendentes, gerando os que faltarem a
+ * partir do ultimo vencimento conhecido da serie. Chamada tanto na hora de
+ * criar/quitar (top-up imediato) quanto pelo cron diario (varre todas).
+ */
+export async function garantirParcelasContaPagar(
+  empresaId: number,
+  serieId: number
+): Promise<{ geradas: number }> {
+  await garantirSchema();
+  const { rows } = await pool.query<{
+    pendentes: number;
+    alvo: number | null;
+    ultimo_vencimento: string | null;
+    fornecedor_id: number | null;
+    categoria: string | null;
+    descricao: string | null;
+    valor: string | null;
+  }>(
+    `SELECT
+       count(*) FILTER (WHERE NOT pago)::int AS pendentes,
+       max(recorrente_parcelas) AS alvo,
+       to_char(max(vencimento), 'YYYY-MM-DD') AS ultimo_vencimento,
+       (array_agg(fornecedor_id ORDER BY id DESC))[1] AS fornecedor_id,
+       (array_agg(categoria ORDER BY id DESC))[1] AS categoria,
+       (array_agg(descricao ORDER BY id DESC))[1] AS descricao,
+       (array_agg(valor ORDER BY id DESC))[1]::text AS valor
+     FROM conta_pagar
+     WHERE empresa_id = $1 AND serie_id = $2 AND recorrente`,
+    [empresaId, serieId]
+  );
+  const r = rows[0];
+  if (!r || !r.alvo || !r.ultimo_vencimento) return { geradas: 0 };
+
+  const faltam = r.alvo - r.pendentes;
+  if (faltam <= 0) return { geradas: 0 };
+
+  for (let i = 1; i <= faltam; i++) {
+    await pool.query(
+      `INSERT INTO conta_pagar
+         (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, recorrente, recorrente_parcelas, serie_id)
+       VALUES ($1, $2, $3, $4, $5, ($6::date + ($7::int * interval '1 month'))::date, true, $8, $9)`,
+      [empresaId, r.fornecedor_id, r.categoria, r.descricao, r.valor, r.ultimo_vencimento, i, r.alvo, serieId]
+    );
+  }
+  return { geradas: faltam };
+}
 
 export async function listarContasPagar(
   empresaId: number,
@@ -2715,19 +2848,26 @@ export async function criarContaPagar(
   // fornecedor_id (quando vem) é conferido contra a empresa da sessão
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO conta_pagar (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, foto,
-                              recorrente, pago, pago_em)
+                              recorrente, recorrente_parcelas, pago, pago_em)
      VALUES ($1,
              (SELECT id FROM fornecedor WHERE id = $2 AND empresa_id = $1),
-             $3, $4, $5, $6, $7, $8, $9, CASE WHEN $9 THEN now() END)
+             $3, $4, $5, $6, $7, $8, $9, $10, CASE WHEN $10 THEN now() END)
      RETURNING id`,
     [empresaId, d.fornecedorId, d.categoria, d.descricao, d.valor, d.vencimento, d.foto,
-     d.recorrente, d.pago]
+     d.recorrente, d.recorrenteParcelas, d.pago]
   );
+  const novoId = rows[0].id;
+
+  if (d.recorrente) {
+    await pool.query("UPDATE conta_pagar SET serie_id = id WHERE id = $1", [novoId]);
+    await garantirParcelasContaPagar(empresaId, novoId);
+  }
+
   const criada = await pool.query<ContaPagar>(
     `SELECT ${CAMPOS_CONTA_PAGAR}
        FROM conta_pagar c LEFT JOIN fornecedor fo ON fo.id = c.fornecedor_id
       WHERE c.id = $1`,
-    [rows[0].id]
+    [novoId]
   );
   return criada.rows[0];
 }
@@ -2735,36 +2875,20 @@ export async function criarContaPagar(
 export async function marcarContaPagarPaga(
   empresaId: number,
   id: number
-): Promise<{ ok: boolean; proximaVencimento: string | null }> {
+): Promise<{ ok: boolean; parcelasGeradas: number }> {
   await garantirSchema();
-  const { rows } = await pool.query<{
-    fornecedor_id: number | null;
-    categoria: string | null;
-    descricao: string | null;
-    valor: string;
-    vencimento: string | null;
-    recorrente: boolean;
-  }>(
+  const { rows } = await pool.query<{ serie_id: string | null; recorrente: boolean }>(
     `UPDATE conta_pagar SET pago = true, pago_em = now()
       WHERE id = $1 AND empresa_id = $2 AND pago = false
-      RETURNING fornecedor_id, categoria, descricao, valor,
-                to_char(vencimento, 'YYYY-MM-DD') AS vencimento, recorrente`,
+      RETURNING serie_id, recorrente`,
     [id, empresaId]
   );
   const c = rows[0];
-  if (!c) return { ok: false, proximaVencimento: null };
-  if (!c.recorrente) return { ok: true, proximaVencimento: null };
+  if (!c) return { ok: false, parcelasGeradas: 0 };
+  if (!c.recorrente || !c.serie_id) return { ok: true, parcelasGeradas: 0 };
 
-  // conta recorrente: já lança a do mês seguinte (sem foto — é outro boleto)
-  const prox = await pool.query<{ vencimento: string | null }>(
-    `INSERT INTO conta_pagar (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, recorrente)
-     VALUES ($1, $2, $3, $4, $5,
-             CASE WHEN $6::date IS NOT NULL THEN ($6::date + interval '1 month')::date END,
-             true)
-     RETURNING to_char(vencimento, 'YYYY-MM-DD') AS vencimento`,
-    [empresaId, c.fornecedor_id, c.categoria, c.descricao, c.valor, c.vencimento]
-  );
-  return { ok: true, proximaVencimento: prox.rows[0]?.vencimento ?? null };
+  const { geradas } = await garantirParcelasContaPagar(empresaId, Number(c.serie_id));
+  return { ok: true, parcelasGeradas: geradas };
 }
 
 export async function reabrirContaPagar(empresaId: number, id: number): Promise<boolean> {
@@ -3751,6 +3875,76 @@ export async function notificarUsuariosDaEmpresa(
      ON CONFLICT (coalesce(usuario_id, 0), coalesce(fornecedor_publico_id, 0), chave) WHERE chave IS NOT NULL DO NOTHING`,
     [empresaId, n.tipo ?? "sistema", n.titulo, n.corpo ?? null, n.link ?? null, chaveBase ?? null]
   );
+}
+
+/**
+ * Roda uma vez por dia (via cron, `/api/cron/recorrencias`): garante o
+ * buffer de toda serie recorrente ativa — conta_pagar e fiado, de qualquer
+ * empresa — e notifica cada empresa que tenha conta a pagar e/ou a receber
+ * vencendo HOJE (recorrente ou nao). Idempotente por dia via `chaveBase`
+ * datada, entao rodar mais de uma vez no mesmo dia nao duplica avisos.
+ */
+export async function processarRecorrenciasEAlertas(): Promise<{
+  seriesContaPagar: number;
+  seriesFiado: number;
+  empresasAvisadas: number;
+}> {
+  await garantirSchema();
+
+  const seriesPagar = await pool.query<{ empresa_id: number; serie_id: string }>(
+    "SELECT DISTINCT empresa_id, serie_id FROM conta_pagar WHERE recorrente AND serie_id IS NOT NULL"
+  );
+  for (const s of seriesPagar.rows) {
+    await garantirParcelasContaPagar(s.empresa_id, Number(s.serie_id));
+  }
+
+  const seriesFiado = await pool.query<{ empresa_id: number; serie_id: string }>(
+    "SELECT DISTINCT empresa_id, serie_id FROM fiado WHERE recorrente AND serie_id IS NOT NULL"
+  );
+  for (const s of seriesFiado.rows) {
+    await garantirParcelasFiado(s.empresa_id, Number(s.serie_id));
+  }
+
+  const pagarHoje = await pool.query<{ empresa_id: number; qtd: number; total: string }>(
+    `SELECT empresa_id, count(*)::int AS qtd, sum(valor)::text AS total
+       FROM conta_pagar WHERE NOT pago AND vencimento = CURRENT_DATE
+      GROUP BY empresa_id`
+  );
+  const fiadoHoje = await pool.query<{ empresa_id: number; qtd: number; total: string }>(
+    `SELECT empresa_id, count(*)::int AS qtd, sum(valor)::text AS total
+       FROM fiado WHERE NOT pago AND vencimento = CURRENT_DATE
+      GROUP BY empresa_id`
+  );
+
+  const porEmpresa = new Map<number, { pagar?: { qtd: number; total: string }; receber?: { qtd: number; total: string } }>();
+  for (const r of pagarHoje.rows) porEmpresa.set(r.empresa_id, { ...porEmpresa.get(r.empresa_id), pagar: { qtd: r.qtd, total: r.total } });
+  for (const r of fiadoHoje.rows) porEmpresa.set(r.empresa_id, { ...porEmpresa.get(r.empresa_id), receber: { qtd: r.qtd, total: r.total } });
+
+  const hoje = new Date().toISOString().slice(0, 10);
+  const moeda = (v: string) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  for (const [empresaId, info] of porEmpresa) {
+    const partes: string[] = [];
+    if (info.pagar) partes.push(`${info.pagar.qtd} conta(s) a pagar (R$ ${moeda(info.pagar.total)})`);
+    if (info.receber) partes.push(`${info.receber.qtd} conta(s) a receber (R$ ${moeda(info.receber.total)})`);
+
+    await notificarUsuariosDaEmpresa(
+      empresaId,
+      {
+        tipo: "conta",
+        titulo: "Contas vencendo hoje",
+        corpo: `Vence hoje: ${partes.join(" e ")}.`,
+        link: info.pagar ? "/contas-pagar" : "/contas",
+      },
+      `conta-vencimento-hoje:${hoje}`
+    );
+  }
+
+  return {
+    seriesContaPagar: seriesPagar.rows.length,
+    seriesFiado: seriesFiado.rows.length,
+    empresasAvisadas: porEmpresa.size,
+  };
 }
 
 export async function listarNotificacoes(d: Destino, limite = 50): Promise<Notificacao[]> {

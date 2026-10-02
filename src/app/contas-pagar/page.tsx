@@ -117,9 +117,9 @@ export default function ContasPagar() {
       if (!r.ok) throw new Error();
       if (acao === "reabrir") {
         setAviso("Conta reaberta.");
-      } else if (d.proximaVencimento) {
+      } else if (d.parcelasGeradas > 0) {
         setAviso(
-          `Conta quitada. Próxima já lançada para ${dataFmt.format(new Date(d.proximaVencimento + "T00:00:00"))}.`
+          `Conta quitada. ${d.parcelasGeradas} nova(s) parcela(s) gerada(s) pra manter o buffer recorrente.`
         );
       } else {
         setAviso("Conta quitada.");

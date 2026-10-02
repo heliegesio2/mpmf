@@ -504,10 +504,14 @@ of a blank "não foi possível salvar".
   shopkeeper can gauge a new fiado customer. It returns only aggregates (`media`, `avaliacoes`,
   `cadastros`) — never a name/address/row from another store. `FormularioCliente` calls it as the CPF is
   typed.
-- **Fiado** (`fiado` table: `cliente_id`, `valor`, `descricao`, `pago`) — a payment option on `/venda`.
-  `/contas` ("Contas a receber") groups open debts by client with per-entry "marcar pago" and per-client
-  "quitar tudo". `criarFiado` re-checks `cliente.empresa_id` in the INSERT so a session can't post to
-  another store's client.
+- **Fiado** (`fiado` table: `cliente_id`, `valor`, `descricao`, `pago`, plus `vencimento`/`recorrente`/
+  `recorrente_parcelas`/`serie_id` from `db/40`, see the recurring-bills section below) — a payment option
+  on `/venda` (that checkout path never sends the recurring fields, they just default false/null) and its
+  own "+ Nova conta a receber" form on `/contas`. `/contas` ("Contas a receber") groups open debts by
+  client with per-entry "marcar pago" and per-client "quitar tudo" (`quitarFiadoDoCliente` — bulk-pays but
+  does **not** top up a recurring buffer immediately, unlike the single-row `marcarFiadoPago`; the next
+  day's cron catches up within 24h). `criarFiado` re-checks `cliente.empresa_id` in the INSERT so a
+  session can't post to another store's client.
 
 **Sales are now persisted** (`db/20` — `venda` + `venda_item` + `venda_pagamento`). On finish,
 `fechar()` POSTs the cart to `POST /api/venda/concluir` (after the fiado inserts), which does
@@ -563,10 +567,7 @@ salario/boleto — pretty labels in the page) plus "Outros" → a free-text box;
 caps it at 40 chars. `categoriasContaPagarUsadas` returns the distinct custom values the store has used
 and the GET list response carries them (`categorias`), so past custom categories come back as extra
 buttons. The vision extractor guesses a standard value. `criarContaPagar` also takes `pago` (form's
-"esta conta já está paga" → row inserted `pago_em = now()`) and `recorrente` (`db/18`). When
-`marcarContaPagarPaga` quits a `recorrente` row it **clones the next month's occurrence** in the same
-call (`vencimento + interval '1 month'`, no foto) and returns `proximaVencimento` for the toast;
-re-paying after a reopen clones again (accepted).
+"esta conta já está paga" → row inserted `pago_em = now()`) and `recorrente` (`db/18`, buffer logic below).
 
 - `/fornecedores` — list + `<FormularioFornecedor>` (shared: also embedded in `/contas-pagar`'s supplier
   picker, and pre-fillable via `inicial={{nome, documento}}` from a scanned bill). `/api/fornecedores`
@@ -588,6 +589,64 @@ re-paying after a reopen clones again (accepted).
   from `/api/contas-pagar/:id/foto` (kept out of the list query — only `tem_foto`). Client-shared
   constants/helpers (labels, `prazoVencimento`) live in `src/lib/contasPagar.ts` (no `pg` import).
   **Paying a conta does NOT create a `custo`** — the two are separate ledgers.
+
+### Recurring bills — buffer of future installments + daily cron (`db/40`)
+
+Both `conta_pagar` and `fiado` support recurrence the same way: a row marked `recorrente` carries
+`recorrente_parcelas` (how many **pending** installments the shopkeeper wants always kept generated ahead)
+and `serie_id` (points at the **root** row's own id — set via a follow-up `UPDATE ... SET serie_id = id`
+right after the INSERT, so every row in a series, including the first, shares one `serie_id` to group by).
+This replaced the old conta_pagar behavior of cloning exactly one extra occurrence when you paid a
+recorrente bill — now it maintains a **buffer**, not a single lookahead.
+
+`garantirParcelasContaPagar(empresaId, serieId)` / `garantirParcelasFiado(empresaId, serieId)` (`db.ts`) do
+the actual math: count unpaid rows in the series (`WHERE serie_id = $1 AND NOT pago` — **not** filtered by
+date, so an overdue-but-unpaid installment still counts, it just needs to be paid to free up a buffer
+slot), compare to `recorrente_parcelas`, and if short, insert that many new rows, each `vencimento` offset
+from `MAX(vencimento)` in the series by `+1, +2, +3…` months (descricao/valor/categoria/fornecedor_id or
+cliente_id copied from the series — there's no edit-an-existing-bill flow in this app, so every row in a
+series is identical apart from `vencimento`). This function is called from **three** places: right after
+creating a recorrente row (`criarContaPagar`/`criarFiado`, to front-load the buffer immediately instead of
+waiting for tomorrow), right after `marcarContaPagarPaga`/`marcarFiadoPago` marks one paid (immediate
+top-up — the UI toast reports `parcelasGeradas`), and from the daily cron (below), which is the backstop
+that catches everything else (including bulk-paid-via-"quitar tudo" fiado, which skips the immediate
+top-up on purpose to keep that bulk action simple).
+
+**`recorrente` requires both `vencimento` and `recorrente_parcelas` (≥1)** — enforced in
+`POST /api/contas-pagar` and `POST /api/fiado` (400 otherwise), since there's no way to compute the next
+occurrence's date without a starting point. For fiado, `vencimento` itself is otherwise optional on **any**
+lançamento (recorrente or not) — new field, shown in `/contas`'s "Nova conta a receber" form and in the
+list subtitle (`vence dd/mm/aaaa`) alongside a plain "recorrente" text token, same minimal style
+`/contas-pagar` already used.
+
+**`GET /api/cron/recorrencias`** (`src/app/api/cron/recorrencias/route.ts`, `maxDuration = 60`) is the
+daily job, wired via `vercel.json`'s `"crons": [{ "path": "/api/cron/recorrencias", "schedule": "0 12 * * *" }]`
+(12:00 UTC = 09:00 BRT — Brazil has had no DST since 2019, so this doesn't drift). It's gated behind
+`CRON_SECRET` (`.env.example`): Vercel automatically sends `Authorization: Bearer $CRON_SECRET` on
+scheduled invocations when that env var is set on the project, so the route just compares the header —
+unset `CRON_SECRET` → the route 503s rather than silently running unauthenticated. The route calls
+`processarRecorrenciasEAlertas()` (`db.ts`), which does two unrelated jobs in one pass since they're both
+"once a day, every store" work: (1) finds **every** `serie_id` across **every** empresa with `recorrente`
+rows and runs the buffer top-up for each (catches series whose buffer fell behind, e.g. a store that
+hasn't opened the app in a while); (2) finds every conta_pagar/fiado **due today** (`vencimento =
+CURRENT_DATE AND NOT pago`), grouped by empresa, **regardless of whether it's recorrente** — a one-off
+bill due today alerts just the same as a recurring one. Each empresa with something due gets one
+`notificarUsuariosDaEmpresa` call (`tipo: "conta"`, icon 💰 in both `MenuLateral`'s and `/notificacoes`'s
+icon maps), `chaveBase` keyed `conta-vencimento-hoje:<data ISO>` so re-running the cron the same day (or a
+retry) can't double-notify. No per-empresa loop needs a session — `notificarUsuariosDaEmpresa` takes a
+bare `empresaId` and fans out to every active `usuario` of that store itself (the same primitive
+`notificarParceirosSobreCotacao`/`enviarAvisoAdmin` already use for session-free, cross-store broadcasts).
+
+### Sino de avisos (notification bell) — moved off the profile photo
+
+`MenuLateral`'s unread-count badge used to be a small `.conta-badge` absolutely-positioned over the
+top-right corner of `.conta-topo` (the profile photo button) — functional, but the two tap targets
+overlapped, making the profile menu and the avisos dropdown compete for the same corner. It's now a fully
+separate `.sino-avisos` button (fixed, `right: 214px`, same 40×40 icon-button style as `.atalho-busca`/
+`.atalho-venda-direta`) with a bell SVG, rendered **unconditionally** (not just when there's something
+unread) so the avisos dropdown is always reachable from the top bar; the red `.sino-avisos-contador` count
+only shows when `avisosNaoLidos > 0`. Same `abrirAvisos()` handler and `.avisos-menu` dropdown as before —
+only the trigger button changed.
 
 ### Reports dashboard (`/relatorios`)
 
@@ -801,10 +860,14 @@ anotação** per user (`chave = anotacao:<id>:<usuario_id>`), run at the top of 
 **`/notificacoes`** — the avisos screen (newest first, unread = `--azul-wash` + `.aviso-ponto`, tap marks
 read + follows `link`, "marcar todas como lidas"); in the loja menu as "🔔 Avisos" and in
 `GRUPO_FORNECEDOR`; `middleware.ts` lets `papel === "fornecedor"` reach it (`compartilhada`). `MenuLateral`
-polls `/api/notificacoes?resumo=1` per path and shows `.conta-badge` (red count on the account photo) +
-the menu `.menu-alerta`; the `.conta-badge` is a **button** that opens the `.avisos-menu` dropdown
-(Facebook-style: last 8 from `GET /api/notificacoes`, tap one → mark read + follow `link`, "marcar todas",
-"Ver todos" → `/notificacoes`). Push/e-mail is **not** part of this — it's in-app only, per user.
+polls `/api/notificacoes?resumo=1` per path and shows a standalone **`.sino-avisos`** bell button (top bar,
+`right: 214px`, same fixed-icon style as `.atalho-busca`/`.atalho-venda-direta` — deliberately **not**
+overlaid on `.conta-topo`'s profile photo anymore, so the tap target doesn't compete with opening the
+account menu) + the menu's `.menu-alerta`; the bell always renders (so the dropdown is reachable even with
+zero unread) and shows a red `.sino-avisos-contador` count only when `avisosNaoLidos > 0`. Tapping it opens
+the `.avisos-menu` dropdown (Facebook-style: last 8 from `GET /api/notificacoes`, tap one → mark read +
+follow `link`, "marcar todas", "Ver todos" → `/notificacoes`). Push/e-mail is **not** part of this — it's
+in-app only, per user.
 
 **Pedidos loja→fornecedor (`db/28`)** — `pedido` (`empresa_id`, `fornecedor_publico_id`,
 `criado_por_usuario_id`, `status` novo|visto|atendido|cancelado, `observacao`, `motivo`, `total`) +

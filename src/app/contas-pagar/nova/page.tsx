@@ -107,6 +107,7 @@ export default function NovaContaPagar() {
   const [valor, setValor] = useState("");
   const [vencimento, setVencimento] = useState("");
   const [recorrente, setRecorrente] = useState(false);
+  const [recorrenteParcelas, setRecorrenteParcelas] = useState("3");
   const [jaPaga, setJaPaga] = useState(false);
   const [lendoFoto, setLendoFoto] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -181,7 +182,11 @@ export default function NovaContaPagar() {
 
   const categoriaFinal =
     categoria === "outros" ? categoriaLivre.trim() || "outros" : categoria;
-  const formularioValido = moedaParaNumero(valor) > 0 && Boolean(categoriaFinal);
+  const parcelasNum = Number(recorrenteParcelas);
+  const formularioValido =
+    moedaParaNumero(valor) > 0 &&
+    Boolean(categoriaFinal) &&
+    (!recorrente || (Boolean(vencimento) && Number.isInteger(parcelasNum) && parcelasNum >= 1));
 
   async function salvar() {
     setSalvando(true);
@@ -198,6 +203,7 @@ export default function NovaContaPagar() {
           vencimento: vencimento || null,
           foto: foto || null,
           recorrente,
+          recorrenteParcelas: recorrente ? parcelasNum : null,
           pago: jaPaga,
         }),
       });
@@ -344,8 +350,21 @@ export default function NovaContaPagar() {
               checked={recorrente}
               onChange={(e) => setRecorrente(e.target.checked)}
             />
-            Conta recorrente (todo mês) — ao quitar, o sistema já lança a do mês seguinte
+            Conta recorrente (todo mês) — o sistema mantém sempre as próximas parcelas já lançadas
           </label>
+
+          {recorrente && (
+            <label className="rotulo">
+              Quantas parcelas manter sempre geradas
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={recorrenteParcelas}
+                onChange={(e) => setRecorrenteParcelas(e.target.value.replace(/[^\d]/g, ""))}
+              />
+            </label>
+          )}
 
           <label className="check-whatsapp" style={{ gridColumn: "1 / -1" }}>
             <input type="checkbox" checked={jaPaga} onChange={(e) => setJaPaga(e.target.checked)} />
