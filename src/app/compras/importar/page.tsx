@@ -72,7 +72,25 @@ function vendaComMargem(compra: number, margemPct: number): number {
   return Math.round(compra * (1 + margemPct / 100) * 100) / 100;
 }
 
-function linhaInicial(item: ItemProposto): LinhaEdicao {
+/**
+ * Arredonda pro preço "redondo" mais próximo pra cima: centavos entre 1 e 50
+ * viram ",50" (ex.: 1,10 -> 1,50; 1,22 -> 1,50); centavos entre 51 e 99 viram
+ * o próximo inteiro (ex.: 1,77 -> 2,00; 5,25 -> 5,50; 5,77 -> 6,00).
+ */
+function arredondarPreco(valor: number): number {
+  const centavosTotais = Math.round(valor * 100);
+  const reais = Math.floor(centavosTotais / 100);
+  const centavos = centavosTotais % 100;
+  if (centavos === 0) return reais;
+  return centavos <= 50 ? reais + 0.5 : reais + 1;
+}
+
+function precoVendaFinal(compra: number, margemPct: number, arredondar: boolean): number {
+  const bruto = vendaComMargem(compra, margemPct);
+  return arredondar ? arredondarPreco(bruto) : bruto;
+}
+
+function linhaInicial(item: ItemProposto, arredondar: boolean): LinhaEdicao {
   return {
     usarSugestao: item.produtoSugerido !== null,
     produtoId: item.produtoSugerido?.id ?? null,
@@ -80,7 +98,7 @@ function linhaInicial(item: ItemProposto): LinhaEdicao {
     unidade: "unidade",
     tipoVenda: "unidade",
     precoCompra: paraMoeda(item.precoCompra),
-    precoVenda: paraMoeda(item.precoVendaSugerido),
+    precoVenda: paraMoeda(arredondar ? arredondarPreco(item.precoVendaSugerido) : item.precoVendaSugerido),
     incluir: true,
   };
 }
@@ -102,6 +120,7 @@ export default function ImportarCompra() {
   const [fotos, setFotos] = useState<File[]>([]);
   const [modoCaptura, setModoCaptura] = useState<ModoCaptura>("foto");
   const [margem, setMargem] = useState("38");
+  const [arredondar, setArredondar] = useState(false);
   const [propostos, setPropostos] = useState<ItemProposto[]>([]);
   const [linhas, setLinhas] = useState<LinhaEdicao[]>([]);
   const [nota, setNota] = useState<Nota | null>(null);
@@ -179,11 +198,21 @@ export default function ImportarCompra() {
     setLinhas((ls) =>
       ls.map((l) => ({
         ...l,
-        precoVenda: paraMoeda(vendaComMargem(moedaParaNumero(l.precoCompra), n)),
+        precoVenda: paraMoeda(precoVendaFinal(moedaParaNumero(l.precoCompra), n, arredondar)),
       }))
     );
   }
   const salvarMargem = () => aplicarMargem(margemNum());
+
+  function aplicarArredondar(ligado: boolean) {
+    setArredondar(ligado);
+    setLinhas((ls) =>
+      ls.map((l) => ({
+        ...l,
+        precoVenda: paraMoeda(precoVendaFinal(moedaParaNumero(l.precoCompra), margemNum(), ligado)),
+      }))
+    );
+  }
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -256,7 +285,7 @@ export default function ImportarCompra() {
         return;
       }
       setPropostos(itens);
-      setLinhas(itens.map(linhaInicial));
+      setLinhas(itens.map((item) => linhaInicial(item, arredondar)));
       setAviso(`${itens.length} itens encontrados — confira antes de salvar.`);
     } catch (e) {
       setErro(true);
@@ -311,7 +340,7 @@ export default function ImportarCompra() {
               ...l,
               precoCompra: mascarado,
               precoVenda:
-                compra > 0 ? paraMoeda(vendaComMargem(compra, margemNum())) : l.precoVenda,
+                compra > 0 ? paraMoeda(precoVendaFinal(compra, margemNum(), arredondar)) : l.precoVenda,
             }
           : l
       )
@@ -466,6 +495,16 @@ export default function ImportarCompra() {
                 {...vozProps("margem")}
               />
             </div>
+
+            <label className="rotulo largo" style={{ marginTop: 10 }}>
+              <input
+                type="checkbox"
+                checked={arredondar}
+                onChange={(e) => aplicarArredondar(e.target.checked)}
+              />{" "}
+              Arredondar o preço de venda pro valor mais redondo (ex.: R$ 1,22 vira R$ 1,50; R$ 1,77
+              vira R$ 2,00)
+            </label>
           </section>
 
           <section className="cartao">
