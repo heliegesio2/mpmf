@@ -9,6 +9,7 @@ import { CampoVoz } from "@/components/CampoVoz";
 import { comprimirImagem } from "@/lib/imagemCliente";
 import CameraFoto from "@/components/CameraFoto";
 import GravadorVideo, { type Quadro, type ResultadoGravacao } from "@/components/GravadorVideo";
+import { extrairQuadros } from "@/lib/quadrosDeVideo";
 
 type Estado = "lista" | "nova";
 type ModoCaptura = "foto" | "video";
@@ -17,8 +18,8 @@ const MAX_SEGUNDOS_VIDEO_CUPOM = 45;
 /** Poucas imagens pra caber no tempo limite da função serverless. */
 const MAX_QUADROS_CUPOM = 5;
 
-/** Escolhe até `max` quadros espalhados uniformemente pela gravação. */
-function amostrarQuadros(quadros: Quadro[], max: number): Quadro[] {
+/** Escolhe até `max` quadros espalhados uniformemente (gravação ou vídeo enviado). */
+function amostrarQuadros(quadros: { t: number; dataUrl: string }[], max: number): { t: number; dataUrl: string }[] {
   if (quadros.length <= max) return quadros;
   const passo = quadros.length / max;
   return Array.from({ length: max }, (_, i) => quadros[Math.floor(i * passo)]);
@@ -326,6 +327,29 @@ export default function ImportarCompra() {
     await processarCupom(corpo, "Lendo os quadros do vídeo…");
   }
 
+  /** Vídeo já gravado (escolhido do aparelho) — extrai os quadros no navegador, sem ffmpeg. */
+  async function analisarArquivoVideo(arquivo: File) {
+    setAnalisando(true);
+    setErro(false);
+    setAviso("Lendo os quadros do vídeo…");
+    try {
+      const quadros = await extrairQuadros(arquivo, { intervalo: 1, max: 20 });
+      if (quadros.length === 0) {
+        setErro(true);
+        setAviso("Não consegui ler nenhum quadro desse vídeo.");
+        return;
+      }
+      const corpo = new FormData();
+      amostrarQuadros(quadros, MAX_QUADROS_CUPOM).forEach((q) => corpo.append("quadros", q.dataUrl));
+      await processarCupom(corpo, "Lendo os quadros do vídeo…");
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível ler esse vídeo.");
+    } finally {
+      setAnalisando(false);
+    }
+  }
+
   function mudarFotos(fs: File[]) {
     setFotos(fs);
     if (fs[0]) {
@@ -523,10 +547,10 @@ export default function ImportarCompra() {
           <section className="cartao">
             <h2 className="titulo-cartao">Cupom fiscal</h2>
             <p className="ajuda-voz">
-              Tire uma foto do cupom da distribuidora, envie uma que você já tem, ou grave um vídeo
-              aproximando a câmera — melhor pra notas pequenas, onde a letra não sai nítida numa foto
-              só. O sistema lê os itens e sugere o preço de venda com a sua margem — confira antes de
-              salvar.
+              Tire uma foto do cupom da distribuidora, envie uma que você já tem, ou grave (ou envie) um
+              vídeo aproximando a câmera — melhor pra notas pequenas, onde a letra não sai nítida numa
+              foto só. O sistema lê os itens e sugere o preço de venda com a sua margem — confira antes
+              de salvar.
             </p>
 
             <div className="acoes">
@@ -559,15 +583,33 @@ export default function ImportarCompra() {
                 }}
               />
             ) : (
-              <GravadorVideo
-                maxSegundos={MAX_SEGUNDOS_VIDEO_CUPOM}
-                aoGravar={analisarVideo}
-                aoErro={(m) => {
-                  setErro(true);
-                  setAviso(m);
-                }}
-                ocupado={analisando}
-              />
+              <>
+                <GravadorVideo
+                  maxSegundos={MAX_SEGUNDOS_VIDEO_CUPOM}
+                  aoGravar={analisarVideo}
+                  aoErro={(m) => {
+                    setErro(true);
+                    setAviso(m);
+                  }}
+                  ocupado={analisando}
+                />
+                <div className="acoes">
+                  <label className="botao neutro" style={{ cursor: analisando ? "default" : "pointer" }}>
+                    📁 Enviar vídeo já gravado
+                    <input
+                      type="file"
+                      accept="video/*"
+                      style={{ display: "none" }}
+                      disabled={analisando}
+                      onChange={(e) => {
+                        const arquivo = e.target.files?.[0];
+                        e.target.value = "";
+                        if (arquivo) analisarArquivoVideo(arquivo);
+                      }}
+                    />
+                  </label>
+                </div>
+              </>
             )}
 
             {aviso && (

@@ -184,16 +184,28 @@ de venda**) before `POST /api/importar-compra/confirmar` applies it: matched ite
 in `src/app/compras/importar/page.tsx`):
 - **Foto** — `<CameraFoto max={1}>` (real camera, not a file picker), analysis fires automatically once a
   photo is added. `extrairCupom` gets called with a single `ImagemEntrada`.
-- **Vídeo** — `<GravadorVideo maxSegundos={45}>` (same live-recording component as "estoque por vídeo"),
-  for small/hard-to-read receipts where a single photo doesn't capture the fine print legibly — the
-  shopkeeper films up close, panning over the note. The client samples up to 8 of the captured frames
-  evenly (`amostrarQuadros`) and sends them as repeated `quadros` form fields (data URLs); the server
-  (`importarDeVideo` in `route.ts`) decodes them (`quadroParaImagem`/`amostrarUniforme`, shared with
+- **Vídeo** — two ways to get frames, same downstream handling: `<GravadorVideo maxSegundos={45}>`
+  (same live-recording component as "estoque por vídeo") for filming up close on the spot, **or** "📁
+  Enviar vídeo já gravado" (a plain `<input type="file" accept="video/*">`) for a video the shopkeeper
+  already has (e.g. received over WhatsApp) — that path runs `extrairQuadros` (`src/lib/quadrosDeVideo.ts`,
+  the same browser-side no-ffmpeg frame extractor `comercios-grandes` uses for its video upload) to turn
+  the file into frames client-side. Either way, this is for small/hard-to-read receipts where a single
+  photo doesn't capture the fine print legibly. The client samples up to 5 frames evenly (`amostrarQuadros`,
+  capped low on purpose — see below) and sends them as repeated `quadros` form fields (data URLs); the
+  server (`importarDeVideo` in `route.ts`) decodes them (`quadroParaImagem`/`amostrarUniforme`, shared with
   `estoque-video`'s route in `src/lib/quadroImagem.ts`) and passes **all frames in one `extrairCupom` call**
   — the prompt is told they may be multiple angles/zooms of the SAME note and to not duplicate an item seen
   in more than one frame. The duplicate-note hash in this path is computed over the joined frame data URLs
   (not file bytes, since there's no single uploaded file) — the chave-de-acesso dedupe after extraction is
   what actually catches a receipt re-captured a second time with a different set of frames.
+
+  **Frame count is capped at 5, not higher** — an earlier version sent up to 8, and a 15-30s recording
+  (plenty for panning over a small note) made the multi-image Opus call slow enough to occasionally exceed
+  the serverless function's time limit, which made Vercel return an HTML error page instead of JSON and
+  broke `response.json()` client-side with a cryptic "Unexpected token" error. Both `POST`'s own
+  `request.formData()` parsing and the client's response parsing (`processarCupom` in `page.tsx`) are now
+  wrapped so a non-JSON or malformed response surfaces a readable message instead of an uncaught parse
+  error — but the frame cap is what actually avoids triggering the timeout in the first place.
 
 **Margem de lucro** — `empresa.margem_padrao` (`db/30`, numeric, default 38) is the store's target profit
 % over purchase price. `GET/PUT /api/importar-compra/margem` (`margemPadraoEmpresa` /
