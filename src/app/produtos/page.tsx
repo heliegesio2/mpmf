@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { useVoz } from "@/lib/useVoz";
 import { rotuloEmbalagem, sufixo } from "@/lib/tipos";
 import { comprimirParaDataURL } from "@/lib/imagemCliente";
+import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
+import { Estatistica } from "@/components/Graficos";
 
 type Produto = {
   id: number;
@@ -29,6 +31,19 @@ const CHAVE_FLASH = "mpmf.produtoFlash";
 
 /** Limite geral pra quem não configurou aviso próprio no produto. */
 const LIMIAR_PADRAO = 3;
+
+/** Teto de produtos pesquisados por vez (espelha o limite da API). */
+const MAX_PRODUTOS_PRECO_MERCADO = 10;
+const PERCENTUAL_PADRAO = "30";
+
+type LinhaPrecoMercado = {
+  produtoId: number;
+  nome: string;
+  precoMedio: number;
+  fonte: string | null;
+  precoSugerido: string;
+  incluir: boolean;
+};
 
 function estoqueCritico(p: Produto): boolean {
   const est = Number(p.estoque);
@@ -61,6 +76,15 @@ export default function Produtos() {
   const [editEstoque, setEditEstoque] = useState<number | null>(null);
   const [valEstoque, setValEstoque] = useState("");
   const [salvandoEstoque, setSalvandoEstoque] = useState(false);
+
+  // preço pelo preço médio de mercado
+  const [painelPrecoAberto, setPainelPrecoAberto] = useState(false);
+  const [percentualMercado, setPercentualMercado] = useState(PERCENTUAL_PADRAO);
+  const [buscandoPrecos, setBuscandoPrecos] = useState(false);
+  const [salvandoPrecos, setSalvandoPrecos] = useState(false);
+  const [sugestoesPreco, setSugestoesPreco] = useState<LinhaPrecoMercado[]>([]);
+  const [avisoPreco, setAvisoPreco] = useState("");
+  const [erroPreco, setErroPreco] = useState(false);
 
   const { ouvir, ouvindoCampo, campoAtual, disponivel } = useVoz({
     aoFinalizar: (texto) => {
@@ -184,6 +208,123 @@ export default function Produtos() {
     }
   }
 
+  async function buscarPrecosDeMercado() {
+    const pct = Number(percentualMercado.replace(",", "."));
+    if (!Number.isFinite(pct)) {
+      setErroPreco(true);
+      setAvisoPreco("Informe um percentual válido.");
+      return;
+    }
+
+    const semPrecoAtual = itens.filter((p) => Number(p.preco) <= 0);
+    if (semPrecoAtual.length === 0) {
+      setErroPreco(false);
+      setAvisoPreco("Nenhum produto sem preço de venda.");
+      return;
+    }
+
+    const lote = semPrecoAtual
+      .slice(0, MAX_PRODUTOS_PRECO_MERCADO)
+      .map((p) => ({ id: p.id, nome: p.nome }));
+
+    setBuscandoPrecos(true);
+    setErroPreco(false);
+    setAvisoPreco(`Pesquisando o preço médio de ${lote.length} produto(s)…`);
+    setSugestoesPreco([]);
+    try {
+      const r = await fetch("/api/produtos/preco-mercado", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ produtos: lote }),
+      });
+      const dados = await r.json();
+      if (!r.ok) {
+        throw new Error(
+          [dados?.erro, dados?.detalhe].filter(Boolean).join(" — ") ||
+            "Não foi possível pesquisar os preços."
+        );
+      }
+
+      const encontrados = (
+        dados.itens as { id: number; nome: string; precoMedio: number | null; fonte: string | null }[]
+      ).filter((it) => it.precoMedio !== null);
+
+      if (encontrados.length === 0) {
+        setAvisoPreco("Não encontrei preço médio confiável pra nenhum produto desse lote.");
+        return;
+      }
+
+      setSugestoesPreco(
+        encontrados.map((it) => ({
+          produtoId: it.id,
+          nome: it.nome,
+          precoMedio: it.precoMedio as number,
+          fonte: it.fonte,
+          precoSugerido: paraMoeda(Math.round((it.precoMedio as number) * (1 + pct / 100) * 100) / 100),
+          incluir: true,
+        }))
+      );
+
+      const semPrecoNaWeb = lote.length - encontrados.length;
+      const restantes = semPrecoAtual.length - lote.length;
+      setAvisoPreco(
+        `${encontrados.length} preço(s) encontrado(s)` +
+          (semPrecoNaWeb > 0 ? ` · ${semPrecoNaWeb} sem preço confiável na web` : "") +
+          (restantes > 0 ? ` · ainda restam ${restantes} produto(s) sem preço, rode de novo depois` : "") +
+          "."
+      );
+    } catch (e) {
+      setErroPreco(true);
+      setAvisoPreco(e instanceof Error ? e.message : "Não foi possível pesquisar os preços.");
+    } finally {
+      setBuscandoPrecos(false);
+    }
+  }
+
+  function mudarLinhaPreco(i: number, campo: keyof LinhaPrecoMercado, valor: LinhaPrecoMercado[keyof LinhaPrecoMercado]) {
+    setSugestoesPreco((ls) => ls.map((l, idx) => (idx === i ? { ...l, [campo]: valor } : l)));
+  }
+
+  async function salvarPrecosDeMercado() {
+    const selecionados = sugestoesPreco.filter((l) => l.incluir);
+    if (selecionados.length === 0) {
+      setErroPreco(true);
+      setAvisoPreco("Marque pelo menos um item pra salvar.");
+      return;
+    }
+
+    setSalvandoPrecos(true);
+    setErroPreco(false);
+    try {
+      const itensBody = selecionados.map((l) => ({
+        produtoId: l.produtoId,
+        novoPreco: moedaParaNumero(l.precoSugerido),
+      }));
+
+      const r = await fetch("/api/produtos/preco-mercado/confirmar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itens: itensBody }),
+      });
+      const dados = await r.json();
+      if (!r.ok) {
+        throw new Error(
+          [dados?.erro, dados?.detalhe].filter(Boolean).join(" — ") || "Não foi possível salvar."
+        );
+      }
+
+      setAvisoPreco(`${selecionados.length} preço(s) salvo(s).`);
+      setSugestoesPreco([]);
+      setPainelPrecoAberto(false);
+      await carregar(filtro);
+    } catch (e) {
+      setErroPreco(true);
+      setAvisoPreco(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSalvandoPrecos(false);
+    }
+  }
+
   async function excluir(p: Produto) {
     if (!confirm(`Excluir "${p.nome}"? Essa ação não tem volta.`)) return;
     try {
@@ -199,11 +340,24 @@ export default function Produtos() {
     }
   }
 
+  const comEstoque = itens.filter((p) => Number(p.estoque) > 0).length;
+  const semPreco = itens.filter((p) => Number(p.preco) <= 0);
+
   return (
     <main className="tela">
       <header className="marca">
         Produtos <span>•</span> {itens.length} cadastrados
       </header>
+
+      <div className="grade-kpi">
+        <Estatistica rotulo="Produtos cadastrados" valor={String(itens.length)} />
+        <Estatistica rotulo="Em estoque" valor={String(comEstoque)} />
+        <Estatistica
+          rotulo="Sem preço de venda"
+          valor={String(semPreco.length)}
+          negativo={semPreco.length > 0}
+        />
+      </div>
 
       <div className="acoes acoes-produtos">
         <Link href="/produtos/novo" className="botao primario">
@@ -226,6 +380,15 @@ export default function Produtos() {
         <Link href="/produtos/comercios-grandes" className="botao neutro">
           🏬 Comércios grandes (preços)
         </Link>
+        <button
+          type="button"
+          className="botao neutro"
+          onClick={() => setPainelPrecoAberto((v) => !v)}
+          disabled={semPreco.length === 0}
+          title={semPreco.length === 0 ? "Todos os produtos já têm preço de venda" : undefined}
+        >
+          💲 Preencher preço pelo mercado
+        </button>
         <input
           ref={fotoInput}
           type="file"
@@ -235,6 +398,85 @@ export default function Produtos() {
           onChange={(e) => novoPorFoto(e.target.files?.[0])}
         />
       </div>
+
+      {painelPrecoAberto && (
+        <section className="cartao">
+          <h2 className="titulo-cartao">Preço pelo mercado</h2>
+          <p className="ajuda-voz">
+            Pesquisa na web o preço médio de venda de cada produto sem preço cadastrado e sugere o
+            preço de venda com o percentual de acréscimo abaixo. {semPreco.length} produto(s) sem
+            preço
+            {semPreco.length > MAX_PRODUTOS_PRECO_MERCADO
+              ? ` (processa até ${MAX_PRODUTOS_PRECO_MERCADO} por vez — rode de novo pra pegar o resto)`
+              : ""}
+            .
+          </p>
+
+          <div style={{ maxWidth: 240 }}>
+            <label className="rotulo">
+              Percentual de acréscimo sobre o preço médio (%)
+              <input
+                value={percentualMercado}
+                onChange={(e) => setPercentualMercado(e.target.value.replace(/[^\d.,]/g, ""))}
+                inputMode="decimal"
+              />
+            </label>
+          </div>
+
+          <div className="acoes">
+            <button
+              type="button"
+              className="botao primario"
+              onClick={buscarPrecosDeMercado}
+              disabled={buscandoPrecos}
+            >
+              {buscandoPrecos ? "Pesquisando…" : "🔎 Pesquisar preços"}
+            </button>
+          </div>
+
+          {avisoPreco && (
+            <p className="dica" data-erro={erroPreco} role="status" aria-live="polite">
+              {avisoPreco}
+            </p>
+          )}
+        </section>
+      )}
+
+      {sugestoesPreco.map((linha, i) => (
+        <section className="cartao" key={linha.produtoId}>
+          <h2 className="titulo-cartao">
+            {linha.nome}
+            <span className="sub"> · preço médio encontrado: R$ {paraMoeda(linha.precoMedio)}</span>
+          </h2>
+          {linha.fonte && <p className="dica">Fonte: {linha.fonte}</p>}
+          <div className="grade-form">
+            <label className="rotulo largo">
+              <input
+                type="checkbox"
+                checked={linha.incluir}
+                onChange={(e) => mudarLinhaPreco(i, "incluir", e.target.checked)}
+              />{" "}
+              Atualizar o preço deste produto
+            </label>
+            <label className="rotulo">
+              Novo preço de venda
+              <input
+                value={linha.precoSugerido}
+                onChange={(e) => mudarLinhaPreco(i, "precoSugerido", mascararMoeda(e.target.value))}
+                inputMode="decimal"
+              />
+            </label>
+          </div>
+        </section>
+      ))}
+
+      {sugestoesPreco.length > 0 && (
+        <div className="acoes">
+          <button className="botao primario" onClick={salvarPrecosDeMercado} disabled={salvandoPrecos}>
+            {salvandoPrecos ? "Salvando…" : "Confirmar e salvar preços"}
+          </button>
+        </div>
+      )}
 
       <div className="campo simples">
         <input
