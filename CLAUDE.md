@@ -166,20 +166,34 @@ needs more tolerance than typo-correction does.
 
 ### Purchase-receipt import (`/compras/importar`)
 
-`src/lib/importarCompra.ts` (`extrairCupom`) sends a photo of a supplier's purchase receipt (NFC-e) to Claude
-(`@anthropic-ai/sdk`, model `ANTHROPIC_MODEL` env var or `claude-opus-5` default) as a vision request
-constrained with `output_config.format` (structured outputs) so the response is guaranteed-parseable JSON —
-no free-text parsing. It returns `{ nota: {chaveAcesso, numero, emitente}, itens: [...] }`. The prompt
-explicitly tells the model to cross-check smudged/creased digits against `quantidade × valorUnitario ≈
-valorTotal`, which in practice resolves illegible printed numbers correctly, and to read the 44-digit
-chave de acesso. `POST /api/importar-compra` (multipart) runs the extraction and, per item, calls the
-existing `buscarProduto` (the same fuzzy-match SQL function the voice search uses) to suggest a matching
-catalog product above a similarity threshold — nothing is written to the database at this step. The client
-reviews/edits every line (matched-product toggle, editable **preço de compra + preço de venda**) before
-`POST /api/importar-compra/confirmar` applies it: matched items go through `atualizarProduto` (preserving
-all fields except price), unmatched ones create a new product via `criarProduto`. Stock (`estoque`) is
-deliberately left untouched by this flow. The **photo capture is `<CameraFoto max={1}>`** (real camera, not
-a file picker) and analysis fires automatically once a photo is added.
+`src/lib/importarCompra.ts` (`extrairCupom`) sends one or more images of a supplier's purchase receipt
+(NFC-e) to Claude (`@anthropic-ai/sdk`, model `ANTHROPIC_MODEL` env var or `claude-opus-5` default) as a
+vision request constrained with `output_config.format` (structured outputs) so the response is
+guaranteed-parseable JSON — no free-text parsing. It returns `{ nota: {chaveAcesso, numero, emitente},
+itens: [...] }`. The prompt explicitly tells the model to cross-check smudged/creased digits against
+`quantidade × valorUnitario ≈ valorTotal`, which in practice resolves illegible printed numbers correctly,
+and to read the 44-digit chave de acesso. `POST /api/importar-compra` (multipart) runs the extraction and,
+per item, calls the existing `buscarProduto` (the same fuzzy-match SQL function the voice search uses) to
+suggest a matching catalog product above a similarity threshold — nothing is written to the database at
+this step. The client reviews/edits every line (matched-product toggle, editable **preço de compra + preço
+de venda**) before `POST /api/importar-compra/confirmar` applies it: matched items go through
+`atualizarProduto` (preserving all fields except price), unmatched ones create a new product via
+`criarProduto`. Stock (`estoque`) is deliberately left untouched by this flow.
+
+**Two capture modes**, toggled by a 📷/🎥 button pair on the "nova importação" screen (`modoCaptura` state
+in `src/app/compras/importar/page.tsx`):
+- **Foto** — `<CameraFoto max={1}>` (real camera, not a file picker), analysis fires automatically once a
+  photo is added. `extrairCupom` gets called with a single `ImagemEntrada`.
+- **Vídeo** — `<GravadorVideo maxSegundos={45}>` (same live-recording component as "estoque por vídeo"),
+  for small/hard-to-read receipts where a single photo doesn't capture the fine print legibly — the
+  shopkeeper films up close, panning over the note. The client samples up to 8 of the captured frames
+  evenly (`amostrarQuadros`) and sends them as repeated `quadros` form fields (data URLs); the server
+  (`importarDeVideo` in `route.ts`) decodes them (`quadroParaImagem`/`amostrarUniforme`, shared with
+  `estoque-video`'s route in `src/lib/quadroImagem.ts`) and passes **all frames in one `extrairCupom` call**
+  — the prompt is told they may be multiple angles/zooms of the SAME note and to not duplicate an item seen
+  in more than one frame. The duplicate-note hash in this path is computed over the joined frame data URLs
+  (not file bytes, since there's no single uploaded file) — the chave-de-acesso dedupe after extraction is
+  what actually catches a receipt re-captured a second time with a different set of frames.
 
 **Margem de lucro** — `empresa.margem_padrao` (`db/30`, numeric, default 38) is the store's target profit
 % over purchase price. `GET/PUT /api/importar-compra/margem` (`margemPadraoEmpresa` /

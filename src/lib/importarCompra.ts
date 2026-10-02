@@ -9,6 +9,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import type { ImagemEntrada } from "@/lib/lerEstoqueFoto";
 
 const client = new Anthropic();
 
@@ -82,8 +83,12 @@ const SCHEMA_CUPOM = {
   additionalProperties: false,
 } as const;
 
-const INSTRUCAO = `Esta imagem e um cupom fiscal (nota de compra) de um mercadinho brasileiro,
-comprando mercadoria de um fornecedor/distribuidora. Extraia cada item comprado e os dados da nota.
+const INSTRUCAO = `Estas imagens mostram um cupom fiscal (nota de compra) de um mercadinho brasileiro,
+comprando mercadoria de um fornecedor/distribuidora — pode ser uma foto so, ou varios quadros de um
+video do MESMO cupom (o lojista filmou de perto pra conseguir ler letra miuda numa nota pequena).
+Quando houver mais de uma imagem, trate como angulos/zooms diferentes da MESMA nota: NAO repita um
+item que ja apareceu numa imagem anterior, e junte os dados da nota a partir de onde estiverem mais
+legiveis. Extraia cada item comprado (uma vez so) e os dados da nota.
 
 Itens:
 - "descricao": expanda abreviacoes para um nome de produto legivel (ex.: "FEIJ.PRET.TURAMA" -> "Feijao Preto Turama").
@@ -100,10 +105,7 @@ Dados da nota ("nota"):
 - "numero": o numero da nota (campo "No" / "NUMERO" / "NF-e no").
 - "emitente": nome ou razao social de quem emitiu a nota (o fornecedor/distribuidora), no topo do cupom.`;
 
-export async function extrairCupom(
-  imagemBase64: string,
-  mediaType: "image/jpeg" | "image/png" | "image/webp"
-): Promise<CupomLido> {
+export async function extrairCupom(imagens: ImagemEntrada[]): Promise<CupomLido> {
   const resposta = await client.messages.create({
     model: MODELO,
     max_tokens: 8000,
@@ -111,7 +113,10 @@ export async function extrairCupom(
       {
         role: "user",
         content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: imagemBase64 } },
+          ...imagens.map((img) => ({
+            type: "image" as const,
+            source: { type: "base64" as const, media_type: img.mediaType, data: img.base64 },
+          })),
           { type: "text", text: INSTRUCAO },
         ],
       },

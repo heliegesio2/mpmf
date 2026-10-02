@@ -3,6 +3,7 @@ import { buscarProduto } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
 import { lerEstoqueDoVideo, lerEstoqueDosQuadros, transcricaoConfigurada } from "@/lib/lerEstoqueVideo";
 import type { ImagemEntrada } from "@/lib/lerEstoqueFoto";
+import { amostrarUniforme, quadroParaImagem } from "@/lib/quadroImagem";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -10,20 +11,6 @@ export const maxDuration = 60;
 const LIMIAR_SUGESTAO = 0.5;
 const MAX_BYTES = 4.4 * 1024 * 1024;
 const MAX_QUADROS_VISAO = 8;
-
-/** "data:image/jpeg;base64,AAAA..." -> { base64, mediaType }. */
-function quadroParaImagem(dataUrl: string): ImagemEntrada | null {
-  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
-  if (!m) return null;
-  return { mediaType: m[1] as ImagemEntrada["mediaType"], base64: m[2] };
-}
-
-/** Escolhe até `max` quadros espalhados uniformemente pelo vídeo. */
-function amostrarQuadros(quadros: string[], max: number): string[] {
-  if (quadros.length <= max) return quadros;
-  const passo = quadros.length / max;
-  return Array.from({ length: max }, (_, i) => quadros[Math.floor(i * passo)]);
-}
 
 /**
  * POST /api/produtos/estoque-video  (multipart, campo "audio" = WAV extraído do vídeo,
@@ -67,7 +54,7 @@ export async function POST(request: Request) {
     let origem: "fala" | "video" = "fala";
     if (detectados.length === 0) {
       const quadrosRecebidos = dados.getAll("quadros").filter((q): q is string => typeof q === "string");
-      const imagens = amostrarQuadros(quadrosRecebidos, MAX_QUADROS_VISAO)
+      const imagens = amostrarUniforme(quadrosRecebidos, MAX_QUADROS_VISAO)
         .map(quadroParaImagem)
         .filter((i): i is ImagemEntrada => i !== null);
       if (imagens.length > 0) {

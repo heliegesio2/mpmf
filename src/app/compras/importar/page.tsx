@@ -8,8 +8,20 @@ import { useVoz } from "@/lib/useVoz";
 import { CampoVoz } from "@/components/CampoVoz";
 import { comprimirImagem } from "@/lib/imagemCliente";
 import CameraFoto from "@/components/CameraFoto";
+import GravadorVideo, { type Quadro, type ResultadoGravacao } from "@/components/GravadorVideo";
 
 type Estado = "lista" | "nova";
+type ModoCaptura = "foto" | "video";
+
+const MAX_SEGUNDOS_VIDEO_CUPOM = 45;
+const MAX_QUADROS_CUPOM = 8;
+
+/** Escolhe até `max` quadros espalhados uniformemente pela gravação. */
+function amostrarQuadros(quadros: Quadro[], max: number): Quadro[] {
+  if (quadros.length <= max) return quadros;
+  const passo = quadros.length / max;
+  return Array.from({ length: max }, (_, i) => quadros[Math.floor(i * passo)]);
+}
 
 type ItemProposto = {
   descricaoExtraida: string;
@@ -88,6 +100,7 @@ export default function ImportarCompra() {
   const [carregandoDetalhe, setCarregandoDetalhe] = useState<number | null>(null);
 
   const [fotos, setFotos] = useState<File[]>([]);
+  const [modoCaptura, setModoCaptura] = useState<ModoCaptura>("foto");
   const [margem, setMargem] = useState("38");
   const [propostos, setPropostos] = useState<ItemProposto[]>([]);
   const [linhas, setLinhas] = useState<LinhaEdicao[]>([]);
@@ -141,6 +154,7 @@ export default function ImportarCompra() {
 
   function novaImportacao() {
     setFotos([]);
+    setModoCaptura("foto");
     setPropostos([]);
     setLinhas([]);
     setNota(null);
@@ -212,19 +226,16 @@ export default function ImportarCompra() {
     },
   });
 
-  async function analisar(arquivo: File) {
+  /** Envia o corpo (foto ou quadros de vídeo) e aplica a resposta — comum às duas origens. */
+  async function processarCupom(corpo: FormData, mensagemInicial: string) {
     setAnalisando(true);
     setErro(false);
     setJaProcessada("");
-    setAviso("Lendo o cupom…");
+    setAviso(mensagemInicial);
     setPropostos([]);
     setLinhas([]);
     setNota(null);
     try {
-      const comprimida = await comprimirImagem(arquivo);
-      const corpo = new FormData();
-      corpo.append("foto", comprimida);
-
       const r = await fetch("/api/importar-compra", { method: "POST", body: corpo });
       const dados = await r.json();
       if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível ler o cupom.");
@@ -241,7 +252,7 @@ export default function ImportarCompra() {
       if (dados.nota) setNota(dados.nota as Nota);
 
       if (itens.length === 0) {
-        setAviso("Não encontrei nenhum item nessa foto.");
+        setAviso("Não encontrei nenhum item nessa nota.");
         return;
       }
       setPropostos(itens);
@@ -253,6 +264,24 @@ export default function ImportarCompra() {
     } finally {
       setAnalisando(false);
     }
+  }
+
+  async function analisar(arquivo: File) {
+    try {
+      const comprimida = await comprimirImagem(arquivo);
+      const corpo = new FormData();
+      corpo.append("foto", comprimida);
+      await processarCupom(corpo, "Lendo o cupom…");
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível ler o cupom.");
+    }
+  }
+
+  async function analisarVideo({ quadros }: ResultadoGravacao) {
+    const corpo = new FormData();
+    amostrarQuadros(quadros, MAX_QUADROS_CUPOM).forEach((q) => corpo.append("quadros", q.dataUrl));
+    await processarCupom(corpo, "Lendo os quadros do vídeo…");
   }
 
   function mudarFotos(fs: File[]) {
@@ -440,28 +469,60 @@ export default function ImportarCompra() {
           </section>
 
           <section className="cartao">
-            <h2 className="titulo-cartao">Foto do cupom fiscal</h2>
+            <h2 className="titulo-cartao">Cupom fiscal</h2>
             <p className="ajuda-voz">
-              Tire uma foto do cupom da distribuidora ou envie uma que você já tem. O sistema lê os
-              itens e sugere o preço de venda com a sua margem — confira antes de salvar.
+              Tire uma foto do cupom da distribuidora, envie uma que você já tem, ou grave um vídeo
+              aproximando a câmera — melhor pra notas pequenas, onde a letra não sai nítida numa foto
+              só. O sistema lê os itens e sugere o preço de venda com a sua margem — confira antes de
+              salvar.
             </p>
 
-            <CameraFoto
-              fotos={fotos}
-              aoMudar={mudarFotos}
-              max={1}
-              aoErro={(m) => {
-                setErro(true);
-                setAviso(m);
-              }}
-            />
+            <div className="acoes">
+              <button
+                type="button"
+                className={`botao mini ${modoCaptura === "foto" ? "primario" : "neutro"}`}
+                onClick={() => setModoCaptura("foto")}
+                disabled={analisando}
+              >
+                📷 Foto
+              </button>
+              <button
+                type="button"
+                className={`botao mini ${modoCaptura === "video" ? "primario" : "neutro"}`}
+                onClick={() => setModoCaptura("video")}
+                disabled={analisando}
+              >
+                🎥 Vídeo
+              </button>
+            </div>
+
+            {modoCaptura === "foto" ? (
+              <CameraFoto
+                fotos={fotos}
+                aoMudar={mudarFotos}
+                max={1}
+                aoErro={(m) => {
+                  setErro(true);
+                  setAviso(m);
+                }}
+              />
+            ) : (
+              <GravadorVideo
+                maxSegundos={MAX_SEGUNDOS_VIDEO_CUPOM}
+                aoGravar={analisarVideo}
+                aoErro={(m) => {
+                  setErro(true);
+                  setAviso(m);
+                }}
+                ocupado={analisando}
+              />
+            )}
 
             {aviso && (
               <p className="dica" data-erro={erro} role="status" aria-live="polite">
                 {aviso}
               </p>
             )}
-            {analisando && <p className="dica">Lendo o cupom…</p>}
           </section>
 
           {jaProcessada && (
