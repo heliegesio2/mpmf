@@ -19,6 +19,8 @@ type ItemConfirmado = {
   tipoVenda?: string;
   precoCompra: number;
   precoVenda: number;
+  /** Quantidade comprada — soma ao estoque já existente, ou vira o estoque inicial se for produto novo. */
+  estoque?: number;
 };
 
 type NotaEntrada = {
@@ -37,9 +39,10 @@ function numeroValido(v: unknown): v is number {
  *
  * Cada item ou tem "produtoId" (atualiza preco_compra/preco de um produto
  * existente, preservando os demais campos) ou vem sem produtoId (cria um
- * produto novo). O estoque nao e alterado aqui — a importacao so mexe em
- * preco. Ao final registra a nota (hash da imagem + chave de acesso) pra
- * reconhecer um reenvio.
+ * produto novo). O campo "estoque" (quantidade comprada) soma no estoque ja
+ * existente do produto, ou vira o estoque inicial se for produto novo. Ao
+ * final registra a nota (hash da imagem + chave de acesso) pra reconhecer um
+ * reenvio.
  */
 export async function POST(request: Request) {
   const { empresaId, erro: negado } = await exigirEmpresa();
@@ -56,6 +59,9 @@ export async function POST(request: Request) {
     for (const item of itens) {
       if (!numeroValido(item.precoCompra) || !numeroValido(item.precoVenda)) {
         return NextResponse.json({ erro: "Item com preço inválido." }, { status: 400 });
+      }
+      if (item.estoque !== undefined && !numeroValido(item.estoque)) {
+        return NextResponse.json({ erro: "Item com estoque inválido." }, { status: 400 });
       }
       if (!item.produtoId && String(item.nome ?? "").trim().length < 2) {
         return NextResponse.json({ erro: "Produto novo sem nome válido." }, { status: 400 });
@@ -102,7 +108,8 @@ export async function POST(request: Request) {
           tipoVenda: atual.tipo_venda,
           preco: item.precoVenda,
           precoCompra: item.precoCompra,
-          estoque: Number(atual.estoque),
+          // soma a quantidade comprada ao estoque já existente
+          estoque: Number(atual.estoque) + (item.estoque ?? 0),
           // preserva o aviso de estoque baixo e o preço da embalagem já configurados
           estoqueMinimo: atual.estoque_minimo === null ? null : Number(atual.estoque_minimo),
           estoqueMinimoEmbalagem: atual.estoque_minimo_embalagem,
@@ -125,7 +132,7 @@ export async function POST(request: Request) {
           tipoVenda: item.tipoVenda ?? "unidade",
           preco: item.precoVenda,
           precoCompra: item.precoCompra,
-          estoque: 0,
+          estoque: item.estoque ?? 0,
         });
         resultados.push(criado);
         itensNota.push({

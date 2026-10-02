@@ -31,7 +31,7 @@ type ItemProposto = {
   unidade: string;
   precoCompra: number;
   precoVendaSugerido: number;
-  produtoSugerido: { id: number; nome: string; score: number } | null;
+  produtoSugerido: { id: number; nome: string; score: number; estoqueAtual: number } | null;
 };
 
 type Nota = {
@@ -49,6 +49,8 @@ type LinhaEdicao = {
   tipoVenda: string;
   precoCompra: string;
   precoVenda: string;
+  /** Quantidade comprada — soma no estoque já existente (ou vira o estoque inicial, se produto novo). */
+  estoque: string;
   incluir: boolean;
 };
 
@@ -101,6 +103,7 @@ function linhaInicial(item: ItemProposto, arredondar: boolean): LinhaEdicao {
     tipoVenda: "unidade",
     precoCompra: paraMoeda(item.precoCompra),
     precoVenda: paraMoeda(arredondar ? arredondarPreco(item.precoVendaSugerido) : item.precoVendaSugerido),
+    estoque: String(item.quantidade),
     incluir: true,
   };
 }
@@ -130,6 +133,7 @@ export default function ImportarCompra() {
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [jaProcessada, setJaProcessada] = useState("");
+  const [resumoSalvo, setResumoSalvo] = useState("");
   const [erro, setErro] = useState(false);
 
   async function carregarHistorico() {
@@ -181,6 +185,7 @@ export default function ImportarCompra() {
     setNota(null);
     setAviso("");
     setJaProcessada("");
+    setResumoSalvo("");
     setErro(false);
     setEstado("nova");
   }
@@ -397,6 +402,7 @@ export default function ImportarCompra() {
           tipoVenda: l.tipoVenda,
           precoCompra: moedaParaNumero(l.precoCompra),
           precoVenda: moedaParaNumero(l.precoVenda),
+          estoque: Number(l.estoque.replace(",", ".")) || 0,
         }));
 
       if (itens.length === 0) {
@@ -421,6 +427,13 @@ export default function ImportarCompra() {
       }
       if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível salvar.");
 
+      const atualizados = itens.filter((it) => it.produtoId !== undefined).length;
+      const novos = itens.length - atualizados;
+      const partes: string[] = [];
+      if (atualizados > 0) partes.push(`${atualizados} preço(s) atualizado(s)`);
+      if (novos > 0) partes.push(`${novos} produto(s) novo(s) incluído(s)`);
+      setResumoSalvo(partes.join(" · ") + ".");
+
       setPropostos([]);
       setLinhas([]);
       setNota(null);
@@ -436,6 +449,16 @@ export default function ImportarCompra() {
   }
 
   const rotuloVenda = `Preço de venda (+${margemNum().toLocaleString("pt-BR")}%)`;
+
+  const incluidas = linhas.filter((l) => l.incluir);
+  const atualizadosPendentes = incluidas.filter((l) => l.usarSugestao).length;
+  const novosPendentes = incluidas.length - atualizadosPendentes;
+  const resumoPendente = (() => {
+    const partes: string[] = [];
+    if (atualizadosPendentes > 0) partes.push(`${atualizadosPendentes} preço(s) de produtos já cadastrados vão ser atualizados`);
+    if (novosPendentes > 0) partes.push(`${novosPendentes} produto(s) novo(s) vão ser incluídos`);
+    return partes.length > 0 ? partes.join(" · ") + "." : "Nenhum item marcado pra salvar.";
+  })();
   const vozProps = (campo: string) => ({
     campo,
     ouvindo: ouvindoCampo === campo,
@@ -450,6 +473,12 @@ export default function ImportarCompra() {
 
       {estado === "lista" && (
         <>
+          {resumoSalvo && (
+            <p className="dica" role="status" aria-live="polite">
+              {resumoSalvo}
+            </p>
+          )}
+
           <div className="acoes">
             <button type="button" className="botao primario" onClick={novaImportacao}>
               ➕ Nova importação
@@ -643,6 +672,7 @@ export default function ImportarCompra() {
                   <span className="sub">
                     {" "}
                     · {item.quantidade} {item.unidade} · compra {paraMoeda(item.precoCompra)}
+                    {item.produtoSugerido && ` · estoque atual: ${item.produtoSugerido.estoqueAtual}`}
                   </span>
                 </h2>
 
@@ -720,17 +750,38 @@ export default function ImportarCompra() {
                     moeda
                     {...vozProps(`precoVenda-${i}`)}
                   />
+
+                  <label className="rotulo">
+                    {item.produtoSugerido && linha.usarSugestao ? "Quantidade comprada" : "Estoque inicial"}
+                    <input
+                      value={linha.estoque}
+                      onChange={(e) => mudarLinha(i, "estoque", e.target.value)}
+                      inputMode="decimal"
+                    />
+                    {item.produtoSugerido && linha.usarSugestao && (
+                      <span style={{ fontWeight: 400, fontSize: 12, color: "var(--ink-dim)" }}>
+                        Estoque atual {item.produtoSugerido.estoqueAtual} + esta compra = vai ficar com{" "}
+                        {(
+                          item.produtoSugerido.estoqueAtual +
+                          (Number(linha.estoque.replace(",", ".")) || 0)
+                        ).toLocaleString("pt-BR")}
+                      </span>
+                    )}
+                  </label>
                 </div>
               </section>
             );
           })}
 
           {linhas.length > 0 && (
-            <div className="acoes">
-              <button className="botao primario" onClick={salvar} disabled={salvando}>
-                {salvando ? "Salvando…" : "Confirmar e salvar"}
-              </button>
-            </div>
+            <>
+              <p className="dica">{resumoPendente}</p>
+              <div className="acoes">
+                <button className="botao primario" onClick={salvar} disabled={salvando}>
+                  {salvando ? "Salvando…" : "Confirmar e salvar"}
+                </button>
+              </div>
+            </>
           )}
         </>
       )}

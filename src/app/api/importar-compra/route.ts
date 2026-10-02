@@ -53,7 +53,7 @@ async function proporItens(empresaId: number, itens: ItemLido[], margem: number)
       const melhor = candidatos[0];
       const sugestao =
         melhor && (melhor.score ?? 0) >= LIMIAR_SUGESTAO
-          ? { id: melhor.id, nome: melhor.nome, score: melhor.score }
+          ? { id: melhor.id, nome: melhor.nome, score: melhor.score, estoqueAtual: Number(melhor.estoque) }
           : null;
 
       return {
