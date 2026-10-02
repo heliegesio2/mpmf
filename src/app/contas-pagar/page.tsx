@@ -17,6 +17,7 @@ type ContaPagar = {
   descricao: string | null;
   fornecedor_pix: string | null;
   valor: string;
+  valor_variavel: boolean;
   vencimento: string | null;
   recorrente: boolean;
   tem_foto: boolean;
@@ -47,6 +48,16 @@ export default function ContasPagar() {
   const [erro, setErro] = useState(false);
   const [lendoFoto, setLendoFoto] = useState(false);
   const fotoInput = useRef<HTMLInputElement>(null);
+
+  // configurações: antecedência do aviso de vencimento
+  const [configAberta, setConfigAberta] = useState(false);
+  const [avisoDias, setAvisoDias] = useState("0");
+  const [salvandoConfig, setSalvandoConfig] = useState(false);
+
+  // edição inline do valor (conta recorrente de valor variável)
+  const [editandoValor, setEditandoValor] = useState<number | null>(null);
+  const [valorEdicao, setValorEdicao] = useState("");
+  const [salvandoValor, setSalvandoValor] = useState(false);
 
   const carregar = useCallback(async (situacao: string, forn = "") => {
     setCarregando(true);
@@ -84,6 +95,79 @@ export default function ContasPagar() {
       /* sem sessionStorage */
     }
   }, []);
+
+  useEffect(() => {
+    fetch("/api/contas-pagar/configuracoes")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d && typeof d.avisoDias === "number") setAvisoDias(String(d.avisoDias));
+      })
+      .catch(() => {});
+  }, []);
+
+  async function salvarConfig() {
+    const dias = Number(avisoDias);
+    if (!Number.isInteger(dias) || dias < 0 || dias > 90) {
+      setErro(true);
+      setAviso("Informe um número de dias entre 0 e 90.");
+      return;
+    }
+    setSalvandoConfig(true);
+    try {
+      const r = await fetch("/api/contas-pagar/configuracoes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ avisoDias: dias }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
+      setAviso(
+        dias === 0
+          ? "Configuração salva — o aviso sai no dia do vencimento."
+          : `Configuração salva — o aviso sai ${dias} dia(s) antes do vencimento.`
+      );
+      setErro(false);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSalvandoConfig(false);
+    }
+  }
+
+  function abrirEdicaoValor(c: ContaPagar) {
+    setEditandoValor(c.id);
+    setValorEdicao(String(Number(c.valor)).replace(".", ","));
+    setErro(false);
+  }
+
+  async function salvarValor(id: number) {
+    const v = Number(valorEdicao.replace(",", "."));
+    if (!Number.isFinite(v) || v <= 0) {
+      setErro(true);
+      setAviso("Informe um valor válido.");
+      return;
+    }
+    setSalvandoValor(true);
+    try {
+      const r = await fetch(`/api/contas-pagar/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ valor: v }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
+      setEditandoValor(null);
+      setAviso("Valor atualizado.");
+      setErro(false);
+      await carregar(filtro, buscaForn);
+    } catch (e) {
+      setErro(true);
+      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
+    } finally {
+      setSalvandoValor(false);
+    }
+  }
 
   async function novaPorFoto(arquivo: File | undefined) {
     if (!arquivo) return;
@@ -167,6 +251,33 @@ export default function ContasPagar() {
         )}
       </header>
 
+      <section className="cartao">
+        <h2 className="titulo-cartao" style={{ cursor: "pointer" }} onClick={() => setConfigAberta((v) => !v)}>
+          ⚙️ Configurações
+          <span className="sub"> · {configAberta ? "ocultar" : "mostrar"}</span>
+        </h2>
+        {configAberta && (
+          <div className="grade-form">
+            <label className="rotulo">
+              Avisar com quantos dias de antecedência do vencimento
+              <input
+                type="number"
+                min={0}
+                max={90}
+                step={1}
+                value={avisoDias}
+                onChange={(e) => setAvisoDias(e.target.value.replace(/[^\d]/g, ""))}
+              />
+            </label>
+            <div className="acoes" style={{ alignItems: "flex-end" }}>
+              <button type="button" className="botao mini" onClick={salvarConfig} disabled={salvandoConfig}>
+                {salvandoConfig ? "Salvando…" : "💾 Salvar"}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       <div className="acoes">
         <Link href="/contas-pagar/nova" className="botao primario">
           + Nova conta a pagar
@@ -237,6 +348,7 @@ export default function ContasPagar() {
                     {[
                       c.categoria ? ROTULO_CATEGORIA[c.categoria] ?? c.categoria : null,
                       c.recorrente ? "recorrente" : null,
+                      c.valor_variavel ? "valor variável" : null,
                       c.fornecedor_nome && c.descricao ? c.fornecedor_nome : null,
                       c.vencimento ? `vence ${dataFmt.format(new Date(c.vencimento + "T00:00:00"))}` : null,
                       c.pago && c.pago_em ? `pago em ${dataFmt.format(new Date(c.pago_em))}` : p?.texto,
@@ -257,9 +369,53 @@ export default function ContasPagar() {
                     </span>
                   )}
                 </span>
-                <span className="preco" data-critico={!c.pago && p?.atrasada ? "true" : undefined}>
-                  R$ {moeda.format(Number(c.valor))}
-                </span>
+                {editandoValor === c.id ? (
+                  <span className="editar-estoque">
+                    <input
+                      value={valorEdicao}
+                      onChange={(e) => setValorEdicao(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") salvarValor(c.id);
+                        if (e.key === "Escape") setEditandoValor(null);
+                      }}
+                      inputMode="decimal"
+                      aria-label={`Valor de ${c.descricao || c.fornecedor_nome || "conta"}`}
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      className="botao mini"
+                      onClick={() => salvarValor(c.id)}
+                      disabled={salvandoValor}
+                    >
+                      {salvandoValor ? "…" : "💾"}
+                    </button>
+                    <button
+                      type="button"
+                      className="botao mini perigo"
+                      onClick={() => setEditandoValor(null)}
+                      disabled={salvandoValor}
+                      aria-label="Cancelar"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ) : (
+                  <span className="preco" data-critico={!c.pago && p?.atrasada ? "true" : undefined}>
+                    R$ {moeda.format(Number(c.valor))}
+                    {!c.pago && c.valor_variavel && (
+                      <button
+                        type="button"
+                        className="botao mini"
+                        onClick={() => abrirEdicaoValor(c)}
+                        title="Digitar o valor desse mês"
+                        style={{ marginLeft: 6 }}
+                      >
+                        ✏️
+                      </button>
+                    )}
+                  </span>
+                )}
                 <span className="botoes-linha">
                   {c.pago ? (
                     <button className="botao mini" onClick={() => marcar(c.id, "reabrir")}>

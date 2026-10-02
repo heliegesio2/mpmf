@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       foto,
       recorrente,
       recorrenteParcelas: recorrente ? recorrenteParcelas : null,
+      valorVariavel: recorrente && Boolean(c.valorVariavel),
       pago: Boolean(c.pago),
     });
     return NextResponse.json({ item }, { status: 201 });

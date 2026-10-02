@@ -186,14 +186,39 @@ unset `CRON_SECRET` → the route 503s rather than silently running unauthentica
 `processarRecorrenciasEAlertas()` (`db.ts`), which does two unrelated jobs in one pass since they're both
 "once a day, every store" work: (1) finds **every** `serie_id` across **every** empresa with `recorrente`
 rows and runs the buffer top-up for each (catches series whose buffer fell behind, e.g. a store that
-hasn't opened the app in a while); (2) finds every conta_pagar/fiado **due today** (`vencimento =
-CURRENT_DATE AND NOT pago`), grouped by empresa, **regardless of whether it's recorrente** — a one-off
-bill due today alerts just the same as a recurring one. Each empresa with something due gets one
-`notificarUsuariosDaEmpresa` call (`tipo: "conta"`, icon 💰 in both `MenuLateral`'s and `/notificacoes`'s
-icon maps), `chaveBase` keyed `conta-vencimento-hoje:<data ISO>` so re-running the cron the same day (or a
-retry) can't double-notify. No per-empresa loop needs a session — `notificarUsuariosDaEmpresa` takes a
-bare `empresaId` and fans out to every active `usuario` of that store itself (the same primitive
-`notificarParceirosSobreCotacao`/`enviarAvisoAdmin` already use for session-free, cross-store broadcasts).
+hasn't opened the app in a while); (2) sends **two separate** notifications per empresa when relevant —
+conta_pagar due within that store's configured lead time (see "Lead time + variable-value bills" below),
+and fiado due today (`vencimento = CURRENT_DATE AND NOT pago`, no lead-time setting for fiado, always
+same-day). Each uses its own `chaveBase` (`conta-pagar-vencimento:<data ISO>` /
+`conta-receber-vencimento:<data ISO>`) so re-running the cron the same day (or a retry) can't
+double-notify either stream independently. No per-empresa loop needs a session —
+`notificarUsuariosDaEmpresa` takes a bare `empresaId` and fans out to every active `usuario` of that store
+itself (the same primitive `notificarParceirosSobreCotacao`/`enviarAvisoAdmin` already use for
+session-free, cross-store broadcasts).
+
+### Lead time + variable-value recurring bills (`db/41`)
+
+Two contas-pagar-only additions, both configured in a **"⚙️ Configurações"** card at the top of
+`/contas-pagar` (collapsed by default, click the heading to expand):
+
+- **`empresa.aviso_dias_contas_pagar`** (integer, default 0) — how many days *before* `vencimento` the
+  cron should fire the "conta a pagar vencendo" notification (0 = same-day, the original behavior).
+  `avisoDiasContasPagar`/`definirAvisoDiasContasPagar` (`db.ts`) read/write it (clamped 0–90);
+  `GET/PUT /api/contas-pagar/configuracoes` exposes it. `processarRecorrenciasEAlertas`'s conta_pagar query
+  joins `empresa` and matches `vencimento = CURRENT_DATE + (aviso_dias_contas_pagar || ' days')::interval`
+  per row, so each store's lead time is independent — this setting does **not** affect fiado's alert, which
+  stays hardcoded same-day (fiado has no equivalent "Configurações" UI yet).
+- **`conta_pagar.valor_variavel`** (boolean) — for a recorrente bill whose amount actually changes every
+  cycle (água, luz: fixed due day, variable total) rather than being identical across the whole series like
+  every other recorrente bill. Set via a checkbox shown only when "recorrente" is checked on
+  `/contas-pagar/nova` ("o valor acima é só uma estimativa"); `garantirParcelasContaPagar` propagates it
+  (via `bool_or(valor_variavel)` over the series) onto every newly-generated installment, same as
+  categoria/fornecedor_id. The `/contas-pagar` grid shows a ✏️ button next to the price on any **unpaid**
+  row with `valor_variavel` — click it to swap the price for an inline `<input>` + 💾/✕ (same
+  `.editar-estoque` inline-edit pattern `/produtos` uses for stock), `PATCH /api/contas-pagar/:id {valor}`
+  → new narrow `atualizarValorContaPagar(empresaId, id, novoValor)` (mirrors `atualizarEstoqueProduto`,
+  touches only the `valor` column, blocked once `pago`). This is a **separate action from "Marcar
+  pago"** — editing the real amount doesn't also quit the bill; the shopkeeper still clicks pago separately.
 
 **Empréstimos (`/cascos`)** — `casco` table gained `item text` (`db/21`, mirrored) = what the customer
 took (engradado, botijão…), now a required field on the form; `criarCasco` and `POST /api/cascos` pass it.

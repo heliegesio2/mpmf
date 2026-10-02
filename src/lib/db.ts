@@ -501,6 +501,9 @@ const MIGRACOES_IDEMPOTENTES = [
   "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS recorrente_parcelas integer",
   "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS serie_id bigint",
   "CREATE INDEX IF NOT EXISTS idx_fiado_serie ON fiado (serie_id) WHERE serie_id IS NOT NULL",
+  // db/41 — conta a pagar recorrente de valor variavel (agua, luz…) + antecedencia de aviso
+  "ALTER TABLE conta_pagar ADD COLUMN IF NOT EXISTS valor_variavel boolean NOT NULL DEFAULT false",
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS aviso_dias_contas_pagar integer NOT NULL DEFAULT 0",
 ];
 
 let _schema: Promise<void> | null = null;
@@ -2735,6 +2738,7 @@ export type ContaPagar = {
   categoria: string | null;
   descricao: string | null;
   valor: string;
+  valor_variavel: boolean;
   vencimento: string | null;
   recorrente: boolean;
   tem_foto: boolean;
@@ -2754,12 +2758,14 @@ export type ContaPagarEntrada = {
   recorrente: boolean;
   /** Quantas parcelas futuras manter sempre geradas (obrigatório quando recorrente). */
   recorrenteParcelas: number | null;
+  /** Valor muda a cada mês (água, luz…) — o grid mostra um campo pra digitar o valor real de cada parcela. */
+  valorVariavel: boolean;
   /** Já entra quitada (checkbox "conta já paga" no cadastro). */
   pago: boolean;
 };
 
 const CAMPOS_CONTA_PAGAR = `c.id, c.fornecedor_id, fo.nome AS fornecedor_nome, fo.pix_chave AS fornecedor_pix,
-       c.categoria, c.descricao, c.valor,
+       c.categoria, c.descricao, c.valor, c.valor_variavel,
        to_char(c.vencimento, 'YYYY-MM-DD') AS vencimento, c.recorrente, (c.foto IS NOT NULL) AS tem_foto,
        c.pago, c.pago_em, c.criado_em`;
 
@@ -2782,6 +2788,7 @@ export async function garantirParcelasContaPagar(
     categoria: string | null;
     descricao: string | null;
     valor: string | null;
+    valor_variavel: boolean;
   }>(
     `SELECT
        count(*) FILTER (WHERE NOT pago)::int AS pendentes,
@@ -2790,7 +2797,8 @@ export async function garantirParcelasContaPagar(
        (array_agg(fornecedor_id ORDER BY id DESC))[1] AS fornecedor_id,
        (array_agg(categoria ORDER BY id DESC))[1] AS categoria,
        (array_agg(descricao ORDER BY id DESC))[1] AS descricao,
-       (array_agg(valor ORDER BY id DESC))[1]::text AS valor
+       (array_agg(valor ORDER BY id DESC))[1]::text AS valor,
+       bool_or(valor_variavel) AS valor_variavel
      FROM conta_pagar
      WHERE empresa_id = $1 AND serie_id = $2 AND recorrente`,
     [empresaId, serieId]
@@ -2804,12 +2812,33 @@ export async function garantirParcelasContaPagar(
   for (let i = 1; i <= faltam; i++) {
     await pool.query(
       `INSERT INTO conta_pagar
-         (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, recorrente, recorrente_parcelas, serie_id)
-       VALUES ($1, $2, $3, $4, $5, ($6::date + ($7::int * interval '1 month'))::date, true, $8, $9)`,
-      [empresaId, r.fornecedor_id, r.categoria, r.descricao, r.valor, r.ultimo_vencimento, i, r.alvo, serieId]
+         (empresa_id, fornecedor_id, categoria, descricao, valor, valor_variavel, vencimento, recorrente, recorrente_parcelas, serie_id)
+       VALUES ($1, $2, $3, $4, $5, $6, ($7::date + ($8::int * interval '1 month'))::date, true, $9, $10)`,
+      [empresaId, r.fornecedor_id, r.categoria, r.descricao, r.valor, r.valor_variavel, r.ultimo_vencimento, i, r.alvo, serieId]
     );
   }
   return { geradas: faltam };
+}
+
+/** So mexe no valor — usado pra conta recorrente de valor variavel (agua, luz…). */
+export async function atualizarValorContaPagar(
+  empresaId: number,
+  id: number,
+  novoValor: number
+): Promise<ContaPagar | null> {
+  await garantirSchema();
+  const upd = await pool.query(
+    "UPDATE conta_pagar SET valor = $3 WHERE id = $1 AND empresa_id = $2 AND pago = false",
+    [id, empresaId, novoValor]
+  );
+  if ((upd.rowCount ?? 0) === 0) return null;
+
+  const { rows } = await pool.query<ContaPagar>(
+    `SELECT ${CAMPOS_CONTA_PAGAR} FROM conta_pagar c LEFT JOIN fornecedor fo ON fo.id = c.fornecedor_id
+      WHERE c.id = $1 AND c.empresa_id = $2`,
+    [id, empresaId]
+  );
+  return rows[0] ?? null;
 }
 
 export async function listarContasPagar(
@@ -2848,13 +2877,13 @@ export async function criarContaPagar(
   // fornecedor_id (quando vem) é conferido contra a empresa da sessão
   const { rows } = await pool.query<{ id: number }>(
     `INSERT INTO conta_pagar (empresa_id, fornecedor_id, categoria, descricao, valor, vencimento, foto,
-                              recorrente, recorrente_parcelas, pago, pago_em)
+                              recorrente, recorrente_parcelas, valor_variavel, pago, pago_em)
      VALUES ($1,
              (SELECT id FROM fornecedor WHERE id = $2 AND empresa_id = $1),
-             $3, $4, $5, $6, $7, $8, $9, $10, CASE WHEN $10 THEN now() END)
+             $3, $4, $5, $6, $7, $8, $9, $10, $11, CASE WHEN $11 THEN now() END)
      RETURNING id`,
     [empresaId, d.fornecedorId, d.categoria, d.descricao, d.valor, d.vencimento, d.foto,
-     d.recorrente, d.recorrenteParcelas, d.pago]
+     d.recorrente, d.recorrenteParcelas, d.valorVariavel, d.pago]
   );
   const novoId = rows[0].id;
 
@@ -2928,6 +2957,24 @@ export async function fotoContaPagar(empresaId: number, id: number): Promise<str
     [id, empresaId]
   );
   return rows[0]?.foto ?? null;
+}
+
+/** Quantos dias antes do vencimento a loja quer ser avisada (cron diário). 0 = no dia. */
+export async function avisoDiasContasPagar(empresaId: number): Promise<number> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ aviso_dias_contas_pagar: number | null }>(
+    "SELECT aviso_dias_contas_pagar FROM empresa WHERE id = $1",
+    [empresaId]
+  );
+  const v = rows[0]?.aviso_dias_contas_pagar;
+  return Number.isInteger(v) && (v as number) >= 0 ? (v as number) : 0;
+}
+
+export async function definirAvisoDiasContasPagar(empresaId: number, dias: number): Promise<number> {
+  await garantirSchema();
+  const d = Number.isInteger(dias) && dias >= 0 && dias <= 90 ? dias : 0;
+  await pool.query("UPDATE empresa SET aviso_dias_contas_pagar = $2 WHERE id = $1", [empresaId, d]);
+  return d;
 }
 
 // ---------- caixa (fechamento diario) ----------
@@ -3880,8 +3927,9 @@ export async function notificarUsuariosDaEmpresa(
 /**
  * Roda uma vez por dia (via cron, `/api/cron/recorrencias`): garante o
  * buffer de toda serie recorrente ativa — conta_pagar e fiado, de qualquer
- * empresa — e notifica cada empresa que tenha conta a pagar e/ou a receber
- * vencendo HOJE (recorrente ou nao). Idempotente por dia via `chaveBase`
+ * empresa — e notifica cada empresa que tenha conta a pagar vencendo dentro
+ * da antecedência configurada (`empresa.aviso_dias_contas_pagar`, 0 = no dia)
+ * e/ou conta a receber vencendo HOJE. Idempotente por dia via `chaveBase`
  * datada, entao rodar mais de uma vez no mesmo dia nao duplica avisos.
  */
 export async function processarRecorrenciasEAlertas(): Promise<{
@@ -3905,10 +3953,15 @@ export async function processarRecorrenciasEAlertas(): Promise<{
     await garantirParcelasFiado(s.empresa_id, Number(s.serie_id));
   }
 
-  const pagarHoje = await pool.query<{ empresa_id: number; qtd: number; total: string }>(
-    `SELECT empresa_id, count(*)::int AS qtd, sum(valor)::text AS total
-       FROM conta_pagar WHERE NOT pago AND vencimento = CURRENT_DATE
-      GROUP BY empresa_id`
+  // cada empresa pode ter sua propria antecedencia (0 = so no dia do vencimento)
+  const pagarProximo = await pool.query<{ empresa_id: number; qtd: number; total: string; dias: number }>(
+    `SELECT c.empresa_id, count(*)::int AS qtd, sum(c.valor)::text AS total,
+            coalesce(e.aviso_dias_contas_pagar, 0) AS dias
+       FROM conta_pagar c
+       JOIN empresa e ON e.id = c.empresa_id
+      WHERE NOT c.pago
+        AND c.vencimento = CURRENT_DATE + (coalesce(e.aviso_dias_contas_pagar, 0) || ' days')::interval
+      GROUP BY c.empresa_id, e.aviso_dias_contas_pagar`
   );
   const fiadoHoje = await pool.query<{ empresa_id: number; qtd: number; total: string }>(
     `SELECT empresa_id, count(*)::int AS qtd, sum(valor)::text AS total
@@ -3916,34 +3969,43 @@ export async function processarRecorrenciasEAlertas(): Promise<{
       GROUP BY empresa_id`
   );
 
-  const porEmpresa = new Map<number, { pagar?: { qtd: number; total: string }; receber?: { qtd: number; total: string } }>();
-  for (const r of pagarHoje.rows) porEmpresa.set(r.empresa_id, { ...porEmpresa.get(r.empresa_id), pagar: { qtd: r.qtd, total: r.total } });
-  for (const r of fiadoHoje.rows) porEmpresa.set(r.empresa_id, { ...porEmpresa.get(r.empresa_id), receber: { qtd: r.qtd, total: r.total } });
-
   const hoje = new Date().toISOString().slice(0, 10);
   const moeda = (v: string) => Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const empresasAvisadas = new Set<number>();
 
-  for (const [empresaId, info] of porEmpresa) {
-    const partes: string[] = [];
-    if (info.pagar) partes.push(`${info.pagar.qtd} conta(s) a pagar (R$ ${moeda(info.pagar.total)})`);
-    if (info.receber) partes.push(`${info.receber.qtd} conta(s) a receber (R$ ${moeda(info.receber.total)})`);
-
+  for (const r of pagarProximo.rows) {
+    const quando = r.dias > 0 ? `em ${r.dias} dia(s)` : "hoje";
     await notificarUsuariosDaEmpresa(
-      empresaId,
+      r.empresa_id,
       {
         tipo: "conta",
-        titulo: "Contas vencendo hoje",
-        corpo: `Vence hoje: ${partes.join(" e ")}.`,
-        link: info.pagar ? "/contas-pagar" : "/contas",
+        titulo: "Conta a pagar vencendo",
+        corpo: `${r.qtd} conta(s) a pagar vence(m) ${quando} (R$ ${moeda(r.total)}).`,
+        link: "/contas-pagar",
       },
-      `conta-vencimento-hoje:${hoje}`
+      `conta-pagar-vencimento:${hoje}`
     );
+    empresasAvisadas.add(r.empresa_id);
+  }
+
+  for (const r of fiadoHoje.rows) {
+    await notificarUsuariosDaEmpresa(
+      r.empresa_id,
+      {
+        tipo: "conta",
+        titulo: "Conta a receber vencendo hoje",
+        corpo: `${r.qtd} conta(s) a receber vence(m) hoje (R$ ${moeda(r.total)}).`,
+        link: "/contas",
+      },
+      `conta-receber-vencimento:${hoje}`
+    );
+    empresasAvisadas.add(r.empresa_id);
   }
 
   return {
     seriesContaPagar: seriesPagar.rows.length,
     seriesFiado: seriesFiado.rows.length,
-    empresasAvisadas: porEmpresa.size,
+    empresasAvisadas: empresasAvisadas.size,
   };
 }
 

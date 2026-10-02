@@ -108,6 +108,7 @@ export default function NovaContaPagar() {
   const [vencimento, setVencimento] = useState("");
   const [recorrente, setRecorrente] = useState(false);
   const [recorrenteParcelas, setRecorrenteParcelas] = useState("3");
+  const [valorVariavel, setValorVariavel] = useState(false);
   const [jaPaga, setJaPaga] = useState(false);
   const [lendoFoto, setLendoFoto] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -204,6 +205,7 @@ export default function NovaContaPagar() {
           foto: foto || null,
           recorrente,
           recorrenteParcelas: recorrente ? parcelasNum : null,
+          valorVariavel: recorrente && valorVariavel,
           pago: jaPaga,
         }),
       });
@@ -363,6 +365,18 @@ export default function NovaContaPagar() {
                 value={recorrenteParcelas}
                 onChange={(e) => setRecorrenteParcelas(e.target.value.replace(/[^\d]/g, ""))}
               />
+            </label>
+          )}
+
+          {recorrente && (
+            <label className="check-whatsapp" style={{ gridColumn: "1 / -1" }}>
+              <input
+                type="checkbox"
+                checked={valorVariavel}
+                onChange={(e) => setValorVariavel(e.target.checked)}
+              />
+              Valor variável (ex.: água, luz) — o valor acima é só uma estimativa; na lista de contas
+              a pagar dá pra digitar o valor real de cada parcela antes de pagar
             </label>
           )}
 
