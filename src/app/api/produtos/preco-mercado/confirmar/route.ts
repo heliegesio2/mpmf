@@ -4,10 +4,17 @@ import { exigirEmpresa } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
 
-type ItemConfirmado = { produtoId: number; novoPreco: number };
+type ItemConfirmado = { produtoId: unknown; novoPreco: unknown };
 
 function numeroValido(v: unknown): v is number {
   return typeof v === "number" && Number.isFinite(v) && v > 0;
+}
+
+/** produto.id e bigint — o pg devolve como texto, entao o id chega aqui como number ou string. */
+function idValido(v: unknown): boolean {
+  if (typeof v === "number") return Number.isFinite(v) && v > 0;
+  if (typeof v === "string") return v.trim() !== "" && Number.isFinite(Number(v)) && Number(v) > 0;
+  return false;
 }
 
 /**
@@ -26,13 +33,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ erro: "Nenhum item para salvar." }, { status: 400 });
     }
     for (const item of itens) {
-      if (!numeroValido(item.produtoId) || !numeroValido(item.novoPreco)) {
+      if (!idValido(item.produtoId) || !numeroValido(item.novoPreco)) {
         return NextResponse.json({ erro: "Item com dados inválidos." }, { status: 400 });
       }
     }
 
     const resultados = await Promise.all(
-      itens.map((item) => atualizarPrecoProduto(empresaId, item.produtoId, item.novoPreco))
+      itens.map((item) =>
+        atualizarPrecoProduto(empresaId, Number(item.produtoId), item.novoPreco as number)
+      )
     );
 
     return NextResponse.json({ itens: resultados });

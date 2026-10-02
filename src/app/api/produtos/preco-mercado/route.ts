@@ -5,6 +5,13 @@ import { buscarPrecoMedioMercado, MAX_PRODUTOS_POR_LOTE, type ProdutoConsulta } 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+/** produto.id e bigint — o pg devolve como texto, entao o id chega aqui como number ou string. */
+function idValido(v: unknown): boolean {
+  if (typeof v === "number") return Number.isFinite(v);
+  if (typeof v === "string") return v.trim() !== "" && Number.isFinite(Number(v));
+  return false;
+}
+
 /**
  * POST /api/produtos/preco-mercado { produtos: [{id, nome}] }
  *
@@ -18,11 +25,10 @@ export async function POST(request: Request) {
   if (negado) return negado;
 
   try {
-    const corpo = (await request.json()) as { produtos?: ProdutoConsulta[] };
-    const produtos = (corpo.produtos ?? []).filter(
-      (p): p is ProdutoConsulta =>
-        typeof p?.id === "number" && typeof p?.nome === "string" && p.nome.trim().length >= 2
-    );
+    const corpo = (await request.json()) as { produtos?: { id?: unknown; nome?: unknown }[] };
+    const produtos: ProdutoConsulta[] = (corpo.produtos ?? [])
+      .filter((p) => idValido(p?.id) && typeof p?.nome === "string" && p.nome.trim().length >= 2)
+      .map((p) => ({ id: Number(p.id), nome: String(p.nome).trim() }));
     if (produtos.length === 0) {
       return NextResponse.json({ erro: "Nenhum produto para pesquisar." }, { status: 400 });
     }
