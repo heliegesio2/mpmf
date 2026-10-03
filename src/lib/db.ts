@@ -167,6 +167,10 @@ const MIGRACOES_IDEMPOTENTES = [
      excluido_em timestamptz NOT NULL DEFAULT now()
    )`,
   "CREATE INDEX IF NOT EXISTS idx_venda_exclusao_empresa ON venda_exclusao (empresa_id, excluido_em DESC)",
+  // db/43 — fiado ligado à venda que o gerou (pra excluir junto) + snapshot no log
+  "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS venda_id bigint",
+  "CREATE INDEX IF NOT EXISTS idx_fiado_venda ON fiado (venda_id) WHERE venda_id IS NOT NULL",
+  "ALTER TABLE venda_exclusao ADD COLUMN IF NOT EXISTS fiados jsonb NOT NULL DEFAULT '[]'",
   // db/21 — o que foi retirado no empréstimo (antigo "casco")
   "ALTER TABLE casco ADD COLUMN IF NOT EXISTS item text",
   // db/22 — anotações com lembrete
@@ -776,7 +780,13 @@ export type ParteVendaEntrada = { forma: string; valor: number };
  */
 export async function registrarVenda(
   empresaId: number,
-  dados: { data?: string | null; itens: ItemVendaEntrada[]; partes: ParteVendaEntrada[] }
+  dados: {
+    data?: string | null;
+    itens: ItemVendaEntrada[];
+    partes: ParteVendaEntrada[];
+    /** fiados já lançados por esta venda — ficam ligados a ela pra sumirem se ela for excluída */
+    fiadoIds?: number[];
+  }
 ): Promise<number> {
   await garantirSchema();
   const total = dados.itens.reduce((s, it) => s + it.quantidade * it.precoUnit, 0);
@@ -808,6 +818,13 @@ export async function registrarVenda(
     await pool.query(
       `INSERT INTO venda_pagamento (venda_id, forma, valor) VALUES ($1, $2, $3)`,
       [vendaId, String(p.forma ?? "").slice(0, 20) || "dinheiro", p.valor]
+    );
+  }
+  const fiadoIds = (dados.fiadoIds ?? []).filter((n) => Number.isInteger(n));
+  if (fiadoIds.length > 0) {
+    await pool.query(
+      "UPDATE fiado SET venda_id = $1 WHERE id = ANY($2::bigint[]) AND empresa_id = $3 AND venda_id IS NULL",
+      [vendaId, fiadoIds, empresaId]
     );
   }
   return vendaId;
@@ -856,7 +873,8 @@ export type ResultadoExclusaoVenda = "ok" | "nao_encontrada" | "nota_emitida";
  * Exclui uma venda da própria empresa: grava o snapshot + quem excluiu em
  * `venda_exclusao`, devolve ao estoque o que foi baixado e apaga a venda.
  * Venda com NFC-e autorizada não pode ser excluída (teria que cancelar a nota).
- * O fiado lançado na venda NÃO é desfeito (não há vínculo venda↔fiado).
+ * O fiado ligado à venda (`fiado.venda_id`) é apagado junto e vai no snapshot;
+ * vendas antigas, de antes do vínculo, não têm fiado ligado.
  */
 export async function excluirVenda(
   empresaId: number,
@@ -875,7 +893,7 @@ export async function excluirVenda(
   // Snapshot primeiro: se falhar, nada foi apagado.
   const { rows: log } = await pool.query(
     `INSERT INTO venda_exclusao
-       (empresa_id, venda_id, venda_data, venda_criado_em, total, itens, pagamentos, usuario_id, usuario_nome)
+       (empresa_id, venda_id, venda_data, venda_criado_em, total, itens, pagamentos, fiados, usuario_id, usuario_nome)
      SELECT v.empresa_id, v.id, v.data, v.criado_em, v.total,
             COALESCE((SELECT json_agg(json_build_object(
                         'produto_id', i.produto_id, 'nome', i.nome,
@@ -884,6 +902,10 @@ export async function excluirVenda(
                        FROM venda_item i WHERE i.venda_id = v.id), '[]'::json),
             COALESCE((SELECT json_agg(json_build_object('forma', p.forma, 'valor', p.valor::float8) ORDER BY p.id)
                        FROM venda_pagamento p WHERE p.venda_id = v.id), '[]'::json),
+            COALESCE((SELECT json_agg(json_build_object(
+                        'cliente', cl.nome, 'valor', f.valor::float8, 'pago', f.pago) ORDER BY f.id)
+                       FROM fiado f JOIN cliente cl ON cl.id = f.cliente_id
+                      WHERE f.venda_id = v.id AND f.empresa_id = v.empresa_id), '[]'::json),
             $3, $4
        FROM venda v
       WHERE v.id = $1 AND v.empresa_id = $2
@@ -905,6 +927,7 @@ export async function excluirVenda(
     );
   }
 
+  await pool.query("DELETE FROM fiado WHERE venda_id = $1 AND empresa_id = $2", [vendaId, empresaId]);
   await pool.query("DELETE FROM venda WHERE id = $1 AND empresa_id = $2", [vendaId, empresaId]);
   return "ok";
 }
@@ -917,6 +940,7 @@ export type ExclusaoVenda = {
   total: number;
   itens: { nome: string; quantidade: number; preco_unit: number; tipo_venda: string }[];
   pagamentos: { forma: string; valor: number }[];
+  fiados: { cliente: string; valor: number; pago: boolean }[];
   usuario_nome: string;
   excluido_em: string;
 };
@@ -926,7 +950,7 @@ export async function listarExclusoesVenda(empresaId: number): Promise<ExclusaoV
   await garantirSchema();
   const { rows } = await pool.query<ExclusaoVenda>(
     `SELECT id, venda_id, venda_data::text AS venda_data, venda_criado_em, total::float8 AS total,
-            itens, pagamentos, usuario_nome, excluido_em
+            itens, pagamentos, fiados, usuario_nome, excluido_em
        FROM venda_exclusao
       WHERE empresa_id = $1
       ORDER BY excluido_em DESC

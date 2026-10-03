@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * POST /api/venda/concluir
- *   { data, itens: [{ id?, nome, quantidade, precoUnit, tipoVenda }], partes: [{ forma, valor }] }
+ *   { data, itens: [{ id?, nome, quantidade, precoUnit, tipoVenda }], partes: [{ forma, valor }], fiadoIds?: number[] }
  *
  * Chamado ao finalizar a venda. Faz duas coisas, ambas não-bloqueantes (a
  * venda já foi cobrada): grava a venda (aparece em /vendas) e dá baixa no
@@ -41,6 +41,10 @@ export async function POST(request: Request) {
     })
     .filter((p: { valor: number }) => p.valor > 0);
 
+  const fiadoIds = (Array.isArray(corpo?.fiadoIds) ? corpo.fiadoIds : [])
+    .map(Number)
+    .filter((n: number) => Number.isInteger(n) && n > 0);
+
   let vendaId: number | null = null;
   try {
     vendaId = await registrarVenda(empresaId, {
@@ -53,6 +57,7 @@ export async function POST(request: Request) {
         tipoVenda: i.tipoVenda,
       })),
       partes,
+      fiadoIds,
     });
   } catch (e) {
     console.error("Falha ao registrar a venda:", e);

@@ -21,7 +21,7 @@ total. In the **balcão** menu group, labeled "Vendas do dia" (distinct from `/v
 **Excluir venda** — cada linha de `/vendas` tem "Excluir" (`confirm()` antes) → `DELETE /api/vendas/[id]` →
 `excluirVenda`: grava snapshot (itens + pagamentos em jsonb) + `usuario_id`/`usuario_nome` (+ "via X" se
 impersonando) em `venda_exclusao` (`db/42`), devolve o estoque dos itens, apaga a venda. Bloqueia (409) se
-houver NFC-e `autorizado`. O **fiado** lançado na venda não é desfeito (sem vínculo venda↔fiado). O log
+houver NFC-e `autorizado`. O **fiado** da venda (`fiado.venda_id`, `db/43`, preenchido por `/api/venda/concluir` via `fiadoIds`) é apagado junto e vai no log (`fiados`); vendas anteriores ao `db/43` não têm vínculo, então o fiado delas fica. O log
 fica em `/vendas/exclusoes` (link no topo de `/vendas`; `GET /api/vendas/exclusoes`, últimos 200): quem, quando, e itens ao expandir. Espelhado no mpmf-desktop (usuário fixo "Balcão (desktop)").
 
 **Payment-method cards** — `.formas-pagamento`/`.forma-card`, one per `forma` that has a nonzero total in

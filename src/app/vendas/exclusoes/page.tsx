@@ -11,6 +11,7 @@ type Exclusao = {
   total: number;
   itens: { nome: string; quantidade: number; preco_unit: number; tipo_venda: string }[];
   pagamentos: { forma: string; valor: number }[];
+  fiados: { cliente: string; valor: number; pago: boolean }[];
   usuario_nome: string;
   excluido_em: string;
 };
@@ -92,6 +93,14 @@ export default function ExclusoesVenda() {
                         .map((p) => `${ROTULO_FORMA[p.forma] ?? p.forma} R$ ${moeda.format(p.valor)}`)
                         .join(" + ")}
                 </span>
+                {x.fiados.length > 0 && (
+                  <span className="sub">
+                    Fiado apagado:{" "}
+                    {x.fiados
+                      .map((f) => `${f.cliente} R$ ${moeda.format(f.valor)}${f.pago ? " (já estava pago)" : ""}`)
+                      .join(", ")}
+                  </span>
+                )}
                 {aberta === x.id && (
                   <span className="sub">
                     {x.itens.map((i, n) => (

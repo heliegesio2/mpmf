@@ -79,9 +79,10 @@ export default function Vendas() {
 
   async function excluir(v: Venda) {
     const quando = hora.format(new Date(v.criado_em));
+    const temFiado = v.pagamentos.some((p) => p.forma === "fiado");
     if (
       !confirm(
-        `Excluir a venda das ${quando} (R$ ${moeda.format(v.total)})? O estoque dos itens volta e fica registrado que foi você quem excluiu. Essa ação não tem volta.`
+        `Excluir a venda das ${quando} (R$ ${moeda.format(v.total)})? O estoque dos itens volta${temFiado ? ", o fiado dela é apagado" : ""} e fica registrado que foi você quem excluiu. Essa ação não tem volta.`
       )
     )
       return;

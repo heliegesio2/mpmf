@@ -573,6 +573,7 @@ export default function Venda() {
     setErro(false);
     try {
       // lança os fiados antes de concluir; se algum falhar, não fecha a venda
+      const fiadoIds: number[] = [];
       for (const p of partes.filter((x) => x.forma === "fiado")) {
         const r = await fetch("/api/fiado", {
           method: "POST",
@@ -587,6 +588,7 @@ export default function Venda() {
         if (!r.ok) {
           throw new Error([d?.erro, d?.detalhe].filter(Boolean).join(" — ") || "Falha ao lançar o fiado.");
         }
+        if (Number.isInteger(Number(d?.item?.id))) fiadoIds.push(Number(d.item.id));
       }
       // grava a venda (aparece em /vendas) e dá baixa no estoque — a venda já
       // foi cobrada, então uma falha aqui não a desfaz (o servidor loga)
@@ -606,6 +608,7 @@ export default function Venda() {
               tipoVenda: i.produto.tipo_venda,
             })),
             partes: partes.map((p) => ({ forma: p.forma, valor: p.valor })),
+            fiadoIds,
           }),
         });
         const d = await r.json().catch(() => ({}));
