@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 type Pagamento = { forma: string; valor: number };
@@ -118,6 +119,10 @@ export default function Vendas() {
       <header className="marca">
         Vendas <span>•</span> {itens.length} no período
       </header>
+
+      <p className="dica">
+        <Link href="/vendas/exclusoes">Ver vendas excluídas</Link>
+      </p>
 
       <section className="cartao">
         <div className="grade-form">
