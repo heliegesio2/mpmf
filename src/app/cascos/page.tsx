@@ -1,7 +1,7 @@
 "use client";
 
 import { formatarTelefone, telefoneCompleto } from "@/lib/telefone";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
 import DadosContato from "@/components/DadosContato";
@@ -150,12 +150,51 @@ export default function Cascos() {
       setAviso("Empréstimo registrado.");
       setForm(VAZIO);
       setCriando(false);
-      await carregar(filtro);
+      // o novo empréstimo está "emprestado": volta pro filtro inicial pra ele aparecer
+      if (filtro === "emprestados") await carregar("emprestados");
+      else setFiltro("emprestados");
     } catch (e) {
       setErro(true);
       setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
     } finally {
       setSalvando(false);
+    }
+  }
+
+  // toques em +/− por empréstimo ainda em voo (só aplica a resposta do último)
+  const emVoo = useRef<Record<number, number>>({});
+
+  /** + / −: salva na hora. Optimista na tela; o servidor soma de forma atômica. */
+  async function ajustar(c: Casco, delta: number) {
+    if (delta < 0 && c.quantidade + delta < 1) {
+      if (!confirm(`Devolveu tudo de "${c.responsavel}"? O empréstimo será marcado como devolvido.`)) return;
+    } else {
+      setItens((xs) => xs.map((x) => (x.id === c.id ? { ...x, quantidade: x.quantidade + delta } : x)));
+    }
+    emVoo.current[c.id] = (emVoo.current[c.id] ?? 0) + 1;
+    try {
+      const r = await fetch(`/api/cascos/${c.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ delta }),
+      });
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro);
+      emVoo.current[c.id] -= 1;
+      if (emVoo.current[c.id] > 0) return; // ainda há toques pendentes: espera a última resposta
+      const item = dados.item as Casco;
+      if (item.devolvido) {
+        setAviso(`${item.responsavel} devolveu tudo — marcado como devolvido.`);
+        setErro(false);
+        await carregar(filtro);
+      } else {
+        setItens((xs) => xs.map((x) => (x.id === item.id ? { ...x, quantidade: item.quantidade } : x)));
+      }
+    } catch {
+      emVoo.current[c.id] = Math.max(0, (emVoo.current[c.id] ?? 1) - 1);
+      setErro(true);
+      setAviso("Não foi possível salvar a quantidade.");
+      await carregar(filtro);
     }
   }
 
@@ -284,6 +323,33 @@ export default function Cascos() {
                   local={c.endereco}
                 />
               </span>
+
+              {!c.devolvido && (
+                <span className="casco-qtd" role="group" aria-label={`Quantidade emprestada: ${c.quantidade}`}>
+                  <button
+                    type="button"
+                    className="botao mini"
+                    onClick={() => ajustar(c, -1)}
+                    aria-label="Diminuir quantidade (devolveu um)"
+                    title="Devolveu um"
+                  >
+                    −
+                  </button>
+                  <span className="casco-qtd-valor">
+                    <strong>{c.quantidade}</strong>
+                    <small>{c.quantidade === 1 ? "emprestado" : "emprestados"}</small>
+                  </span>
+                  <button
+                    type="button"
+                    className="botao mini"
+                    onClick={() => ajustar(c, 1)}
+                    aria-label="Aumentar quantidade (levou mais um)"
+                    title="Levou mais um"
+                  >
+                    +
+                  </button>
+                </span>
+              )}
 
               <span className="selo" data-situacao={c.devolvido ? "aprovada" : "pendente"}>
                 {c.devolvido ? "devolvido" : "emprestado"}

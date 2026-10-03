@@ -1,13 +1,17 @@
 import { NextResponse } from "next/server";
-import { excluirCasco, marcarCascoDevolvido } from "@/lib/db";
+import { ajustarQuantidadeCasco, excluirCasco, marcarCascoDevolvido } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
 
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** PATCH /api/cascos/:id -> marca o empréstimo como devolvido. */
-export async function PATCH(_request: Request, { params }: Ctx) {
+/**
+ * PATCH /api/cascos/:id
+ *  - `{ delta: +1 | -1 | … }` -> soma à quantidade (menos que zere = devolvido);
+ *  - sem corpo -> marca o empréstimo como devolvido.
+ */
+export async function PATCH(request: Request, { params }: Ctx) {
   const { empresaId, erro } = await exigirEmpresa();
   if (erro) return erro;
 
@@ -17,6 +21,19 @@ export async function PATCH(_request: Request, { params }: Ctx) {
   }
 
   try {
+    const corpo = (await request.json().catch(() => null)) as { delta?: unknown } | null;
+    if (corpo && "delta" in corpo) {
+      const delta = Number(corpo.delta);
+      if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 1000) {
+        return NextResponse.json({ erro: "Quantidade inválida." }, { status: 400 });
+      }
+      const ajustado = await ajustarQuantidadeCasco(empresaId, id, delta);
+      if (!ajustado) {
+        return NextResponse.json({ erro: "Empréstimo não encontrado ou já devolvido." }, { status: 404 });
+      }
+      return NextResponse.json({ item: ajustado });
+    }
+
     const item = await marcarCascoDevolvido(empresaId, id);
     if (!item) return NextResponse.json({ erro: "Registro não encontrado." }, { status: 404 });
     return NextResponse.json({ item });

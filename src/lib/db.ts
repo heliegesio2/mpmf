@@ -2342,6 +2342,29 @@ export async function marcarCascoDevolvido(empresaId: number, id: number): Promi
   return rows[0] ?? null;
 }
 
+/**
+ * Soma `delta` (positivo ou negativo) à quantidade de um empréstimo em aberto.
+ * Se a devolução zeraria a quantidade, o empréstimo é marcado como devolvido
+ * (mantendo a última quantidade). Atômico: dois toques seguidos não se perdem.
+ */
+export async function ajustarQuantidadeCasco(
+  empresaId: number,
+  id: number,
+  delta: number
+): Promise<Casco | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<Casco>(
+    `UPDATE casco SET
+        quantidade = CASE WHEN quantidade + $3 < 1 THEN quantidade ELSE LEAST(quantidade + $3, 9999) END,
+        devolvido = CASE WHEN quantidade + $3 < 1 THEN true ELSE devolvido END,
+        devolvido_em = CASE WHEN quantidade + $3 < 1 THEN now() ELSE devolvido_em END
+      WHERE id = $1 AND empresa_id = $2 AND devolvido = false
+      RETURNING ${CAMPOS_CASCO}`,
+    [id, empresaId, delta]
+  );
+  return rows[0] ?? null;
+}
+
 export async function excluirCasco(empresaId: number, id: number): Promise<boolean> {
   const r = await pool.query(
     "DELETE FROM casco WHERE id = $1 AND empresa_id = $2",
