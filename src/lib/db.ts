@@ -176,6 +176,9 @@ const MIGRACOES_IDEMPOTENTES = [
   "UPDATE fornecedor_produto SET tipo_venda = 'caixa' WHERE tipo_venda = 'unidade' AND preco_unidade IS NULL AND preco_caixa IS NOT NULL",
   "ALTER TABLE pedido ADD COLUMN IF NOT EXISTS urgente boolean NOT NULL DEFAULT false",
   "ALTER TABLE pedido ADD COLUMN IF NOT EXISTS taxa_urgencia numeric(10,2) NOT NULL DEFAULT 0",
+  // db/45 — cores preferenciais (empresa e fornecedor)
+  "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS cores jsonb NOT NULL DEFAULT '[]'",
+  "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS cores jsonb NOT NULL DEFAULT '[]'",
   // db/43 — fiado ligado à venda que o gerou (pra excluir junto) + snapshot no log
   "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS venda_id bigint",
   "CREATE INDEX IF NOT EXISTS idx_fiado_venda ON fiado (venda_id) WHERE venda_id IS NOT NULL",
@@ -1164,6 +1167,7 @@ export type EmpresaConfig = {
   pix_chave: string | null;
   pix_nome: string | null;
   tem_logo: boolean;
+  cores: string[];
   /** Dados fiscais (NFC-e) — endereco/cidade/bairro/cep acima cobrem logradouro/municipio. */
   inscricao_estadual: string | null;
   regime_tributario: number | null;
@@ -1189,12 +1193,13 @@ export type EmpresaConfigEntrada = {
   numero: string | null;
   complemento: string | null;
   uf: string | null;
+  cores?: string[];
 };
 
 const CAMPOS_EMPRESA_CONFIG =
   "id, nome, documento, telefone, telefone_whatsapp, cidade, bairro, cep, endereco, horario, pix_chave, pix_nome, " +
   "inscricao_estadual, regime_tributario, numero, complemento, uf, " +
-  "(logo IS NOT NULL AND logo <> '') AS tem_logo";
+  "(logo IS NOT NULL AND logo <> '') AS tem_logo, cores";
 
 export async function configEmpresa(empresaId: number): Promise<EmpresaConfig | null> {
   await garantirSchema();
@@ -1214,7 +1219,8 @@ export async function salvarConfigEmpresa(
     `UPDATE empresa
         SET nome = $2, documento = $3, telefone = $4, telefone_whatsapp = $5, cidade = $6, cep = $7,
             endereco = $8, horario = $9, pix_chave = $10, pix_nome = $11, bairro = $12,
-            inscricao_estadual = $13, regime_tributario = $14, numero = $15, complemento = $16, uf = $17
+            inscricao_estadual = $13, regime_tributario = $14, numero = $15, complemento = $16, uf = $17,
+            cores = COALESCE($18::jsonb, cores)
       WHERE id = $1
       RETURNING ${CAMPOS_EMPRESA_CONFIG}`,
     [
@@ -1222,6 +1228,7 @@ export async function salvarConfigEmpresa(
       d.endereco, d.horario, d.pixChave, d.pixNome, d.bairro ?? null,
       d.inscricaoEstadual || null, d.regimeTributario ?? null, d.numero || null,
       d.complemento || null, d.uf || null,
+      d.cores ? JSON.stringify(d.cores) : null,
     ]
   );
   return rows[0] ?? null;
@@ -3368,6 +3375,7 @@ export type FornecedorPublicoEntrada = {
   bairroIds: number[];
   /** data URL da logo enviada no cadastro (opcional) */
   logo?: string | null;
+  cores?: string[];
 };
 
 /**
@@ -3394,8 +3402,8 @@ export async function criarFornecedorPublico(d: FornecedorPublicoEntrada): Promi
     const { rows } = await cliente.query<{ id: number }>(
       `INSERT INTO fornecedor_publico
          (nome, documento, telefone, telefone_whatsapp, endereco, observacao, pix_chave, email, senha_hash, cidade,
-          logo, situacao, decidido_em)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'aprovado', now()) RETURNING id`,
+          logo, cores, situacao, decidido_em)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,'aprovado', now()) RETURNING id`,
       [
         d.nome,
         d.documento?.replace(/\D/g, "") || null,
@@ -3408,6 +3416,7 @@ export async function criarFornecedorPublico(d: FornecedorPublicoEntrada): Promi
         d.senhaHash,
         d.cidade.trim(),
         d.logo || null,
+        JSON.stringify(d.cores ?? []),
       ]
     );
     const id = rows[0].id;
@@ -3454,6 +3463,7 @@ export type FornecedorPublico = {
   tem_catalogo?: boolean;
   tem_pdf?: boolean;
   tem_logo?: boolean;
+  cores?: string[];
 };
 
 /** Lista os fornecedores públicos (cadastro na plataforma) — só super admin. */
@@ -3564,7 +3574,7 @@ export async function fornecedorPublicoDetalhe(id: number): Promise<
     `SELECT fp.id, fp.nome, fp.documento, fp.telefone, fp.telefone_whatsapp, fp.endereco,
             fp.observacao, fp.pix_chave, fp.email, fp.cidade, fp.situacao, fp.motivo, fp.criado_em,
             fp.slug, (fp.portfolio_pdf IS NOT NULL AND fp.portfolio_pdf <> '') AS tem_pdf,
-            (fp.logo IS NOT NULL AND fp.logo <> '') AS tem_logo,
+            (fp.logo IS NOT NULL AND fp.logo <> '') AS tem_logo, fp.cores,
             COALESCE((SELECT json_agg(b.nome ORDER BY b.nome)
                         FROM fornecedor_publico_bairro fb JOIN bairro b ON b.id = fb.bairro_id
                        WHERE fb.fornecedor_publico_id = fp.id), '[]'::json) AS bairros,
@@ -3596,6 +3606,7 @@ export async function atualizarFornecedorPublico(
     pixChave?: string | null;
     cidade: string;
     bairroIds: number[];
+    cores?: string[];
   }
 ): Promise<boolean> {
   await garantirSchema();
@@ -3605,7 +3616,8 @@ export async function atualizarFornecedorPublico(
     const upd = await cliente.query(
       `UPDATE fornecedor_publico
           SET nome = $2, documento = $3, telefone = $4, telefone_whatsapp = $5,
-              endereco = $6, observacao = $7, pix_chave = $8, cidade = $9
+              endereco = $6, observacao = $7, pix_chave = $8, cidade = $9,
+              cores = COALESCE($10::jsonb, cores)
         WHERE id = $1`,
       [
         id,
@@ -3617,6 +3629,7 @@ export async function atualizarFornecedorPublico(
         d.observacao || null,
         d.pixChave || null,
         d.cidade.trim(),
+        d.cores ? JSON.stringify(d.cores) : null,
       ]
     );
     if (!upd.rowCount) {

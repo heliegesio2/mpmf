@@ -7,7 +7,8 @@ import BotoesSociais from "@/components/BotoesSociais";
 import Logo from "@/components/Logo";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
-import CampoFoto from "@/components/CampoFoto";
+import CampoLogo from "@/components/CampoLogo";
+import CampoCores from "@/components/CampoCores";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -60,6 +61,7 @@ function Conteudo() {
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [logo, setLogo] = useState(""); // data URL da logo (opcional)
+  const [cores, setCores] = useState<string[]>([]); // cores preferenciais (opcional)
 
   // bairros (só no cadastro de fornecedor)
   const [bairros, setBairros] = useState<Bairro[]>([]);
@@ -159,6 +161,7 @@ function Conteudo() {
             cidade: form.cidade || CIDADE_PADRAO,
             bairroIds: [...bairrosSel],
             logo,
+            cores,
           }),
         });
         const dados = await r.json();
@@ -170,7 +173,7 @@ function Conteudo() {
       const r = await fetch("/api/empresas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, logo }),
+        body: JSON.stringify({ ...form, logo, cores }),
       });
       const dados = await r.json();
       if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível cadastrar.");
@@ -280,14 +283,16 @@ function Conteudo() {
             {...comum("nome")}
           />
           <div className="rotulo largo">
-            <CampoFoto
+            <CampoLogo
               rotulo="Logo (opcional)"
-              semCaptura
               preview={logo}
               aoEscolher={setLogo}
               aoRemover={logo ? () => setLogo("") : undefined}
               aoErro={(m) => setErro(m)}
             />
+          </div>
+          <div className="rotulo largo">
+            <CampoCores valor={cores} aoMudar={setCores} />
           </div>
           <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comum("documento")} />
           <CampoTelefone

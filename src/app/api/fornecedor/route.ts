@@ -1,3 +1,4 @@
+import { lerCores } from "@/lib/cores";
 import { NextResponse } from "next/server";
 import {
   atualizarFornecedorPublico,
@@ -66,6 +67,7 @@ export async function PUT(request: Request) {
       pixChave: String(c.pixChave ?? "").trim() || null,
       cidade,
       bairroIds,
+      cores: "cores" in c ? lerCores(c.cores) : undefined,
     });
     if (!ok) return NextResponse.json({ erro: "Cadastro não encontrado." }, { status: 404 });
 

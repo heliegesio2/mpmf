@@ -1,3 +1,4 @@
+import { lerCores } from "@/lib/cores";
 import { lerLogoCadastro } from "@/lib/logoCadastro";
 import { NextResponse } from "next/server";
 import { criarFornecedorPublico } from "@/lib/db";
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
       cidade,
       bairroIds,
       logo,
+      cores: lerCores(c.cores),
     });
 
     return NextResponse.json(

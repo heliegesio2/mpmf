@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
-import CampoFoto from "@/components/CampoFoto";
+import CampoLogo from "@/components/CampoLogo";
+import CampoCores from "@/components/CampoCores";
 import BotaoCopiar from "@/components/BotaoCopiar";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
@@ -55,6 +56,7 @@ const REGIMES_TRIBUTARIOS = [
 
 export default function Configuracoes() {
   const [form, setForm] = useState<Config>(VAZIO);
+  const [cores, setCores] = useState<string[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
@@ -113,6 +115,7 @@ export default function Configuracoes() {
           complemento: e.complemento ?? "",
           uf: e.uf ?? "",
         });
+        setCores(Array.isArray(e.cores) ? e.cores : []);
         if (e.tem_logo) setLogoPreview("/api/empresa/logo");
       } catch (e) {
         setErro(true);
@@ -292,7 +295,7 @@ export default function Configuracoes() {
       const r = await fetch("/api/empresa", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, cores }),
       });
       const d = await r.json();
       if (!r.ok) {
@@ -349,9 +352,12 @@ export default function Configuracoes() {
             </div>
 
             <div className="rotulo" style={{ marginTop: 12 }}>
-              <CampoFoto
+              <CampoCores valor={cores} aoMudar={setCores} />
+            </div>
+
+            <div className="rotulo" style={{ marginTop: 12 }}>
+              <CampoLogo
                 rotulo={salvandoLogo ? "Logo da empresa (salvando…)" : "Logo da empresa"}
-                semCaptura
                 preview={logoPreview}
                 aoEscolher={mudarLogo}
                 aoRemover={logoPreview ? removerLogo : undefined}

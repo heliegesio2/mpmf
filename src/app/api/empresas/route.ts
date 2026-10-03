@@ -1,3 +1,4 @@
+import { lerCores } from "@/lib/cores";
 import { lerLogoCadastro } from "@/lib/logoCadastro";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
@@ -117,9 +118,9 @@ export async function POST(request: Request) {
     const pixNome = c.pixNome ? String(c.pixNome).trim() || null : null;
 
     const empresa = await cliente.query<{ id: number }>(
-      `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome, logo, situacao, decidida_em)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'aprovada', now()) RETURNING id`,
-      [nome, documento, c.telefone ?? null, Boolean(c.telefoneWhatsapp), c.cidade ?? null, horario, pixChave, pixNome, logo]
+      `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome, logo, cores, situacao, decidida_em)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, 'aprovada', now()) RETURNING id`,
+      [nome, documento, c.telefone ?? null, Boolean(c.telefoneWhatsapp), c.cidade ?? null, horario, pixChave, pixNome, logo, JSON.stringify(lerCores(c.cores))]
     );
 
     let usuarioSocialId: number | null = null;

@@ -3142,3 +3142,22 @@ body:has(.pf-pagina) .ajuste-fonte { display: none; }
   .pf-acoes { display: none; }
   .pf-grade { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ---- envio de logomarca: círculo "Clique aqui para enviar sua logomarca" ---- */
+.campo-logo { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.campo-logo-botao { display: inline-block; cursor: pointer; line-height: 0; border-radius: 50%; }
+.campo-logo-botao[data-ocupado="true"] { opacity: 0.6; pointer-events: none; }
+.campo-logo-circulo { fill: var(--azul-wash, #f1f5fc); stroke: var(--azul, #1d4ed8); stroke-width: 3; stroke-dasharray: 8 6; }
+.campo-logo-botao:hover .campo-logo-circulo { fill: #e3ecfb; }
+.campo-logo-icone { stroke: var(--azul, #1d4ed8); }
+.campo-logo-titulo { font: 700 15px Archivo, system-ui, sans-serif; fill: var(--azul, #1d4ed8); }
+.campo-logo-texto { font: 500 12px Archivo, system-ui, sans-serif; fill: currentColor; }
+.campo-logo-tem { display: flex; align-items: center; gap: 14px; }
+.campo-logo-tem img { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 2px solid var(--azul, #1d4ed8); background: #fff; }
+
+/* ---- cores preferenciais: quadradinhos de cor clicáveis ---- */
+.campo-cores { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.campo-cores-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 10px; }
+.campo-cores-item { display: flex; align-items: center; gap: 6px; }
+.campo-cores-item input[type="color"] { width: 44px; height: 44px; padding: 0; border: 2px solid var(--azul, #1d4ed8); border-radius: 8px; background: none; cursor: pointer; }
+.campo-cores-item code { font-size: 12px; }

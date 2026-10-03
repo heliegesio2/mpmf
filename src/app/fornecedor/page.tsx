@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
-import CampoFoto from "@/components/CampoFoto";
+import CampoLogo from "@/components/CampoLogo";
+import CampoCores from "@/components/CampoCores";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -49,6 +50,7 @@ export default function AreaFornecedor() {
   const [aviso, setAviso] = useState("");
   const [erro, setErro] = useState(false);
   const [logoPreview, setLogoPreview] = useState("");
+  const [cores, setCores] = useState<string[]>([]);
   const [salvandoLogo, setSalvandoLogo] = useState(false);
 
   const { ouvir, parar, ouvindoCampo, campoAtual, disponivel } = useVoz({
@@ -101,6 +103,7 @@ export default function AreaFornecedor() {
       setBairros(it.bairrosCidade ?? []);
       setSel(new Set((it.bairroIds ?? []).map(Number)));
       setLogoPreview(it.tem_logo ? "/api/fornecedor/logo" : "");
+      setCores(Array.isArray(it.cores) ? it.cores : []);
     } catch {
       setErro(true);
       setAviso("Não foi possível carregar seu cadastro.");
@@ -177,6 +180,7 @@ export default function AreaFornecedor() {
           ...form,
           cidade: form.cidade || "Conselheiro Lafaiete",
           bairroIds: [...sel],
+          cores,
         }),
       });
       const d = await r.json();
@@ -255,9 +259,12 @@ export default function AreaFornecedor() {
           <CampoVoz rotulo="Observação (opcional)" placeholder="Dias de entrega, pedido mínimo…" largo {...comum("observacao")} />
 
           <div className="rotulo largo">
-            <CampoFoto
+            <CampoCores valor={cores} aoMudar={setCores} />
+          </div>
+
+          <div className="rotulo largo">
+            <CampoLogo
               rotulo={salvandoLogo ? "Logo (salvando…)" : "Logo"}
-              semCaptura
               preview={logoPreview}
               aoEscolher={mudarLogo}
               aoRemover={logoPreview ? removerLogo : undefined}

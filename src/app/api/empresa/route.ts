@@ -1,3 +1,4 @@
+import { lerCores } from "@/lib/cores";
 import { NextResponse } from "next/server";
 import { configEmpresa, salvarConfigEmpresa } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
@@ -53,6 +54,7 @@ export async function PUT(request: Request) {
       numero: texto(c.numero),
       complemento: texto(c.complemento),
       uf: texto(c.uf)?.slice(0, 2).toUpperCase() ?? null,
+      cores: "cores" in c ? lerCores(c.cores) : undefined,
     });
     return NextResponse.json({ item });
   } catch (e) {
