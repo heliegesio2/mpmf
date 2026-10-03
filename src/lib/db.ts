@@ -1,3 +1,4 @@
+import type { PassivoEntrada } from "./passivo";
 import { Pool } from "pg";
 import {
   CATEGORIAS_FORNECEDOR_PRODUTO,
@@ -176,6 +177,20 @@ const MIGRACOES_IDEMPOTENTES = [
   "UPDATE fornecedor_produto SET tipo_venda = 'caixa' WHERE tipo_venda = 'unidade' AND preco_unidade IS NULL AND preco_caixa IS NOT NULL",
   "ALTER TABLE pedido ADD COLUMN IF NOT EXISTS urgente boolean NOT NULL DEFAULT false",
   "ALTER TABLE pedido ADD COLUMN IF NOT EXISTS taxa_urgencia numeric(10,2) NOT NULL DEFAULT 0",
+  // db/46 — levantamento de passivos (bens fixos da empresa)
+  `CREATE TABLE IF NOT EXISTS passivo (
+     id bigserial PRIMARY KEY,
+     empresa_id bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     nome text NOT NULL,
+     categoria text NOT NULL DEFAULT 'outros',
+     quantidade integer NOT NULL DEFAULT 1,
+     descricao text,
+     valor_estimado numeric(12,2),
+     foto text,
+     origem text NOT NULL DEFAULT 'manual',
+     criado_em timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS idx_passivo_empresa ON passivo (empresa_id, categoria)",
   // db/45 — cores preferenciais (empresa e fornecedor)
   "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS cores jsonb NOT NULL DEFAULT '[]'",
   "ALTER TABLE fornecedor_publico ADD COLUMN IF NOT EXISTS cores jsonb NOT NULL DEFAULT '[]'",
@@ -970,6 +985,74 @@ export async function listarExclusoesVenda(empresaId: number): Promise<ExclusaoV
     [empresaId]
   );
   return rows;
+}
+
+// ---------- passivos (levantamento de bens da empresa — db/46) ----------
+
+export type Passivo = {
+  id: number;
+  nome: string;
+  categoria: string;
+  quantidade: number;
+  descricao: string | null;
+  valor_estimado: number | null;
+  origem: string;
+  tem_foto: boolean;
+  criado_em: string;
+};
+
+const CAMPOS_PASSIVO = `id, nome, categoria, quantidade, descricao, valor_estimado::float8 AS valor_estimado,
+  origem, (foto IS NOT NULL AND foto <> '') AS tem_foto, criado_em`;
+
+export async function listarPassivos(empresaId: number): Promise<Passivo[]> {
+  await garantirSchema();
+  const { rows } = await pool.query<Passivo>(
+    `SELECT ${CAMPOS_PASSIVO} FROM passivo WHERE empresa_id = $1 ORDER BY categoria, lower(nome), id`,
+    [empresaId]
+  );
+  return rows;
+}
+
+export async function criarPassivo(empresaId: number, d: PassivoEntrada): Promise<Passivo> {
+  await garantirSchema();
+  const { rows } = await pool.query<Passivo>(
+    `INSERT INTO passivo (empresa_id, nome, categoria, quantidade, descricao, valor_estimado, foto, origem)
+     VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), $8)
+     RETURNING ${CAMPOS_PASSIVO}`,
+    [empresaId, d.nome, d.categoria, d.quantidade, d.descricao, d.valorEstimado, d.foto ?? "", d.origem]
+  );
+  return rows[0];
+}
+
+export async function atualizarPassivo(
+  empresaId: number,
+  id: number,
+  d: PassivoEntrada
+): Promise<Passivo | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<Passivo>(
+    `UPDATE passivo SET nome = $3, categoria = $4, quantidade = $5, descricao = $6, valor_estimado = $7,
+            foto = CASE WHEN $8::text IS NULL THEN foto WHEN $8 = '' THEN NULL ELSE $8 END
+      WHERE id = $2 AND empresa_id = $1
+      RETURNING ${CAMPOS_PASSIVO}`,
+    [empresaId, id, d.nome, d.categoria, d.quantidade, d.descricao, d.valorEstimado, d.foto ?? null]
+  );
+  return rows[0] ?? null;
+}
+
+export async function excluirPassivo(empresaId: number, id: number): Promise<boolean> {
+  await garantirSchema();
+  const r = await pool.query("DELETE FROM passivo WHERE id = $1 AND empresa_id = $2", [id, empresaId]);
+  return (r.rowCount ?? 0) > 0;
+}
+
+export async function fotoPassivo(empresaId: number, id: number): Promise<string | null> {
+  await garantirSchema();
+  const { rows } = await pool.query<{ foto: string | null }>(
+    "SELECT foto FROM passivo WHERE id = $1 AND empresa_id = $2",
+    [id, empresaId]
+  );
+  return rows[0]?.foto || null;
 }
 
 export type ItemVendaFiscal = {

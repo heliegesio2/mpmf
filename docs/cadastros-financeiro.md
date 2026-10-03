@@ -222,3 +222,22 @@ Two contas-pagar-only additions, both configured in a **"⚙️ Configurações"
 
 **Empréstimos (`/cascos`)** — `casco` table gained `item text` (`db/21`, mirrored) = what the customer
 took (engradado, botijão…), now a required field on the form; `criarCasco` and `POST /api/cascos` pass it.
+
+### Passivo — levantamento de bens (`/passivos`, `db/46`)
+
+Menu Cadastros → "Passivo". É o inventário dos bens da empresa que **não são mercadoria** (banca, cofre,
+congelador, balcão, equipamentos…): tabela `passivo` (`nome`, `categoria`, `quantidade`, `descricao`,
+`valor_estimado` por unidade, `foto` data URL fora das listas → `tem_foto`, `origem` manual|foto|video).
+Categorias fixas em `src/lib/passivo.ts` (`CATEGORIAS_PASSIVO`, com ícone e a `dica` que vai no prompt da IA).
+- **`/passivos`**: resumo (valor estimado total = Σ valor × qtd; avisa quantos estão sem valor), chips por
+  categoria, lista com foto/editar/excluir (`confirm`) e form manual (voz + `CampoFoto`).
+- **`/passivos/foto`** (até 8 fotos) e **`/passivos/video`** (`GravadorVideo`, 90 s, 10 quadros amostrados):
+  o navegador manda as imagens (data URLs) pra `POST /api/passivos/analisar` → `src/lib/lerPassivoFotos.ts`
+  (uma chamada de visão, `ANTHROPIC_MODEL`) → `[{nome, categoria, quantidade, descricao, imagemIndice}]`; o
+  `imagemIndice` diz em qual imagem o bem aparece melhor e vira a foto dele. No vídeo o mesmo bem aparece em
+  vários quadros — o prompt manda contar uma vez. A conferência é `RevisaoPassivos` (checkbox, nome, categoria,
+  qtd, valor, descrição, tudo editável/com voz) → `POST /api/passivos { itens }` (lote, até 60).
+- Rotas (`exigirEmpresa`, sempre com `empresa_id` da sessão): `GET/POST /api/passivos`, `PUT/DELETE
+  /api/passivos/[id]`, `GET /api/passivos/[id]/foto`, `POST /api/passivos/analisar`. Validação em
+  `lerEntradaPassivo` (foto: ausente mantém, `""` remove, data URL troca). Vídeo **não usa a narração**
+  (só quadros). Não está no mpmf-desktop (que não tem o módulo Cadastros).

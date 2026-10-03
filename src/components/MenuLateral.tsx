@@ -101,6 +101,7 @@ const GRUPOS_LOJA: GrupoMenu[] = [
       { href: "/diretorio", rotulo: "Buscar fornecedores", descricao: "Fornecedores da região no diretório" },
       { href: "/pedidos", rotulo: "Meus pedidos", descricao: "Pedidos enviados aos fornecedores" },
       { href: "/cascos", rotulo: "Empréstimos", descricao: "Item retirado por um cliente" },
+      { href: "/passivos", rotulo: "Passivo", descricao: "Bens da empresa: banca, cofre, congelador…" },
     ],
   },
   { id: "relatorios", icone: "📊", rotulo: "Relatórios", href: "/relatorios" },

@@ -351,25 +351,29 @@ export default function Configuracoes() {
               />
             </div>
 
-            <div className="rotulo" style={{ marginTop: 12 }}>
-              <CampoCores valor={cores} aoMudar={setCores} />
-            </div>
-
-            <div className="rotulo" style={{ marginTop: 12 }}>
-              <CampoLogo
-                rotulo={salvandoLogo ? "Logo da empresa (salvando…)" : "Logo da empresa"}
-                preview={logoPreview}
-                aoEscolher={mudarLogo}
-                aoRemover={logoPreview ? removerLogo : undefined}
-                aoErro={(m) => {
-                  setErro(true);
-                  setAviso(m);
-                }}
-              />
-              <p className="campo-foto-dica">
-                Aparece pros outros lojistas no módulo Comércios grandes, quando você compartilhar
-                um levantamento de preço.
-              </p>
+            <div className="rotulo logo-cores" style={{ marginTop: 12 }}>
+              <div className="logo-cores-cores">
+                <CampoCores valor={cores} aoMudar={setCores} />
+                <p className="campo-foto-dica">
+                  Dica: no seletor de cor, use o conta-gotas pra pegar as cores da sua logo ao lado.
+                </p>
+              </div>
+              <div className="logo-cores-logo">
+                <CampoLogo
+                  rotulo={salvandoLogo ? "Logo da empresa (salvando…)" : "Logo da empresa"}
+                  preview={logoPreview}
+                  aoEscolher={mudarLogo}
+                  aoRemover={logoPreview ? removerLogo : undefined}
+                  aoErro={(m) => {
+                    setErro(true);
+                    setAviso(m);
+                  }}
+                />
+                <p className="campo-foto-dica">
+                  Aparece pros outros lojistas no módulo Comércios grandes, quando você compartilhar
+                  um levantamento de preço.
+                </p>
+              </div>
             </div>
           </section>
 

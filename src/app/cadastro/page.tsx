@@ -282,17 +282,20 @@ function Conteudo() {
             largo
             {...comum("nome")}
           />
-          <div className="rotulo largo">
-            <CampoLogo
-              rotulo="Logo (opcional)"
-              preview={logo}
-              aoEscolher={setLogo}
-              aoRemover={logo ? () => setLogo("") : undefined}
-              aoErro={(m) => setErro(m)}
-            />
-          </div>
-          <div className="rotulo largo">
-            <CampoCores valor={cores} aoMudar={setCores} />
+          <div className="rotulo largo logo-cores">
+            <div className="logo-cores-cores">
+              <CampoCores valor={cores} aoMudar={setCores} />
+              <p className="dica">Dica: no seletor de cor, use o conta-gotas pra pegar as cores da sua logo ao lado.</p>
+            </div>
+            <div className="logo-cores-logo">
+              <CampoLogo
+                rotulo="Logo (opcional)"
+                preview={logo}
+                aoEscolher={setLogo}
+                aoRemover={logo ? () => setLogo("") : undefined}
+                aoErro={(m) => setErro(m)}
+              />
+            </div>
           </div>
           <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comum("documento")} />
           <CampoTelefone

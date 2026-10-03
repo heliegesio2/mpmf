@@ -258,21 +258,23 @@ export default function AreaFornecedor() {
           <CampoVoz rotulo="Chave Pix (opcional)" placeholder="CPF/CNPJ, celular, e-mail…" largo {...comum("pixChave")} />
           <CampoVoz rotulo="Observação (opcional)" placeholder="Dias de entrega, pedido mínimo…" largo {...comum("observacao")} />
 
-          <div className="rotulo largo">
-            <CampoCores valor={cores} aoMudar={setCores} />
-          </div>
-
-          <div className="rotulo largo">
-            <CampoLogo
-              rotulo={salvandoLogo ? "Logo (salvando…)" : "Logo"}
-              preview={logoPreview}
-              aoEscolher={mudarLogo}
-              aoRemover={logoPreview ? removerLogo : undefined}
-              aoErro={(m) => {
-                setErro(true);
-                setAviso(m);
-              }}
-            />
+          <div className="rotulo largo logo-cores">
+            <div className="logo-cores-cores">
+              <CampoCores valor={cores} aoMudar={setCores} />
+              <p className="dica">Dica: no seletor de cor, use o conta-gotas pra pegar as cores da sua logo ao lado.</p>
+            </div>
+            <div className="logo-cores-logo">
+              <CampoLogo
+                rotulo={salvandoLogo ? "Logo (salvando…)" : "Logo"}
+                preview={logoPreview}
+                aoEscolher={mudarLogo}
+                aoRemover={logoPreview ? removerLogo : undefined}
+                aoErro={(m) => {
+                  setErro(true);
+                  setAviso(m);
+                }}
+              />
+            </div>
           </div>
 
           <div className="rotulo largo">
