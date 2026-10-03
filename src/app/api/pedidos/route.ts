@@ -28,7 +28,8 @@ export async function POST(request: Request) {
     const c = (await request.json()) as {
       fornecedorPublicoId?: number;
       observacao?: string;
-      itens?: { fornecedorProdutoId: number; unidade: "un" | "caixa"; qtd: number }[];
+      urgente?: boolean;
+      itens?: { fornecedorProdutoId: number; unidade: string; qtd: number }[];
     };
     const fornecedorPublicoId = Number(c.fornecedorPublicoId);
     if (!Number.isInteger(fornecedorPublicoId) || !Array.isArray(c.itens) || c.itens.length === 0) {
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
 
     const r = await criarPedido(empresaId, sessao.usuarioId, fornecedorPublicoId, {
       observacao: c.observacao,
+      urgente: Boolean(c.urgente),
       itens: c.itens,
     });
 
@@ -44,7 +46,7 @@ export async function POST(request: Request) {
       { fornecedorId: fornecedorPublicoId },
       {
         tipo: "pedido",
-        titulo: `Novo pedido de ${sessao.empresaNome ?? "uma loja"}`,
+        titulo: `${r.taxaUrgencia > 0 || c.urgente ? "⚡ URGENTE · " : ""}Novo pedido de ${sessao.empresaNome ?? "uma loja"}`,
         corpo: `${r.nItens} ${r.nItens === 1 ? "item" : "itens"} · ${reais(r.total)}`,
         link: "/fornecedor/pedidos",
         chave: `pedido:${r.id}:novo`,
@@ -54,7 +56,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ id: r.id, total: r.total }, { status: 201 });
   } catch (e) {
     const cod = (e as { code?: string }).code;
-    if (cod === "SEM_ITEM" || cod === "FORN_INDISP") {
+    if (cod === "SEM_ITEM" || cod === "FORN_INDISP" || cod === "URGENCIA_INDISP") {
       return NextResponse.json({ erro: (e as Error).message }, { status: 400 });
     }
     console.error("Falha ao criar pedido:", e);

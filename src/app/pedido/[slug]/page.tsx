@@ -3,22 +3,33 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useVoz } from "@/lib/useVoz";
+import { linhasDePreco, opcoesDePedido, rotuloUnidade } from "@/lib/fornecedorProduto";
 import { precoAplicavel, reaisPedido as reais, type UnidadePedido } from "@/lib/pedido";
 
 type Produto = {
   id: number;
   nome: string;
   categoria: string;
+  tipo_venda: string;
   preco_unidade: number | null;
   preco_desconto: number | null;
   desconto_qtd_min: number | null;
+  desconto_pct: number | null;
   preco_caixa: number | null;
   caixa_qtd: number | null;
+  permite_unidade: boolean;
+  aceita_urgencia: boolean;
+  taxa_urgencia: number | null;
   tem_foto: boolean;
 };
 type Linha = { qtd: string; unidade: UnidadePedido };
 
 const FLASH = "mpmf.pedidoFlash";
+
+/** Unidade pré-selecionada: a em que o produto é vendido (primeira opção). */
+function unidadePadrao(p: Produto): UnidadePedido {
+  return opcoesDePedido(p)[0]?.codigo ?? "un";
+}
 
 export default function MontarPedido() {
   const router = useRouter();
@@ -28,6 +39,7 @@ export default function MontarPedido() {
   const [produtos, setProdutos] = useState<Produto[]>([]);
   const [linhas, setLinhas] = useState<Record<number, Linha>>({});
   const [obs, setObs] = useState("");
+  const [urgente, setUrgente] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState("");
@@ -57,7 +69,8 @@ export default function MontarPedido() {
 
   function setLinha(id: number, patch: Partial<Linha>) {
     setLinhas((l) => {
-      const atual: Linha = l[id] ?? { qtd: "", unidade: "un" };
+      const p = produtos.find((x) => x.id === id);
+      const atual: Linha = l[id] ?? { qtd: "", unidade: p ? unidadePadrao(p) : "un" };
       return { ...l, [id]: { ...atual, ...patch } };
     });
   }
@@ -72,9 +85,16 @@ export default function MontarPedido() {
       if (preco == null) continue;
       itens.push({ produto: p, qtd, unidade: l.unidade, preco, subtotal: Math.round(preco * qtd * 100) / 100 });
     }
-    const total = Math.round(itens.reduce((s, i) => s + i.subtotal, 0) * 100) / 100;
-    return { itens, total };
-  }, [produtos, linhas]);
+    const subtotal = Math.round(itens.reduce((s, i) => s + i.subtotal, 0) * 100) / 100;
+    // urgência vale pro pedido todo e só se TODOS os itens aceitam; cobra a maior taxa, uma vez
+    const podeUrgencia = itens.length > 0 && itens.every((i) => i.produto.aceita_urgencia);
+    const semUrgencia = itens.filter((i) => !i.produto.aceita_urgencia).map((i) => i.produto.nome);
+    const taxa = Math.max(0, ...itens.map((i) => i.produto.taxa_urgencia ?? 0));
+    const urgenteValendo = urgente && podeUrgencia;
+    const taxaCobrada = urgenteValendo ? taxa : 0;
+    const total = Math.round((subtotal + taxaCobrada) * 100) / 100;
+    return { itens, subtotal, total, podeUrgencia, semUrgencia, taxa, urgenteValendo, taxaCobrada };
+  }, [produtos, linhas, urgente]);
 
   async function enviar() {
     if (carrinho.itens.length === 0) {
@@ -90,6 +110,7 @@ export default function MontarPedido() {
         body: JSON.stringify({
           fornecedorPublicoId: fornecedor?.id,
           observacao: obs,
+          urgente: carrinho.urgenteValendo,
           itens: carrinho.itens.map((i) => ({
             fornecedorProdutoId: i.produto.id,
             unidade: i.unidade,
@@ -132,9 +153,11 @@ export default function MontarPedido() {
       ) : (
         <ul className="lista lista-forn-produtos">
           {produtos.map((p) => {
-            const l = linhas[p.id] ?? { qtd: "", unidade: "un" as UnidadePedido };
+            const opcoes = opcoesDePedido(p);
+            const l = linhas[p.id] ?? { qtd: "", unidade: unidadePadrao(p) };
             const qtd = Math.round(Number(l.qtd)) || 0;
             const preco = qtd > 0 ? precoAplicavel(p, l.unidade, qtd) : null;
+            const unidadeSel = rotuloUnidade(l.unidade, 1);
             return (
               <li className="forn-produto" key={p.id}>
                 <div className="forn-produto-info">
@@ -142,6 +165,7 @@ export default function MontarPedido() {
                     <div>
                       <strong className="forn-produto-nome">{p.nome}</strong>
                       {p.categoria && <span className="sub">{p.categoria}</span>}
+                      <span className="sub">{linhasDePreco(p).join(" · ")}</span>
                     </div>
                   </div>
 
@@ -160,17 +184,15 @@ export default function MontarPedido() {
                       onChange={(e) => setLinha(p.id, { unidade: e.target.value as UnidadePedido })}
                       aria-label="Unidade"
                     >
-                      <option value="un">un</option>
-                      {p.preco_caixa != null && (
-                        <option value="caixa">caixa{p.caixa_qtd ? ` (${p.caixa_qtd} un)` : ""}</option>
-                      )}
+                      {opcoes.map((o) => (
+                        <option key={o.codigo} value={o.codigo}>
+                          {rotuloUnidade(o.codigo, 1)}
+                          {o.codigo === "caixa" && p.caixa_qtd ? ` (${p.caixa_qtd} un)` : ""}
+                        </option>
+                      ))}
                     </select>
                     <span className="pedir-preco">
-                      {preco != null
-                        ? `${reais(preco)}/${l.unidade} · ${reais(preco * qtd)}`
-                        : l.unidade === "caixa"
-                          ? "sem preço de caixa"
-                          : "—"}
+                      {preco != null ? `${reais(preco)}/${unidadeSel} · ${reais(preco * qtd)}` : "—"}
                     </span>
                   </div>
                 </div>
@@ -204,6 +226,29 @@ export default function MontarPedido() {
             </button>
           </span>
         </label>
+
+        <label className="rotulo largo check-whatsapp">
+          <input
+            type="checkbox"
+            checked={urgente}
+            disabled={!carrinho.podeUrgencia}
+            onChange={(e) => setUrgente(e.target.checked)}
+          />
+          ⚡ Pedido com urgência
+        </label>
+        {carrinho.itens.length > 0 && !carrinho.podeUrgencia && (
+          <p className="dica">
+            Urgência indisponível: {carrinho.semUrgencia.join(", ")}{" "}
+            {carrinho.semUrgencia.length === 1 ? "não aceita" : "não aceitam"} pedido urgente.
+          </p>
+        )}
+        {carrinho.urgenteValendo && (
+          <p className="dica">
+            {carrinho.taxa > 0
+              ? `Pedido urgente: o fornecedor cobra uma taxa de urgência de ${reais(carrinho.taxa)}, somada ao total.`
+              : "Pedido urgente: o fornecedor não cobra taxa."}
+          </p>
+        )}
 
         <div className="linha-total">
           <span>{carrinho.itens.length} item(ns)</span>

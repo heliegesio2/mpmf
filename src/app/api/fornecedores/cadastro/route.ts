@@ -1,3 +1,4 @@
+import { lerLogoCadastro } from "@/lib/logoCadastro";
 import { NextResponse } from "next/server";
 import { criarFornecedorPublico } from "@/lib/db";
 import { gerarHashSenha } from "@/lib/senha";
@@ -36,6 +37,10 @@ export async function POST(request: Request) {
     if (documento && documento.length !== 11 && documento.length !== 14) {
       return NextResponse.json({ erro: "CNPJ ou CPF inválido." }, { status: 400 });
     }
+    const logo = lerLogoCadastro(c.logo);
+    if (logo === undefined) {
+      return NextResponse.json({ erro: "Logo inválida ou grande demais." }, { status: 400 });
+    }
     if (bairroIds.length === 0) {
       return NextResponse.json(
         { erro: "Escolha pelo menos um bairro que você atende." },
@@ -55,6 +60,7 @@ export async function POST(request: Request) {
       senhaHash: await gerarHashSenha(senha),
       cidade,
       bairroIds,
+      logo,
     });
 
     return NextResponse.json(

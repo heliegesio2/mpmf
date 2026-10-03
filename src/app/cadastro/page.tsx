@@ -7,6 +7,7 @@ import BotoesSociais from "@/components/BotoesSociais";
 import Logo from "@/components/Logo";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
+import CampoFoto from "@/components/CampoFoto";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 
@@ -58,6 +59,7 @@ function Conteudo() {
   const [erro, setErro] = useState("");
   const [enviado, setEnviado] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [logo, setLogo] = useState(""); // data URL da logo (opcional)
 
   // bairros (só no cadastro de fornecedor)
   const [bairros, setBairros] = useState<Bairro[]>([]);
@@ -156,6 +158,7 @@ function Conteudo() {
             senha: form.senha,
             cidade: form.cidade || CIDADE_PADRAO,
             bairroIds: [...bairrosSel],
+            logo,
           }),
         });
         const dados = await r.json();
@@ -167,7 +170,7 @@ function Conteudo() {
       const r = await fetch("/api/empresas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, logo }),
       });
       const dados = await r.json();
       if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível cadastrar.");
@@ -276,6 +279,16 @@ function Conteudo() {
             largo
             {...comum("nome")}
           />
+          <div className="rotulo largo">
+            <CampoFoto
+              rotulo="Logo (opcional)"
+              semCaptura
+              preview={logo}
+              aoEscolher={setLogo}
+              aoRemover={logo ? () => setLogo("") : undefined}
+              aoErro={(m) => setErro(m)}
+            />
+          </div>
           <CampoVoz rotulo="CNPJ ou CPF" placeholder="Só números" numerico {...comum("documento")} />
           <CampoTelefone
             rotulo="Telefone"

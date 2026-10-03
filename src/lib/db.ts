@@ -167,6 +167,15 @@ const MIGRACOES_IDEMPOTENTES = [
      excluido_em timestamptz NOT NULL DEFAULT now()
    )`,
   "CREATE INDEX IF NOT EXISTS idx_venda_exclusao_empresa ON venda_exclusao (empresa_id, excluido_em DESC)",
+  // db/44 — catálogo do fornecedor: venda por tipo, desconto %, urgência; pedido urgente
+  "ALTER TABLE fornecedor_produto ADD COLUMN IF NOT EXISTS tipo_venda text NOT NULL DEFAULT 'unidade'",
+  "ALTER TABLE fornecedor_produto ADD COLUMN IF NOT EXISTS desconto_pct numeric",
+  "ALTER TABLE fornecedor_produto ADD COLUMN IF NOT EXISTS permite_unidade boolean NOT NULL DEFAULT false",
+  "ALTER TABLE fornecedor_produto ADD COLUMN IF NOT EXISTS aceita_urgencia boolean NOT NULL DEFAULT false",
+  "ALTER TABLE fornecedor_produto ADD COLUMN IF NOT EXISTS taxa_urgencia numeric",
+  "UPDATE fornecedor_produto SET tipo_venda = 'caixa' WHERE tipo_venda = 'unidade' AND preco_unidade IS NULL AND preco_caixa IS NOT NULL",
+  "ALTER TABLE pedido ADD COLUMN IF NOT EXISTS urgente boolean NOT NULL DEFAULT false",
+  "ALTER TABLE pedido ADD COLUMN IF NOT EXISTS taxa_urgencia numeric(10,2) NOT NULL DEFAULT 0",
   // db/43 — fiado ligado à venda que o gerou (pra excluir junto) + snapshot no log
   "ALTER TABLE fiado ADD COLUMN IF NOT EXISTS venda_id bigint",
   "CREATE INDEX IF NOT EXISTS idx_fiado_venda ON fiado (venda_id) WHERE venda_id IS NOT NULL",
@@ -3357,6 +3366,8 @@ export type FornecedorPublicoEntrada = {
   senhaHash: string;
   cidade: string;
   bairroIds: number[];
+  /** data URL da logo enviada no cadastro (opcional) */
+  logo?: string | null;
 };
 
 /**
@@ -3383,8 +3394,8 @@ export async function criarFornecedorPublico(d: FornecedorPublicoEntrada): Promi
     const { rows } = await cliente.query<{ id: number }>(
       `INSERT INTO fornecedor_publico
          (nome, documento, telefone, telefone_whatsapp, endereco, observacao, pix_chave, email, senha_hash, cidade,
-          situacao, decidido_em)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'aprovado', now()) RETURNING id`,
+          logo, situacao, decidido_em)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'aprovado', now()) RETURNING id`,
       [
         d.nome,
         d.documento?.replace(/\D/g, "") || null,
@@ -3396,6 +3407,7 @@ export async function criarFornecedorPublico(d: FornecedorPublicoEntrada): Promi
         d.email.trim(),
         d.senhaHash,
         d.cidade.trim(),
+        d.logo || null,
       ]
     );
     const id = rows[0].id;
@@ -3682,19 +3694,26 @@ export type FornecedorProduto = {
   id: number;
   nome: string;
   categoria: string;
+  tipo_venda: string;
   preco_unidade: number | null;
   preco_desconto: number | null;
   desconto_qtd_min: number | null;
+  desconto_pct: number | null;
   preco_caixa: number | null;
   caixa_qtd: number | null;
+  permite_unidade: boolean;
+  aceita_urgencia: boolean;
+  taxa_urgencia: number | null;
   ordem: number;
   criado_em: string;
   tem_foto: boolean;
 };
 
-const CAMPOS_FORN_PRODUTO = `id, nome, categoria,
+const CAMPOS_FORN_PRODUTO = `id, nome, categoria, tipo_venda,
   preco_unidade::float8 AS preco_unidade, preco_desconto::float8 AS preco_desconto,
-  desconto_qtd_min, preco_caixa::float8 AS preco_caixa, caixa_qtd, ordem,
+  desconto_qtd_min, desconto_pct::float8 AS desconto_pct,
+  preco_caixa::float8 AS preco_caixa, caixa_qtd, permite_unidade, aceita_urgencia,
+  taxa_urgencia::float8 AS taxa_urgencia, ordem,
   criado_em, (foto IS NOT NULL AND foto <> '') AS tem_foto`;
 
 export async function listarProdutosFornecedor(fornecedorId: number): Promise<FornecedorProduto[]> {
@@ -3729,8 +3748,10 @@ export async function criarProdutoFornecedor(
     `INSERT INTO fornecedor_produto
        (fornecedor_publico_id, nome, categoria, foto, preco_unidade, preco_desconto,
         desconto_qtd_min, preco_caixa, caixa_qtd,
+        tipo_venda, desconto_pct, permite_unidade, aceita_urgencia, taxa_urgencia,
         ordem)
      VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, $9,
+        $10, $11, $12, $13, $14,
         COALESCE((SELECT max(ordem) + 1 FROM fornecedor_produto WHERE fornecedor_publico_id = $1), 0))
      RETURNING ${CAMPOS_FORN_PRODUTO}`,
     [
@@ -3743,6 +3764,11 @@ export async function criarProdutoFornecedor(
       d.descontoQtdMin,
       d.precoCaixa,
       d.caixaQtd,
+      d.tipoVenda,
+      d.descontoPct,
+      d.permiteUnidade,
+      d.aceitaUrgencia,
+      d.taxaUrgencia,
     ]
   );
   await garantirSlugFornecedor(fornecedorId);
@@ -3760,6 +3786,8 @@ export async function atualizarProdutoFornecedor(
        nome = $3, categoria = $4,
        preco_unidade = $5, preco_desconto = $6, desconto_qtd_min = $7,
        preco_caixa = $8, caixa_qtd = $9,
+       tipo_venda = $11, desconto_pct = $12, permite_unidade = $13,
+       aceita_urgencia = $14, taxa_urgencia = $15,
        foto = CASE
                 WHEN $10::text IS NULL THEN foto
                 WHEN $10 = '' THEN NULL
@@ -3778,6 +3806,11 @@ export async function atualizarProdutoFornecedor(
       d.precoCaixa,
       d.caixaQtd,
       d.foto ?? null,
+      d.tipoVenda,
+      d.descontoPct,
+      d.permiteUnidade,
+      d.aceitaUrgencia,
+      d.taxaUrgencia,
     ]
   );
   return rows[0] ?? null;
@@ -4238,6 +4271,9 @@ export type PedidoLista = {
   observacao: string | null;
   motivo: string | null;
   total: number;
+  /** pedido com urgência: `taxa_urgencia` já está somada em `total` */
+  urgente: boolean;
+  taxa_urgencia: number;
   criado_em: string;
   atualizado_em: string;
   itens: PedidoItem[];
@@ -4266,9 +4302,10 @@ export async function criarPedido(
   fornecedorPublicoId: number,
   d: {
     observacao?: string | null;
+    urgente?: boolean;
     itens: { fornecedorProdutoId: number; unidade: UnidadePedido; qtd: number }[];
   }
-): Promise<{ id: number; total: number; nItens: number }> {
+): Promise<{ id: number; total: number; nItens: number; taxaUrgencia: number }> {
   await garantirSchema();
   const fp = await pool.query<{ situacao: string }>(
     "SELECT situacao FROM fornecedor_publico WHERE id = $1",
@@ -4290,13 +4327,18 @@ export async function criarPedido(
 
     let total = 0;
     let nItens = 0;
+    let todosAceitamUrgencia = true;
+    let taxaUrgencia = 0;
     for (const it of d.itens ?? []) {
       const qtd = Math.round(Number(it.qtd));
       if (!Number.isInteger(qtd) || qtd <= 0) continue;
-      const unidade: UnidadePedido = it.unidade === "caixa" ? "caixa" : "un";
+      const unidade: UnidadePedido =
+        !it.unidade || it.unidade === "unidade" ? "un" : String(it.unidade).slice(0, 20);
       const prod = await cliente.query(
-        `SELECT nome, preco_unidade::float8 AS preco_unidade, preco_desconto::float8 AS preco_desconto,
-                desconto_qtd_min, preco_caixa::float8 AS preco_caixa
+        `SELECT nome, tipo_venda, preco_unidade::float8 AS preco_unidade,
+                preco_desconto::float8 AS preco_desconto, desconto_qtd_min,
+                desconto_pct::float8 AS desconto_pct, preco_caixa::float8 AS preco_caixa,
+                caixa_qtd, permite_unidade, aceita_urgencia, taxa_urgencia::float8 AS taxa_urgencia
            FROM fornecedor_produto
           WHERE id = $1 AND fornecedor_publico_id = $2 FOR SHARE`,
         [Number(it.fornecedorProdutoId), fornecedorPublicoId]
@@ -4308,6 +4350,8 @@ export async function criarPedido(
       const subtotal = Math.round(preco * qtd * 100) / 100;
       total += subtotal;
       nItens += 1;
+      if (!p.aceita_urgencia) todosAceitamUrgencia = false;
+      taxaUrgencia = Math.max(taxaUrgencia, Number(p.taxa_urgencia ?? 0));
       await cliente.query(
         `INSERT INTO pedido_item (pedido_id, fornecedor_produto_id, nome, unidade, qtd, preco_unit, subtotal)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -4318,10 +4362,22 @@ export async function criarPedido(
       await cliente.query("ROLLBACK");
       throw Object.assign(new Error("Escolha ao menos um produto."), { code: "SEM_ITEM" });
     }
-    total = Math.round(total * 100) / 100;
-    await cliente.query("UPDATE pedido SET total = $2 WHERE id = $1", [pedidoId, total]);
+    // urgência: vale pro pedido todo e só se TODOS os itens aceitam; cobra a maior taxa, uma vez
+    const urgente = Boolean(d.urgente);
+    if (urgente && !todosAceitamUrgencia) {
+      await cliente.query("ROLLBACK");
+      throw Object.assign(new Error("Algum produto do pedido não aceita urgência."), {
+        code: "URGENCIA_INDISP",
+      });
+    }
+    const taxa = urgente ? Math.round(taxaUrgencia * 100) / 100 : 0;
+    total = Math.round((total + taxa) * 100) / 100;
+    await cliente.query(
+      "UPDATE pedido SET total = $2, urgente = $3, taxa_urgencia = $4 WHERE id = $1",
+      [pedidoId, total, urgente, taxa]
+    );
     await cliente.query("COMMIT");
-    return { id: pedidoId, total, nItens };
+    return { id: pedidoId, total, nItens, taxaUrgencia: taxa };
   } catch (e) {
     await cliente.query("ROLLBACK").catch(() => {});
     throw e;
@@ -4343,6 +4399,7 @@ export async function listarPedidosDoFornecedor(
   }
   const { rows } = await pool.query<PedidoLista>(
     `SELECT p.id, p.status, p.observacao, p.motivo, p.total::float8 AS total,
+            p.urgente, p.taxa_urgencia::float8 AS taxa_urgencia,
             p.criado_em, p.atualizado_em,
             e.nome AS empresa_nome, e.cidade AS empresa_cidade,
             e.telefone AS empresa_telefone, e.telefone_whatsapp AS empresa_whatsapp,
@@ -4359,6 +4416,7 @@ export async function listarPedidosDaLoja(empresaId: number): Promise<PedidoList
   await garantirSchema();
   const { rows } = await pool.query<PedidoLista>(
     `SELECT p.id, p.status, p.observacao, p.motivo, p.total::float8 AS total,
+            p.urgente, p.taxa_urgencia::float8 AS taxa_urgencia,
             p.criado_em, p.atualizado_em,
             fp.nome AS fornecedor_nome, fp.slug AS fornecedor_slug,
             fp.telefone AS fornecedor_telefone, fp.telefone_whatsapp AS fornecedor_whatsapp,
@@ -4384,6 +4442,7 @@ export async function pedidoDetalhe(id: number, escopo: EscopoPedido): Promise<P
   const c = condPedido(escopo);
   const { rows } = await pool.query<PedidoLista>(
     `SELECT p.id, p.status, p.observacao, p.motivo, p.total::float8 AS total,
+            p.urgente, p.taxa_urgencia::float8 AS taxa_urgencia,
             p.criado_em, p.atualizado_em,
             e.nome AS empresa_nome, e.cidade AS empresa_cidade,
             e.telefone AS empresa_telefone, e.telefone_whatsapp AS empresa_whatsapp,

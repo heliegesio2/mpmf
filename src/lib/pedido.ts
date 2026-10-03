@@ -3,28 +3,23 @@
  * pelas telas.
  */
 
-export type UnidadePedido = "un" | "caixa";
+import { opcoesDePedido, precoDaOpcao, rotuloUnidade, type PrecoProduto } from "./fornecedorProduto";
+
+/** "un" | "caixa" | "quilo" | … — o código do tipo de venda (ver `TIPOS_VENDA`). */
+export type UnidadePedido = string;
 export type StatusPedido = "novo" | "visto" | "atendido" | "cancelado";
 
-type PrecoProduto = {
-  preco_unidade: number | null;
-  preco_desconto: number | null;
-  desconto_qtd_min: number | null;
-  preco_caixa: number | null;
-};
-
-/** Preço unitário aplicável dada a unidade e a quantidade pedida. `null` = não vende assim. */
+/**
+ * Preço unitário aplicável dada a unidade e a quantidade pedida (já com o
+ * desconto por quantidade). `null` = o produto não é vendido assim.
+ */
 export function precoAplicavel(
   p: PrecoProduto,
   unidade: UnidadePedido,
   qtd: number
 ): number | null {
-  if (unidade === "caixa") return p.preco_caixa ?? null;
-  if (p.preco_unidade == null) return null;
-  if (p.preco_desconto != null && p.desconto_qtd_min != null && qtd >= p.desconto_qtd_min) {
-    return p.preco_desconto;
-  }
-  return p.preco_unidade;
+  const op = opcoesDePedido(p).find((o) => o.codigo === unidade);
+  return op ? precoDaOpcao(p, op, qtd) : null;
 }
 
 export const STATUS_PEDIDO: Record<StatusPedido, { rotulo: string; sinal: string }> = {
@@ -77,10 +72,9 @@ export function quando(iso: string): string {
 const reais = (v: number) =>
   "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-/** "12 un" / "2 caixas" */
+/** "12 un" / "2 caixas" / "5 kg" */
 export function qtdComUnidade(qtd: number, unidade: UnidadePedido): string {
-  if (unidade === "caixa") return `${qtd} caixa${qtd === 1 ? "" : "s"}`;
-  return `${qtd} un`;
+  return `${qtd} ${rotuloUnidade(unidade, qtd)}`;
 }
 
 export { reais as reaisPedido };

@@ -7,7 +7,7 @@ import { CampoVoz } from "@/components/CampoVoz";
 import { useVoz } from "@/lib/useVoz";
 import { capitalizar } from "@/lib/voz";
 import { moedaParaNumero, paraMoeda } from "@/lib/moeda";
-import { CATEGORIAS_FORNECEDOR_PRODUTO } from "@/lib/fornecedorProduto";
+import { CATEGORIAS_FORNECEDOR_PRODUTO, TIPOS_VENDA, type TipoVenda } from "@/lib/fornecedorProduto";
 
 const FLASH = "mpmf.fornProdutoFlash";
 
@@ -15,11 +15,16 @@ type ProdutoApi = {
   id: number;
   nome: string;
   categoria: string;
+  tipo_venda: string;
   preco_unidade: number | null;
   preco_desconto: number | null;
   desconto_qtd_min: number | null;
+  desconto_pct: number | null;
   preco_caixa: number | null;
   caixa_qtd: number | null;
+  permite_unidade: boolean;
+  aceita_urgencia: boolean;
+  taxa_urgencia: number | null;
   tem_foto: boolean;
 };
 
@@ -32,13 +37,16 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
   const [categoriaLivre, setCategoriaLivre] = useState("");
   const [categoriasUsadas, setCategoriasUsadas] = useState<string[]>([]);
 
-  const [precoUnidade, setPrecoUnidade] = useState("");
+  const [tipoVenda, setTipoVenda] = useState<TipoVenda>("unidade");
+  const [preco, setPreco] = useState("");
   const [temDesconto, setTemDesconto] = useState(false);
+  const [descontoPct, setDescontoPct] = useState("");
   const [descontoQtd, setDescontoQtd] = useState("");
-  const [precoDesconto, setPrecoDesconto] = useState("");
-  const [temCaixa, setTemCaixa] = useState(false);
   const [caixaQtd, setCaixaQtd] = useState("");
-  const [precoCaixa, setPrecoCaixa] = useState("");
+  const [permiteUnidade, setPermiteUnidade] = useState(false);
+  const [aceitaUrgencia, setAceitaUrgencia] = useState(false);
+  const [taxaUrgencia, setTaxaUrgencia] = useState("");
+  const [tinhaCaixaAntiga, setTinhaCaixaAntiga] = useState(false);
 
   const [fotoOriginal, setFotoOriginal] = useState(""); // como veio da câmera
   const [fotoMelhorada, setFotoMelhorada] = useState(""); // com fundo branco (IA)
@@ -55,9 +63,8 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
     aoFinalizar: (texto) => {
       const k = campoAtual.current;
       if (k === "nome") setNome(capitalizar(texto));
-      else if (k === "precoUnidade") setPrecoUnidade(paraMoeda(texto));
-      else if (k === "precoDesconto") setPrecoDesconto(paraMoeda(texto));
-      else if (k === "precoCaixa") setPrecoCaixa(paraMoeda(texto));
+      else if (k === "preco") setPreco(paraMoeda(texto));
+      else if (k === "taxaUrgencia") setTaxaUrgencia(paraMoeda(texto));
       setErro(false);
     },
     aoErrar: (m) => {
@@ -87,16 +94,31 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
         const known = (CATEGORIAS_FORNECEDOR_PRODUTO as readonly string[]).includes(it.categoria);
         setCategoria(it.categoria ? (known ? it.categoria : "outros") : "");
         if (it.categoria && !known) setCategoriaLivre(it.categoria);
-        setPrecoUnidade(it.preco_unidade != null ? paraMoeda(it.preco_unidade) : "");
-        if (it.preco_desconto != null) {
-          setTemDesconto(true);
-          setPrecoDesconto(paraMoeda(it.preco_desconto));
-          setDescontoQtd(it.desconto_qtd_min ? String(it.desconto_qtd_min) : "");
+        const tipo = (TIPOS_VENDA.some((t) => t.valor === it.tipo_venda)
+          ? it.tipo_venda
+          : "unidade") as TipoVenda;
+        setTipoVenda(tipo);
+        const base = tipo === "caixa" ? it.preco_caixa : it.preco_unidade;
+        setPreco(base != null ? paraMoeda(base) : "");
+        // produto antigo: tinha preço de unidade E de caixa — a caixa se perde ao salvar
+        setTinhaCaixaAntiga(tipo === "unidade" && it.preco_caixa != null);
+        // desconto: percentual (novo) ou convertido do preço fixo antigo
+        let pct = it.desconto_pct;
+        if (pct == null && it.preco_desconto != null && it.preco_unidade) {
+          pct = Math.round((1 - it.preco_desconto / it.preco_unidade) * 1000) / 10;
         }
-        if (it.preco_caixa != null) {
-          setTemCaixa(true);
-          setPrecoCaixa(paraMoeda(it.preco_caixa));
+        if (pct && it.desconto_qtd_min) {
+          setTemDesconto(true);
+          setDescontoPct(String(pct).replace(".", ","));
+          setDescontoQtd(String(it.desconto_qtd_min));
+        }
+        if (tipo === "caixa") {
           setCaixaQtd(it.caixa_qtd ? String(it.caixa_qtd) : "");
+          setPermiteUnidade(Boolean(it.permite_unidade));
+        }
+        if (it.aceita_urgencia) {
+          setAceitaUrgencia(true);
+          setTaxaUrgencia(it.taxa_urgencia ? paraMoeda(it.taxa_urgencia) : "");
         }
         if (it.tem_foto) setFotoAtualUrl(`/api/fornecedor/produtos/${produtoId}/foto`);
       }
@@ -143,14 +165,21 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
   const categoriaFinal =
     categoria === "outros" ? categoriaLivre.trim() : categoria;
 
+  const tipoAtual = TIPOS_VENDA.find((t) => t.valor === tipoVenda)!;
+  const ehCaixa = tipoVenda === "caixa";
+  const pctNum = Number(descontoPct.replace(",", "."));
+  const precoPorUnidadeAvulsa =
+    ehCaixa && Number(caixaQtd) > 0 && moedaParaNumero(preco) > 0
+      ? moedaParaNumero(preco) / Number(caixaQtd)
+      : null;
+
   function validar(): string | null {
     if (nome.trim().length < 2) return "Informe o nome do produto.";
-    if (moedaParaNumero(precoUnidade) <= 0 && moedaParaNumero(precoCaixa) <= 0)
-      return "Informe pelo menos o preço por unidade ou o da caixa.";
-    if (temDesconto && (moedaParaNumero(precoDesconto) <= 0 || Number(descontoQtd) < 2))
-      return "No desconto, informe a quantidade mínima (2+) e o preço.";
-    if (temCaixa && moedaParaNumero(precoCaixa) <= 0)
-      return "Informe o preço da caixa.";
+    if (moedaParaNumero(preco) <= 0) return `Informe o preço por ${tipoAtual.rotulo.toLowerCase()}.`;
+    if (ehCaixa && permiteUnidade && !(Number(caixaQtd) > 0))
+      return "Pra vender também por unidade, informe quantas unidades vêm na caixa.";
+    if (temDesconto && !(pctNum > 0 && pctNum < 100)) return "No desconto, informe o percentual (entre 0 e 100).";
+    if (temDesconto && !(Number(descontoQtd) >= 2)) return "No desconto, informe a quantidade mínima (2 ou mais).";
     return null;
   }
 
@@ -167,11 +196,14 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
       const corpo = {
         nome: nome.trim(),
         categoria: categoriaFinal,
-        precoUnidade: moedaParaNumero(precoUnidade) || null,
-        precoDesconto: temDesconto ? moedaParaNumero(precoDesconto) || null : null,
+        tipoVenda,
+        preco: moedaParaNumero(preco) || null,
+        descontoPct: temDesconto ? pctNum || null : null,
         descontoQtdMin: temDesconto ? Number(descontoQtd) || null : null,
-        precoCaixa: temCaixa ? moedaParaNumero(precoCaixa) || null : null,
-        caixaQtd: temCaixa ? Number(caixaQtd) || null : null,
+        caixaQtd: ehCaixa ? Number(caixaQtd) || null : null,
+        permiteUnidade: ehCaixa && permiteUnidade,
+        aceitaUrgencia,
+        taxaUrgencia: aceitaUrgencia ? moedaParaNumero(taxaUrgencia) || null : null,
         foto: fotoParaSalvar(),
       };
       const r = await fetch(
@@ -324,15 +356,72 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
             )}
           </div>
 
+          <div className="rotulo largo">
+            <span className="campo-foto-rotulo">Venda por</span>
+            <div className="categorias-conta">
+              {TIPOS_VENDA.map((t) => (
+                <button
+                  key={t.valor}
+                  type="button"
+                  className="botao pagamento"
+                  data-escolhido={tipoVenda === t.valor}
+                  onClick={() => setTipoVenda(t.valor)}
+                >
+                  {t.rotulo}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <CampoVoz
-            rotulo="Preço por unidade"
+            rotulo={`Preço por ${tipoAtual.rotulo.toLowerCase()}`}
             placeholder="0,00"
             moeda
             largo
-            valor={precoUnidade}
-            aoMudar={setPrecoUnidade}
-            {...voz("precoUnidade")}
+            valor={preco}
+            aoMudar={setPreco}
+            {...voz("preco")}
           />
+          {tinhaCaixaAntiga && (
+            <p className="dica largo">
+              Este produto tinha também um preço de caixa. Ao salvar, ele passa a ser vendido só por
+              unidade — se vende em caixa, escolha “Caixa” em “Venda por”.
+            </p>
+          )}
+
+          {ehCaixa && (
+            <>
+              <label className="rotulo">
+                Unidades por caixa
+                <input
+                  type="number"
+                  min={1}
+                  inputMode="numeric"
+                  value={caixaQtd}
+                  onChange={(e) => setCaixaQtd(e.target.value)}
+                  placeholder="Ex.: 24"
+                />
+              </label>
+              <label className="rotulo largo check-whatsapp">
+                <input
+                  type="checkbox"
+                  checked={permiteUnidade}
+                  onChange={(e) => setPermiteUnidade(e.target.checked)}
+                />
+                Também vende por unidade (a loja pode pedir avulso)
+              </label>
+              {permiteUnidade && (
+                <p className="dica largo">
+                  {precoPorUnidadeAvulsa != null
+                    ? `A unidade avulsa sai a R$ ${precoPorUnidadeAvulsa.toLocaleString("pt-BR", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })} (preço da caixa ÷ unidades por caixa).`
+                    : "Informe o preço e as unidades por caixa pra calcular a unidade avulsa."}
+                </p>
+              )}
+            </>
+          )}
 
           <label className="rotulo largo check-whatsapp">
             <input
@@ -345,7 +434,17 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
           {temDesconto && (
             <>
               <label className="rotulo">
-                A partir de quantas unidades
+                Desconto (%)
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={descontoPct}
+                  onChange={(e) => setDescontoPct(e.target.value.replace(/[^\d,.]/g, ""))}
+                  placeholder="Ex.: 5"
+                />
+              </label>
+              <label className="rotulo">
+                A partir de quantas {tipoAtual.plural === tipoAtual.sing ? tipoAtual.sing : tipoAtual.plural}
                 <input
                   type="number"
                   min={2}
@@ -355,46 +454,32 @@ export default function FormularioFornecedorProduto({ produtoId }: { produtoId?:
                   placeholder="Ex.: 10"
                 />
               </label>
-              <CampoVoz
-                rotulo="Preço por unidade nesse volume"
-                placeholder="0,00"
-                moeda
-                valor={precoDesconto}
-                aoMudar={setPrecoDesconto}
-                {...voz("precoDesconto")}
-              />
             </>
           )}
 
           <label className="rotulo largo check-whatsapp">
             <input
               type="checkbox"
-              checked={temCaixa}
-              onChange={(e) => setTemCaixa(e.target.checked)}
+              checked={aceitaUrgencia}
+              onChange={(e) => setAceitaUrgencia(e.target.checked)}
             />
-            Vende a caixa / fardo fechado
+            Aceita pedido com urgência
           </label>
-          {temCaixa && (
+          {aceitaUrgencia && (
             <>
-              <label className="rotulo">
-                Unidades por caixa (opcional)
-                <input
-                  type="number"
-                  min={1}
-                  inputMode="numeric"
-                  value={caixaQtd}
-                  onChange={(e) => setCaixaQtd(e.target.value)}
-                  placeholder="Ex.: 24"
-                />
-              </label>
               <CampoVoz
-                rotulo="Preço da caixa"
+                rotulo="Taxa de urgência (opcional)"
                 placeholder="0,00"
                 moeda
-                valor={precoCaixa}
-                aoMudar={setPrecoCaixa}
-                {...voz("precoCaixa")}
+                largo
+                valor={taxaUrgencia}
+                aoMudar={setTaxaUrgencia}
+                {...voz("taxaUrgencia")}
               />
+              <p className="dica largo">
+                Quando a loja pedir com urgência, ela vê que vai pagar essa taxa (somada ao pedido).
+                Deixe em branco se não cobra taxa.
+              </p>
             </>
           )}
         </div>

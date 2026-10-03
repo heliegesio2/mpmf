@@ -10,13 +10,15 @@ import {
   type StatusPedido,
 } from "@/lib/pedido";
 
-type Item = { id: number; nome: string; unidade: "un" | "caixa"; qtd: number; subtotal: number };
+type Item = { id: number; nome: string; unidade: string; qtd: number; subtotal: number };
 type Pedido = {
   id: number;
   status: StatusPedido;
   observacao: string | null;
   motivo: string | null;
   total: number;
+  urgente: boolean;
+  taxa_urgencia: number;
   criado_em: string;
   itens: Item[];
   empresa_nome: string;
@@ -136,6 +138,12 @@ export default function PedidosFornecedor() {
                     </li>
                   ))}
                 </ul>
+                {p.urgente && (
+                  <p className="sub motivo">
+                    ⚡ Pedido URGENTE
+                    {p.taxa_urgencia > 0 ? ` — taxa de urgência ${reais(p.taxa_urgencia)} (já no total)` : ""}
+                  </p>
+                )}
                 {p.observacao && <p className="sub">Obs.: {p.observacao}</p>}
                 {p.motivo && <p className="sub motivo">Motivo: {p.motivo}</p>}
 

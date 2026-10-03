@@ -154,6 +154,22 @@ un/caixa por produto + observação → `POST /api/pedidos` → notifica o forne
 motivo → notifica a loja via `notificarUsuariosDaEmpresa`) no `GRUPO_FORNECEDOR`. Rotas
 (`exigirFornecedor`): `GET /api/fornecedor/pedidos?situacao=`, `GET/PATCH /api/fornecedor/pedidos/[id]`.
 
+**Catálogo do fornecedor — venda por tipo / desconto % / urgência (`db/44`)** — `fornecedor_produto` ganhou
+`tipo_venda` (unidade, caixa, quilo, fardo, pacote, dúzia, saco, bandeja, litro — `TIPOS_VENDA` em
+`src/lib/fornecedorProduto.ts`), `desconto_pct` (+ `desconto_qtd_min`, vale só na unidade principal),
+`permite_unidade` (tipo caixa: a loja também pede avulso, preço = caixa ÷ `caixa_qtd`), `aceita_urgencia` +
+`taxa_urgencia`. Preço do tipo: caixa → `preco_caixa`, o resto → `preco_unidade`. `opcoesDePedido(p)` diz em que
+unidades dá pra pedir (produto antigo com preço de unidade E de caixa continua com as duas); `precoAplicavel` usa
+ela. `pedido_item.unidade` agora é o código do tipo (`un`, `caixa`, `quilo`…); quantidade segue inteira (kg em
+quilos cheios). `pedido.urgente`/`taxa_urgencia`: urgência vale pro pedido todo e só se TODOS os itens aceitam
+(senão 400 `URGENCIA_INDISP`); cobra a MAIOR taxa dos itens, uma vez, e ela já entra no `total`. A tela
+`/fornecedor/produtos` perdeu a edição rápida de preços (agora o botão leva ao form de editar).
+
+**Logo no cadastro** — `/cadastro` (empresa e fornecedor) tem `<CampoFoto semCaptura>` "Logo (opcional)"; vai
+como data URL em `logo` no `POST /api/empresas` e `/api/fornecedores/cadastro` (`lerLogoCadastro`, máx. ~1,5M
+chars). Reaproveita as colunas `empresa.logo`/`fornecedor_publico.logo` do `db/36`.
+
+
 `GET/PUT /api/auth/perfil` — PUT takes `{nome, foto?}` (`foto` tri-state: key absent = keep, `""` = clear,
 data URL = replace, same convention as `atualizarProduto`) and re-mints the session cookie so the new name
 shows without re-login (the name lives inside the HMAC token); the `/perfil` page then does a full reload

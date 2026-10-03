@@ -5,22 +5,22 @@ import Link from "next/link";
 import FotoAmpliavel from "@/components/FotoAmpliavel";
 import BotaoCopiar from "@/components/BotaoCopiar";
 import { comprimirFotoCatalogo } from "@/lib/imagemCliente";
-import { mascararMoeda, moedaParaNumero, paraMoeda } from "@/lib/moeda";
-
-const reais = (v: number | null | undefined) =>
-  v == null
-    ? "—"
-    : "R$ " + v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { linhasDePreco } from "@/lib/fornecedorProduto";
 
 type Produto = {
   id: number;
   nome: string;
   categoria: string;
+  tipo_venda: string;
   preco_unidade: number | null;
   preco_desconto: number | null;
   desconto_qtd_min: number | null;
+  desconto_pct: number | null;
   preco_caixa: number | null;
   caixa_qtd: number | null;
+  permite_unidade: boolean;
+  aceita_urgencia: boolean;
+  taxa_urgencia: number | null;
   tem_foto: boolean;
 };
 
@@ -44,11 +44,6 @@ export default function ProdutosFornecedor() {
   const [enviandoPdf, setEnviandoPdf] = useState(false);
   const pdfInput = useRef<HTMLInputElement>(null);
   const [fotoDoCard, setFotoDoCard] = useState<number | null>(null);
-
-  // edição rápida dos preços direto na linha
-  const [editPrecos, setEditPrecos] = useState<number | null>(null);
-  const [pf, setPf] = useState({ un: "", descQtd: "", descPreco: "", cxQtd: "", cxPreco: "" });
-  const [salvandoPrecos, setSalvandoPrecos] = useState(false);
 
   const carregar = useCallback(async () => {
     try {
@@ -177,48 +172,6 @@ export default function ProdutosFornecedor() {
     await fetch("/api/fornecedor/portfolio-pdf", { method: "DELETE" });
     setTemPdf(false);
     setAviso("PDF removido.");
-  }
-
-  function abrirPrecos(p: Produto) {
-    setEditPrecos(p.id);
-    setPf({
-      un: p.preco_unidade != null ? paraMoeda(p.preco_unidade) : "",
-      descQtd: p.desconto_qtd_min ? String(p.desconto_qtd_min) : "",
-      descPreco: p.preco_desconto != null ? paraMoeda(p.preco_desconto) : "",
-      cxQtd: p.caixa_qtd ? String(p.caixa_qtd) : "",
-      cxPreco: p.preco_caixa != null ? paraMoeda(p.preco_caixa) : "",
-    });
-    setAviso("");
-    setErro(false);
-  }
-
-  async function salvarPrecos(id: number) {
-    setSalvandoPrecos(true);
-    setErro(false);
-    try {
-      const corpo = {
-        precoUnidade: pf.un.trim() ? moedaParaNumero(pf.un) : null,
-        precoDesconto: pf.descPreco.trim() ? moedaParaNumero(pf.descPreco) : null,
-        descontoQtdMin: pf.descQtd.trim() ? Number(pf.descQtd) : null,
-        precoCaixa: pf.cxPreco.trim() ? moedaParaNumero(pf.cxPreco) : null,
-        caixaQtd: pf.cxQtd.trim() ? Number(pf.cxQtd) : null,
-      };
-      const r = await fetch(`/api/fornecedor/produtos/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(corpo),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d?.erro ?? "Não foi possível salvar.");
-      setItens((xs) => xs.map((x) => (x.id === id ? { ...x, ...d.item } : x)));
-      setEditPrecos(null);
-      setAviso("Preços atualizados.");
-    } catch (e) {
-      setErro(true);
-      setAviso(e instanceof Error ? e.message : "Não foi possível salvar.");
-    } finally {
-      setSalvandoPrecos(false);
-    }
   }
 
   const categorias = [...new Set(itens.map((i) => i.categoria).filter(Boolean))].sort();
@@ -352,12 +305,6 @@ export default function ProdutosFornecedor() {
       ) : (
         <ul className="lista lista-forn-produtos">
           {filtrados.map((p) => {
-            const porUnNaCaixa =
-              p.preco_caixa != null && p.caixa_qtd ? p.preco_caixa / p.caixa_qtd : null;
-            const economiaDesc =
-              p.preco_unidade != null && p.preco_desconto != null
-                ? p.preco_unidade - p.preco_desconto
-                : null;
             return (
               <li className="forn-produto" key={p.id}>
                 <div className="forn-produto-foto">
@@ -412,116 +359,19 @@ export default function ProdutosFornecedor() {
                     </div>
                   </div>
 
-                  {editPrecos === p.id ? (
-                    <div className="forn-preco-edit">
-                      <label className="rotulo">
-                        Preço por unidade
-                        <span className="entrada" data-moeda="true">
-                          <span className="prefixo">R$</span>
-                          <input
-                            inputMode="decimal"
-                            value={pf.un}
-                            onChange={(e) => setPf({ ...pf, un: mascararMoeda(e.target.value) })}
-                          />
-                        </span>
-                      </label>
-
-                      <fieldset className="forn-preco-bloco">
-                        <legend>Desconto por quantidade</legend>
-                        <label>
-                          a partir de
-                          <input
-                            type="number"
-                            min={2}
-                            inputMode="numeric"
-                            value={pf.descQtd}
-                            onChange={(e) => setPf({ ...pf, descQtd: e.target.value })}
-                          />
-                          un, sai a
-                        </label>
-                        <span className="entrada" data-moeda="true">
-                          <span className="prefixo">R$</span>
-                          <input
-                            inputMode="decimal"
-                            value={pf.descPreco}
-                            onChange={(e) =>
-                              setPf({ ...pf, descPreco: mascararMoeda(e.target.value) })
-                            }
-                          />
-                        </span>
-                        <small>por unidade</small>
-                      </fieldset>
-
-                      <fieldset className="forn-preco-bloco">
-                        <legend>Caixa fechada</legend>
-                        <label>
-                          <input
-                            type="number"
-                            min={1}
-                            inputMode="numeric"
-                            value={pf.cxQtd}
-                            onChange={(e) => setPf({ ...pf, cxQtd: e.target.value })}
-                          />
-                          un por
-                        </label>
-                        <span className="entrada" data-moeda="true">
-                          <span className="prefixo">R$</span>
-                          <input
-                            inputMode="decimal"
-                            value={pf.cxPreco}
-                            onChange={(e) =>
-                              setPf({ ...pf, cxPreco: mascararMoeda(e.target.value) })
-                            }
-                          />
-                        </span>
-                      </fieldset>
-
-                      <div className="botoes-linha">
-                        <button
-                          className="botao mini"
-                          onClick={() => salvarPrecos(p.id)}
-                          disabled={salvandoPrecos}
-                        >
-                          {salvandoPrecos ? "Salvando…" : "Salvar preços"}
-                        </button>
-                        <button
-                          className="botao mini perigo"
-                          onClick={() => setEditPrecos(null)}
-                          disabled={salvandoPrecos}
-                        >
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="forn-produto-precos">
-                      <span className="forn-preco-linha destaque">
-                        <b>1 un</b> {reais(p.preco_unidade)}
+                  <div className="forn-produto-precos">
+                    {linhasDePreco(p).map((l, i) => (
+                      <span className={`forn-preco-linha${i === 0 ? " destaque" : ""}`} key={l}>
+                        {l}
                       </span>
-                      {p.preco_desconto != null && p.desconto_qtd_min != null && (
-                        <span className="forn-preco-linha">
-                          <b>{p.desconto_qtd_min}+ un</b> {reais(p.preco_desconto)}
-                          {economiaDesc != null && economiaDesc > 0 && (
-                            <em> economiza {reais(economiaDesc)}/un</em>
-                          )}
-                        </span>
-                      )}
-                      {p.preco_caixa != null && (
-                        <span className="forn-preco-linha">
-                          <b>{p.caixa_qtd ? `caixa ${p.caixa_qtd} un` : "caixa"}</b>{" "}
-                          {reais(p.preco_caixa)}
-                          {porUnNaCaixa != null && <em> ({reais(porUnNaCaixa)}/un)</em>}
-                        </span>
-                      )}
-                      <button
-                        type="button"
-                        className="botao mini forn-editar-precos"
-                        onClick={() => abrirPrecos(p)}
-                      >
-                        ✏️ editar preços
-                      </button>
-                    </div>
-                  )}
+                    ))}
+                    <Link
+                      href={`/fornecedor/produtos/editar/${p.id}`}
+                      className="botao mini forn-editar-precos"
+                    >
+                      ✏️ editar preços
+                    </Link>
+                  </div>
                 </div>
               </li>
             );

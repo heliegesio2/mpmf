@@ -1,3 +1,4 @@
+import { lerLogoCadastro } from "@/lib/logoCadastro";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { pool, listarEmpresas, garantirSchema, definirFotoUsuarioSeVazia } from "@/lib/db";
@@ -105,14 +106,20 @@ export async function POST(request: Request) {
       );
     }
 
+    const logo = lerLogoCadastro(c.logo);
+    if (logo === undefined) {
+      await cliente.query("ROLLBACK");
+      return NextResponse.json({ erro: "Logo inválida ou grande demais." }, { status: 400 });
+    }
+
     const horario = c.horario ? String(c.horario).trim() || null : null;
     const pixChave = c.pixChave ? String(c.pixChave).trim() || null : null;
     const pixNome = c.pixNome ? String(c.pixNome).trim() || null : null;
 
     const empresa = await cliente.query<{ id: number }>(
-      `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome, situacao, decidida_em)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aprovada', now()) RETURNING id`,
-      [nome, documento, c.telefone ?? null, Boolean(c.telefoneWhatsapp), c.cidade ?? null, horario, pixChave, pixNome]
+      `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome, logo, situacao, decidida_em)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'aprovada', now()) RETURNING id`,
+      [nome, documento, c.telefone ?? null, Boolean(c.telefoneWhatsapp), c.cidade ?? null, horario, pixChave, pixNome, logo]
     );
 
     let usuarioSocialId: number | null = null;
