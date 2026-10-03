@@ -124,7 +124,6 @@ export default function Cascos() {
   /** Campos que ainda faltam (ou estão inválidos), pra dizer ao usuário em vez de só travar o botão. */
   const faltando = [
     form.responsavel.trim().length < 2 && "Responsável",
-    form.item.trim().length < 2 && "Item retirado",
     form.telefone.trim().length < 8 && "Telefone (mínimo 8 dígitos)",
     !(Number.isInteger(Number(form.quantidade)) && Number(form.quantidade) > 0) && "Quantidade (número inteiro)",
     form.endereco.trim().length < 2 && "Endereço",
@@ -213,7 +212,7 @@ export default function Cascos() {
 
         <div className="grade-form">
           <CampoVoz rotulo="Responsável" placeholder="Nome de quem levou" largo {...comum("responsavel")} />
-          <CampoVoz rotulo="Item retirado" placeholder="Engradado de cerveja, botijão…" largo {...comum("item")} />
+          <CampoVoz rotulo="Item retirado (opcional)" placeholder="Engradado de cerveja, botijão…" largo {...comum("item")} />
           <CampoTelefone
             rotulo="Telefone"
             {...comum("telefone")}
