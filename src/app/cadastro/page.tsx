@@ -183,13 +183,13 @@ function Conteudo() {
     return (
       <main className="tela-login">
         <section className="cartao-login">
-          <h1 className="titulo-cartao">Cadastro enviado</h1>
+          <h1 className="titulo-cartao">Cadastro realizado</h1>
           <p className="pix-status">
             {tipo === "fornecedor"
-              ? "Seu cadastro de fornecedor entrou na fila de aprovação. Assim que for liberado, você poderá entrar com o e-mail e a senha que acabou de cadastrar."
+              ? "Seu cadastro de fornecedor foi aprovado. Você já pode entrar com o e-mail e a senha que acabou de cadastrar."
               : social
-                ? `Sua empresa entrou na fila de aprovação. Assim que for liberada, você poderá entrar com o ${social.provedor === "google" ? "Google" : "Facebook"}.`
-                : "Sua empresa entrou na fila de aprovação. Assim que for liberada, você poderá entrar com o e-mail e a senha que acabou de cadastrar."}
+                ? `Sua empresa foi aprovada. Você já pode entrar com o ${social.provedor === "google" ? "Google" : "Facebook"}.`
+                : "Sua empresa foi aprovada. Você já pode entrar com o e-mail e a senha que acabou de cadastrar."}
           </p>
           <Link className="botao primario grande" href="/login">
             Voltar para o login

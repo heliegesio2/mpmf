@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { CampoVoz, SelecaoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
@@ -21,6 +22,16 @@ type Empresa = {
   motivo: string | null;
   criada_em: string;
   total_usuarios: string;
+};
+
+type FornecedorResumo = {
+  id: number;
+  nome: string;
+  email: string;
+  cidade: string;
+  situacao: "pendente" | "aprovado" | "reprovado";
+  criado_em: string;
+  bairros: string[];
 };
 
 type NovoUsuario = {
@@ -78,6 +89,16 @@ export default function Empresas() {
   const [erro, setErro] = useState(false);
   const [reprovando, setReprovando] = useState<number | null>(null);
   const [motivo, setMotivo] = useState("");
+
+  // fornecedores cadastrados (só leitura aqui; gerenciar em /admin/fornecedores)
+  const [fornecedores, setFornecedores] = useState<FornecedorResumo[]>([]);
+
+  useEffect(() => {
+    fetch("/api/admin/fornecedores?situacao=todas")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setFornecedores(d.itens))
+      .catch(() => {});
+  }, []);
 
   // ---------- nova empresa ----------
   const [criando, setCriando] = useState(false);
@@ -771,6 +792,37 @@ export default function Empresas() {
           ))}
         </ul>
       )}
+
+      <header className="marca">
+        Fornecedores <span>•</span> {fornecedores.length}
+      </header>
+      {fornecedores.length === 0 ? (
+        <p className="vazio">Nenhum fornecedor cadastrado.</p>
+      ) : (
+        <ul className="lista">
+          {fornecedores.map((f) => (
+            <li key={f.id}>
+              <span className="rotulo-item">
+                {f.nome}
+                <span className="sub">
+                  {f.email} · {f.cidade}
+                  {f.bairros.length > 0 ? ` · ${f.bairros.length} ${f.bairros.length === 1 ? "bairro" : "bairros"}` : ""}
+                  {" · "}
+                  {data.format(new Date(f.criado_em))}
+                </span>
+              </span>
+              <span className="botoes-linha">
+                <span className="sub">
+                  {f.situacao === "aprovado" ? "Aprovado" : f.situacao === "reprovado" ? "Reprovado" : "Aguardando"}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="dica">
+        <Link href="/admin/fornecedores">Gerenciar fornecedores (aprovar, reprovar, bairros)</Link>
+      </p>
     </main>
   );
 }

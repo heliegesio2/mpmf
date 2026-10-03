@@ -8,7 +8,7 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 /**
  * POST /api/fornecedores/cadastro — cadastro PÚBLICO de fornecedor.
- * Nasce `pendente`; o super admin aprova depois. Guarda os bairros que ele
+ * Nasce `aprovado` (aprovação automática). Guarda os bairros que ele
  * atende (a cidade inicial é Conselheiro Lafaiete).
  */
 export async function POST(request: Request) {
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json(
-      { ok: true, aviso: "Cadastro enviado. Aguarde a aprovação para acessar." },
+      { ok: true, aviso: "Cadastro realizado. Você já pode entrar." },
       { status: 201 }
     );
   } catch (e) {

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 A point-of-sale / small-store management app for Brazilian mercadinhos (corner stores), in Portuguese
 throughout (UI, code identifiers, comments, commit style). Next.js 15 (App Router) + TypeScript, single
 project for frontend and API, PostgreSQL via `pg`. Multi-tenant: many `empresa` (stores), each with its
-own users and products; a `super_admin` approves new stores and has no store of their own unless one is
+own users and products; new stores and supplier sign-ups are **auto-approved** on public registration (the `super_admin` can still reject them later) and the `super_admin` has no store of their own unless one is
 explicitly assigned.
 
 Core interaction pattern: a search field with a microphone button. Speech (`webkitSpeechRecognition`,

@@ -26,10 +26,11 @@ export async function GET(request: Request) {
 
 /**
  * POST /api/empresas
- * - Sem sessão: cadastro público. Nasce "pendente", com 1 usuário admin
- *   (o responsável), e só entra depois que o super admin aprova.
- * - Sessão de super admin: cadastro direto pelo painel. Nasce "aprovada"
- *   e aceita vários usuários de uma vez, cada um com o papel escolhido.
+ * - Sem sessão: cadastro público, com 1 usuário admin (o responsável).
+ * - Sessão de super admin: cadastro direto pelo painel; aceita vários
+ *   usuários de uma vez, cada um com o papel escolhido.
+ * Nos dois casos a empresa nasce "aprovada" (aprovação automática); o super
+ * admin ainda pode reprovar depois em /admin/empresas.
  */
 export async function POST(request: Request) {
   const sessao = await sessaoAtual();
@@ -109,11 +110,8 @@ export async function POST(request: Request) {
     const pixNome = c.pixNome ? String(c.pixNome).trim() || null : null;
 
     const empresa = await cliente.query<{ id: number }>(
-      souSuperAdmin
-        ? `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome, situacao, decidida_em)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aprovada', now()) RETURNING id`
-        : `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+      `INSERT INTO empresa (nome, documento, telefone, telefone_whatsapp, cidade, horario, pix_chave, pix_nome, situacao, decidida_em)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'aprovada', now()) RETURNING id`,
       [nome, documento, c.telefone ?? null, Boolean(c.telefoneWhatsapp), c.cidade ?? null, horario, pixChave, pixNome]
     );
 
@@ -149,7 +147,7 @@ export async function POST(request: Request) {
     const resposta = NextResponse.json(
       souSuperAdmin
         ? { ok: true, aviso: "Empresa cadastrada e aprovada." }
-        : { ok: true, aviso: "Cadastro enviado. Aguarde a aprovação para entrar." },
+        : { ok: true, aviso: "Cadastro realizado. Você já pode entrar." },
       { status: 201 }
     );
     if (social) resposta.cookies.set(COOKIE_CADASTRO_SOCIAL, "", { path: "/", maxAge: 0 });

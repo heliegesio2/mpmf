@@ -3360,7 +3360,7 @@ export type FornecedorPublicoEntrada = {
 };
 
 /**
- * Cadastro público de um fornecedor (nasce `pendente`, o super admin aprova).
+ * Cadastro público de um fornecedor (nasce `aprovado`; o super admin pode reprovar depois).
  * Separado do `fornecedor` de cada loja: aqui é o fornecedor se cadastrando na
  * plataforma e dizendo os bairros que atende.
  */
@@ -3382,8 +3382,9 @@ export async function criarFornecedorPublico(d: FornecedorPublicoEntrada): Promi
 
     const { rows } = await cliente.query<{ id: number }>(
       `INSERT INTO fornecedor_publico
-         (nome, documento, telefone, telefone_whatsapp, endereco, observacao, pix_chave, email, senha_hash, cidade)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+         (nome, documento, telefone, telefone_whatsapp, endereco, observacao, pix_chave, email, senha_hash, cidade,
+          situacao, decidido_em)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'aprovado', now()) RETURNING id`,
       [
         d.nome,
         d.documento?.replace(/\D/g, "") || null,
@@ -3410,6 +3411,8 @@ export async function criarFornecedorPublico(d: FornecedorPublicoEntrada): Promi
     }
 
     await cliente.query("COMMIT");
+    // slug da página pública (o que a aprovação manual fazia em decidirFornecedorPublico)
+    await garantirSlugFornecedor(id).catch((e) => console.warn("slug do fornecedor:", e));
     return id;
   } catch (e) {
     await cliente.query("ROLLBACK").catch(() => {});
