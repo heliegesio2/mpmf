@@ -1,5 +1,6 @@
 "use client";
 
+import { formatarTelefone, telefoneCompleto } from "@/lib/telefone";
 import { useCallback, useEffect, useState } from "react";
 import { CampoVoz } from "@/components/CampoVoz";
 import CampoTelefone from "@/components/CampoTelefone";
@@ -72,7 +73,7 @@ export default function Cascos() {
     }
 
     if (campo === "telefone") {
-      setForm((f) => ({ ...f, telefone: texto }));
+      setForm((f) => ({ ...f, telefone: formatarTelefone(texto) }));
       setAviso("");
       return;
     }
@@ -124,7 +125,7 @@ export default function Cascos() {
   /** Campos que ainda faltam (ou estão inválidos), pra dizer ao usuário em vez de só travar o botão. */
   const faltando = [
     form.responsavel.trim().length < 2 && "Responsável",
-    form.telefone.trim().length < 8 && "Telefone (mínimo 8 dígitos)",
+    !telefoneCompleto(form.telefone) && "Telefone com DDD",
     !(Number.isInteger(Number(form.quantidade)) && Number(form.quantidade) > 0) && "Quantidade (número inteiro)",
     form.endereco.trim().length < 2 && "Endereço",
   ].filter(Boolean) as string[];

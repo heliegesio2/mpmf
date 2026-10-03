@@ -1,5 +1,6 @@
 "use client";
 
+import { formatarTelefone } from "@/lib/telefone";
 import { linkWhatsapp } from "@/lib/whatsapp";
 
 const IconeWhatsapp = (
@@ -47,13 +48,13 @@ export default function CampoTelefone({
       {rotulo}
       <span className="entrada" data-ouvindo={ouvindo}>
         <input
-          value={valor}
+          value={formatarTelefone(valor)}
           inputMode="tel"
-          placeholder="11989902144"
+          placeholder="(11) 98990-2144"
           autoComplete="off"
           onChange={(e) => {
             if (ouvindo) aoParar?.();
-            aoMudar(e.target.value);
+            aoMudar(formatarTelefone(e.target.value));
           }}
         />
 

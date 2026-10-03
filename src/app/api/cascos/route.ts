@@ -1,3 +1,4 @@
+import { telefoneCompleto } from "@/lib/telefone";
 import { NextResponse } from "next/server";
 import { criarCasco, listarCascos } from "@/lib/db";
 import { exigirEmpresa } from "@/lib/sessao";
@@ -33,8 +34,8 @@ export async function POST(request: Request) {
     if (responsavel.length < 2) {
       return NextResponse.json({ erro: "Informe o responsável." }, { status: 400 });
     }
-    if (telefone.length < 8) {
-      return NextResponse.json({ erro: "Informe um telefone válido." }, { status: 400 });
+    if (!telefoneCompleto(telefone)) {
+      return NextResponse.json({ erro: "Informe o telefone com DDD." }, { status: 400 });
     }
     if (endereco.length < 2) {
       return NextResponse.json({ erro: "Informe o endereço." }, { status: 400 });
