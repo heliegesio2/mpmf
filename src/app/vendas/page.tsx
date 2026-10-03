@@ -76,6 +76,25 @@ export default function Vendas() {
     }
   }, []);
 
+  async function excluir(v: Venda) {
+    const quando = hora.format(new Date(v.criado_em));
+    if (
+      !confirm(
+        `Excluir a venda das ${quando} (R$ ${moeda.format(v.total)})? O estoque dos itens volta e fica registrado que foi você quem excluiu. Essa ação não tem volta.`
+      )
+    )
+      return;
+    setErro("");
+    try {
+      const r = await fetch(`/api/vendas/${v.id}`, { method: "DELETE" });
+      const dados = await r.json();
+      if (!r.ok) throw new Error(dados?.erro ?? "Não foi possível excluir a venda.");
+      await carregar(de, ate);
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível excluir a venda.");
+    }
+  }
+
   useEffect(() => {
     const t = setTimeout(() => carregar(de, ate), 200);
     return () => clearTimeout(t);
@@ -181,6 +200,11 @@ export default function Vendas() {
                 </span>
               </span>
               <span className="preco">R$ {moeda.format(v.total)}</span>
+              <span className="botoes-linha">
+                <button className="botao mini perigo" onClick={() => excluir(v)}>
+                  Excluir
+                </button>
+              </span>
             </li>
           ))}
         </ul>

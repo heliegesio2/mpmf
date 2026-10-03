@@ -18,6 +18,12 @@ Até defaults to today), `GET /api/vendas?de=&ate=` → `listarVendas` (filters 
 the payment parts), a period total, and a list: time + item count + `forma R$ valor + …` +
 total. In the **balcão** menu group, labeled "Vendas do dia" (distinct from `/venda`).
 
+**Excluir venda** — cada linha de `/vendas` tem "Excluir" (`confirm()` antes) → `DELETE /api/vendas/[id]` →
+`excluirVenda`: grava snapshot (itens + pagamentos em jsonb) + `usuario_id`/`usuario_nome` (+ "via X" se
+impersonando) em `venda_exclusao` (`db/42`), devolve o estoque dos itens, apaga a venda. Bloqueia (409) se
+houver NFC-e `autorizado`. O **fiado** lançado na venda não é desfeito (sem vínculo venda↔fiado). Não há
+tela pra ler o log ainda — só a tabela. Espelhado no mpmf-desktop (usuário fixo "Balcão (desktop)").
+
 **Payment-method cards** — `.formas-pagamento`/`.forma-card`, one per `forma` that has a nonzero total in
 the period (dinheiro/débito/crédito/pix/fiado, plus any other value found), each with an icon
 (`ICONE_FORMA`), the R$ total, and the **% of the period total** it represents. All computed client-side

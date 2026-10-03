@@ -152,6 +152,21 @@ const MIGRACOES_IDEMPOTENTES = [
      valor numeric(10,2) NOT NULL
    )`,
   "CREATE INDEX IF NOT EXISTS idx_venda_pagamento_venda ON venda_pagamento (venda_id)",
+  // db/42 — log de vendas excluídas (quem, quando, snapshot)
+  `CREATE TABLE IF NOT EXISTS venda_exclusao (
+     id bigserial PRIMARY KEY,
+     empresa_id bigint NOT NULL REFERENCES empresa(id) ON DELETE CASCADE,
+     venda_id bigint NOT NULL,
+     venda_data date,
+     venda_criado_em timestamptz,
+     total numeric(10,2) NOT NULL DEFAULT 0,
+     itens jsonb NOT NULL DEFAULT '[]',
+     pagamentos jsonb NOT NULL DEFAULT '[]',
+     usuario_id bigint,
+     usuario_nome text NOT NULL,
+     excluido_em timestamptz NOT NULL DEFAULT now()
+   )`,
+  "CREATE INDEX IF NOT EXISTS idx_venda_exclusao_empresa ON venda_exclusao (empresa_id, excluido_em DESC)",
   // db/21 — o que foi retirado no empréstimo (antigo "casco")
   "ALTER TABLE casco ADD COLUMN IF NOT EXISTS item text",
   // db/22 — anotações com lembrete
@@ -833,6 +848,65 @@ export async function listarVendas(
     [empresaId, de, ate]
   );
   return rows;
+}
+
+export type ResultadoExclusaoVenda = "ok" | "nao_encontrada" | "nota_emitida";
+
+/**
+ * Exclui uma venda da própria empresa: grava o snapshot + quem excluiu em
+ * `venda_exclusao`, devolve ao estoque o que foi baixado e apaga a venda.
+ * Venda com NFC-e autorizada não pode ser excluída (teria que cancelar a nota).
+ * O fiado lançado na venda NÃO é desfeito (não há vínculo venda↔fiado).
+ */
+export async function excluirVenda(
+  empresaId: number,
+  vendaId: number,
+  usuario: { id: number; nome: string }
+): Promise<ResultadoExclusaoVenda> {
+  await garantirSchema();
+
+  const { rows: nota } = await pool.query(
+    `SELECT 1 FROM venda_nota n JOIN venda v ON v.id = n.venda_id
+      WHERE n.venda_id = $1 AND v.empresa_id = $2 AND n.status = 'autorizado'`,
+    [vendaId, empresaId]
+  );
+  if (nota.length > 0) return "nota_emitida";
+
+  // Snapshot primeiro: se falhar, nada foi apagado.
+  const { rows: log } = await pool.query(
+    `INSERT INTO venda_exclusao
+       (empresa_id, venda_id, venda_data, venda_criado_em, total, itens, pagamentos, usuario_id, usuario_nome)
+     SELECT v.empresa_id, v.id, v.data, v.criado_em, v.total,
+            COALESCE((SELECT json_agg(json_build_object(
+                        'produto_id', i.produto_id, 'nome', i.nome,
+                        'quantidade', i.quantidade::float8, 'preco_unit', i.preco_unit::float8,
+                        'tipo_venda', i.tipo_venda) ORDER BY i.id)
+                       FROM venda_item i WHERE i.venda_id = v.id), '[]'::json),
+            COALESCE((SELECT json_agg(json_build_object('forma', p.forma, 'valor', p.valor::float8) ORDER BY p.id)
+                       FROM venda_pagamento p WHERE p.venda_id = v.id), '[]'::json),
+            $3, $4
+       FROM venda v
+      WHERE v.id = $1 AND v.empresa_id = $2
+     RETURNING id`,
+    [vendaId, empresaId, usuario.id, usuario.nome.slice(0, 200)]
+  );
+  if (log.length === 0) return "nao_encontrada";
+
+  const { rows: itens } = await pool.query<{ produto_id: number | null; quantidade: string }>(
+    "SELECT produto_id, quantidade FROM venda_item WHERE venda_id = $1",
+    [vendaId]
+  );
+  for (const it of itens) {
+    if (it.produto_id == null) continue;
+    await pool.query(
+      `UPDATE produto SET estoque = estoque + $3, alterado_em = now()
+        WHERE id = $1 AND empresa_id = $2`,
+      [it.produto_id, empresaId, Number(it.quantidade)]
+    );
+  }
+
+  await pool.query("DELETE FROM venda WHERE id = $1 AND empresa_id = $2", [vendaId, empresaId]);
+  return "ok";
 }
 
 export type ItemVendaFiscal = {
