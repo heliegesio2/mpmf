@@ -121,14 +121,21 @@ export default function Cascos() {
     carregar(filtro);
   }, [filtro, carregar]);
 
-  const formularioValido =
-    form.responsavel.trim().length >= 2 &&
-    form.telefone.trim().length >= 8 &&
-    form.endereco.trim().length >= 2 &&
-    form.item.trim().length >= 2 &&
-    Number(form.quantidade) > 0;
+  /** Campos que ainda faltam (ou estão inválidos), pra dizer ao usuário em vez de só travar o botão. */
+  const faltando = [
+    form.responsavel.trim().length < 2 && "Responsável",
+    form.item.trim().length < 2 && "Item retirado",
+    form.telefone.trim().length < 8 && "Telefone (mínimo 8 dígitos)",
+    !(Number.isInteger(Number(form.quantidade)) && Number(form.quantidade) > 0) && "Quantidade (número inteiro)",
+    form.endereco.trim().length < 2 && "Endereço",
+  ].filter(Boolean) as string[];
 
   async function salvar() {
+    if (faltando.length > 0) {
+      setErro(true);
+      setAviso(`Preencha: ${faltando.join(", ")}.`);
+      return;
+    }
     setSalvando(true);
     setErro(false);
     try {
@@ -218,7 +225,7 @@ export default function Cascos() {
         </div>
 
         <div className="acoes">
-          <button className="botao primario" onClick={salvar} disabled={salvando || !formularioValido}>
+          <button className="botao primario" onClick={salvar} disabled={salvando}>
             {salvando ? "Salvando…" : "Registrar empréstimo"}
           </button>
           <button className="botao neutro" onClick={() => setCriando(false)} disabled={salvando}>
